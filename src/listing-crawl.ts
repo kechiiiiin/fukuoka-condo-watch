@@ -42,8 +42,8 @@ export const CRAWL = {
   maxPagesPerInvocation: 100,
   /** 取り切った回でも、見えた件数がヒット件数合計のこの割合未満なら掲載終了を付けない（取りこぼしの疑い） */
   minSeenRatio: 0.85,
-  /** complete な回で何回続けて見えなかったら掲載終了にするか */
-  delistAfterMissedCompleteRuns: 1,
+  /** complete な回で何回続けて見えなかったら掲載終了にするか（1 だとクロール中の並びずれで誤判定するため 2） */
+  delistAfterMissedCompleteRuns: 2,
 };
 
 export function listingsEnabled(env: Pick<Env, "LISTINGS_ENABLED">): boolean {
