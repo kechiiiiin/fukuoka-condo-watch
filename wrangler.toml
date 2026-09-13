@@ -39,7 +39,7 @@ crons = ["*/5 19-23 * * *", "*/20 16-17 * * *"]
 
 [vars]
 # 掲載クロールのフラグ。有効化は Workers Paid・Access の準備が済んでから "on" にして push（README）
-LISTINGS_ENABLED = "off"
+LISTINGS_ENABLED = "on"
 # Access アプリ「fukuoka-condo-watch listings」（2026-09-14 に scripts/access-app.ts で作成）の値。秘密ではない。ALLOWED_EMAILS は secret
 CF_ACCESS_TEAM_DOMAIN = "https://kechiiiiin.cloudflareaccess.com"
 CF_ACCESS_AUD = "786b6144ce3802310060fb9c63ba605a97275588caa0fa612a5215a109f89858"
