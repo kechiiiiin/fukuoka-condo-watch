@@ -1,9 +1,12 @@
 // Data source B（掲載情報 → 掲載日数・値下げ履歴）の差し込み口。
 //
-// ⚠️ 主要ポータル（SUUMO / LIFULL HOME'S / at home / 不動産ジャパン / Yahoo!不動産）は
-// 利用規約で機械的な取得を禁じている、または許諾が明確でないため、実装していない（README 参照）。
-// 許諾された情報源（公式 API・データ提供契約・自分で入手した CSV 等）が見つかったら、
-// この interface を実装して ADAPTERS に登録するだけで、日次スナップショットが回るようにしてある。
+// - ListingSource … 「その日の全件を返す」単純な情報源（許諾フィード・CSV 等）。snapshotListings で取り込む
+// - PagedListingSource … 検索結果をページ単位で取る情報源。src/listing-crawl.ts が D1 のカーソルで
+//   複数回の cron に分けて取り、完走した回だけ「掲載終了」を付ける
+//
+// SUUMO（src/suumo-source.ts）は PagedListingSource。**私的・非商用の個人利用に限り、既定は無効**
+// （LISTINGS_ENABLED。README「掲載情報（SUUMO）」）。規約で機械取得を禁じているサイト
+// （アットホーム・不動産ジャパン・楽待・Yahoo!不動産）は実装しない。
 
 import type { Env } from "./env";
 
@@ -14,10 +17,15 @@ export interface ListingRecord {
   districtName?: string;
   buildingName?: string;
   buildingYear?: number;
+  builtMonth?: number;
   areaSqm?: number;
   floorPlan?: string;
+  lineName?: string;
   stationName?: string;
   walkMinutes?: number;
+  /** 駅までバス便（walkMinutes は入れない） */
+  bus?: boolean;
+  address?: string;
   url?: string;
   /** 売買は総額（円）、賃貸は月額賃料（円） */
   price: number;
@@ -26,17 +34,43 @@ export interface ListingRecord {
 export interface ListingSource {
   /** listings.source に入る ID（例: "partner-feed-x"） */
   readonly id: string;
-  /** 利用許諾の根拠（規約 URL・契約名など）。無いアダプタは登録しないこと */
+  /** 利用の根拠（規約 URL・契約名・私的利用の範囲など）。根拠を書けないアダプタは作らないこと */
   readonly permission: string;
   /** その日に掲載中の全件を返す（ページングはアダプタ内で完結させる） */
   fetchActive(env: Env): Promise<ListingRecord[]>;
 }
 
-/** 許諾済みの情報源だけを登録する。現在は空。 */
+export interface CrawlTarget {
+  /** 市区町村コード（5 桁） */
+  areaCode: string;
+  /** 情報源側のキー（SUUMO なら sc_<slug> の slug） */
+  key: string;
+}
+
+export interface ParsedListPage {
+  /** 検索全体のヒット件数。0 件ページは zeroHits=true・totalHits=null */
+  totalHits: number | null;
+  zeroHits: boolean;
+  maxPageLinked: number | null;
+  records: ListingRecord[];
+  /** 価格が読めず捨てた件数 */
+  skipped: number;
+}
+
+export interface PagedListingSource extends ListingSource {
+  readonly pageSize: number;
+  targets(): CrawlTarget[];
+  pageUrl(target: CrawlTarget, page: number): string;
+  parsePage(html: string, target: CrawlTarget): ParsedListPage;
+  /** 止まるべき応答なら種別（"http_429" 等）、問題なければ null */
+  detectBlock(status: number, html: string): string | null;
+}
+
+/** 「その日の全件」型の許諾済み情報源。現在は空（SUUMO はページ型なので listing-crawl.ts 側） */
 export const ADAPTERS: ListingSource[] = [];
 
 /**
- * 1 情報源ぶんの日次スナップショットを取り込む。
+ * 1 情報源ぶんの日次スナップショットを取り込む（ListingSource 用）。
  * - 初出: first_seen = today、価格履歴に 1 行
  * - 継続: last_seen 更新。価格が変われば履歴に 1 行
  * - 消滅: 今日見えなかった掲載中の物件に delisted_on = today

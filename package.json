@@ -2,7 +2,10 @@
   "name": "fukuoka-condo-watch",
   "version": "1.0.0",
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "node --import tsx --test test/*.test.ts",
+    "fake-suumo": "tsx scripts/fake-suumo-server.ts",
+    "access-app": "tsx scripts/access-app.ts",
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply fukuoka-condo-watch --local",

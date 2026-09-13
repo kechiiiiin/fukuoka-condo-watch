@@ -3,20 +3,41 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
 # 公開ダッシュボード（データは国交省の公開情報のみ。個人情報は載せない）
+# ⚠️ /listings・/api/listings は非公開。workers.dev 側は Access を掛けない（公開の / を残すため）ので、
+#    Worker 側の JWT 検証（src/access.ts）が fail-closed で止める。Access が前に立つのは下のカスタムドメイン側。
 workers_dev = true
+
+# /listings を Cloudflare Access で守るためのカスタムドメイン（有効化のときにコメントを外す。README「掲載情報（SUUMO）」）
+# ホスト名は仮。決めたら scripts/access-app.ts に渡す ACCESS_HOSTNAME と揃える。
+# [[routes]]
+# pattern = "condo.kechiiiiin.com"
+# custom_domain = true
 
 [observability]
 enabled = true
 
-# 毎日 04:00〜08:55 JST（= 19:00〜23:55 UTC）に 5 分おき起動する（60 回）。
-# 1 回あたりの API 呼び出しは 3 件に刻み（無料プランの CPU 10ms 上限対策）、
-# 「JST の今日まだ取れていない (市区町村, 四半期)」だけを順に取る。取り切った後の起動は即終了。
-# 容量: 直近 6 四半期 × 23 市区町村 = 138 件/日 に対し 60 回 × 3 件 = 180 件/日（再試行の余裕 42 件）。
-#   2026-09-14 に近郊 16 市町を足すまでは `*/5 21-22`（24 回 × 3 = 72 件）で、138 件には足りなかった。
-#   バッチを増やすと 1 起動の CPU が 10ms を超えうるので、起動回数の方を増やした。詳細は src/ingest.ts。
-# 何度走っても結果は同じ（冪等）。数年分の初回投入は Worker ではなく scripts/backfill.ts で行う。
+# cron は 2 系統（src/index.ts が controller.cron で振り分ける）:
+#
+# 1) "*/5 19-23 * * *" … 国交省 XIT001 の取り込み。毎日 04:00〜08:55 JST（= 19:00〜23:55 UTC）に 5 分おき起動する（60 回）。
+#    1 回あたりの API 呼び出しは 3 件に刻み（無料プランの CPU 10ms 上限対策）、
+#    「JST の今日まだ取れていない (市区町村, 四半期)」だけを順に取る。取り切った後の起動は即終了。
+#    容量: 直近 6 四半期 × 23 市区町村 = 138 件/日 に対し 60 回 × 3 件 = 180 件/日（再試行の余裕 42 件）。
+#      2026-09-14 に近郊 16 市町を足すまでは `*/5 21-22`（24 回 × 3 = 72 件）で、138 件には足りなかった。
+#      バッチを増やすと 1 起動の CPU が 10ms を超えうるので、起動回数の方を増やした。詳細は src/ingest.ts。
+#    何度走っても結果は同じ（冪等）。数年分の初回投入は Worker ではなく scripts/backfill.ts で行う。
+#
+# 2) "*/20 16-17 * * *" … 掲載情報（SUUMO）。01:00〜02:40 JST に 20 分おき 6 起動。**LISTINGS_ENABLED が on のときだけ動く**
+#    （off なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 80 ページ・6 秒間隔）。
+#    1 日 ≒ 231 ページ → 3 起動で終わり、残りは再開の余裕。src/listing-crawl.ts の LISTINGS_CRON と一致させること。
 [triggers]
-crons = ["*/5 19-23 * * *"]
+crons = ["*/5 19-23 * * *", "*/20 16-17 * * *"]
+
+[vars]
+# 掲載クロールのフラグ。有効化は Workers Paid・Access の準備が済んでから "on" にして push（README）
+LISTINGS_ENABLED = "off"
+# Access アプリを作ったあとに埋める（秘密ではない。ALLOWED_EMAILS は secret）
+CF_ACCESS_TEAM_DOMAIN = ""
+CF_ACCESS_AUD = ""
 
 [[d1_databases]]
 binding = "DB"
@@ -26,4 +47,5 @@ migrations_dir = "migrations"
 
 # 秘密は `wrangler secret put` で登録する（リポジトリには書かない）:
 #   REINFOLIB_API_KEY … 不動産情報ライブラリ API キー（未設定でも動く。画面に「APIキー未設定」）
+#   ALLOWED_EMAILS    … /listings を見てよいメール（カンマ区切り）。未設定なら /listings は全員 403
 # e-Stat のアプリケーション ID は Worker には渡さない（scripts/estat.ts がローカルで使う。.dev.vars に置く）。

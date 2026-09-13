@@ -2,7 +2,8 @@
 
 福岡市 7 区と福岡都市圏の近郊 16 市町の中古マンション市場を毎日追いかけて、「どこが売りやすいか（流動性・価格維持）」と「どこが貸しやすいか（賃貸需要）」を市区町村・地区ごとに見る Cloudflare Worker。ダッシュボードは「福岡市のみ／近郊のみ／すべて」を切り替え、ランキングは選んだ範囲の中で付ける。
 
-- データは公的な公開情報だけ（国土交通省 不動産情報ライブラリ API・e-Stat）。ポータルサイトのスクレイピングはしない
+- 公開ダッシュボード（`/`）のデータは公的な公開情報だけ（国土交通省 不動産情報ライブラリ API・e-Stat）
+- 掲載情報（SUUMO・私的利用）の日次取得を**同梱しているが既定は無効**（`LISTINGS_ENABLED=off`）。見る画面 `/listings` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
 - Cloudflare Workers（TypeScript）+ D1 + Cron Trigger。デプロイは GitHub Actions + `cloudflare/wrangler-action`
 
 ## 仕組み
@@ -13,7 +14,13 @@
 | `src/wards.ts` | 対象市区町村の台帳（`AREAS`。区＝`city`・近郊＝`suburb` と地域のまとまり） |
 | `src/ingest.ts` | 日次 cron。直近 6 四半期 × 23 市区町村を XIT001 から取り直す（(市区町村, 年, 四半期) 単位で DELETE→INSERT なので冪等）。5 分おき起動・1 回 3 件に刻む |
 | `src/metrics.ts` | 件数・㎡単価中央値・築年帯・価格帯・売りやすさ/貸しやすさスコア（式は画面にも表示）。`scope=city|suburb|all` で範囲を切り替え |
-| `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` 差し込み口。**許諾された情報源が無いので未登録** |
+| `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` / `PagedListingSource` 差し込み口 |
+| `src/suumo.ts` / `src/suumo-source.ts` | SUUMO 検索結果 HTML のパーサ・正規化（価格→万円・㎡・築年月・駅/徒歩・市区町村コード）と `SuumoSource` |
+| `src/listing-crawl.ts` | 掲載の日次クロール（`LISTINGS_ENABLED=on` のときだけ）。D1 のカーソルで複数起動に分割・止められたら停止・完走回だけ掲載終了 |
+| `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
+| `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
+| `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
+| `scripts/fake-suumo-server.ts` | ローカル確認用の偽 SUUMO（架空データ） |
 | `scripts/backfill.ts` | 過去数年分の一括投入（ローカル実行 → `wrangler d1 execute`） |
 | `scripts/load-geo.ts` | 将来推計人口（XKT013・市区町村別に合算）と駅別乗降客数（XKT015） |
 | `scripts/estat.ts` | e-Stat の表探し（search / meta）と取り込み（load。定義は `scripts/estat-indicators.json`） |
@@ -53,7 +60,20 @@ npm ci
 cp .dev.vars.example .dev.vars          # REINFOLIB_API_KEY / ESTAT_APP_ID を書く（空でも起動する）
 npm run db:migrate:local
 npm run dev                             # http://localhost:8787 、cron は /__scheduled
-npm run typecheck                       # tsc（Worker と scripts の両方）
+npm run typecheck                       # tsc（Worker・scripts・test）
+npm test                                # パーサ・JWT 検証（実ページ由来の分は ~/work/_experiments/listing-probe があるときだけ）
+```
+
+掲載クロールをローカルで確かめる（本物の SUUMO には向けない）:
+
+```sh
+npm run fake-suumo                                    # 偽サーバ http://127.0.0.1:8790
+npx wrangler dev --test-scheduled --var LISTINGS_ENABLED:on --var SUUMO_ORIGIN:http://127.0.0.1:8790 \
+  --var LISTINGS_MIN_INTERVAL_MS:0 --var LISTINGS_MAX_PAGES_PER_INVOCATION:10 --var DEV_BYPASS_ACCESS:1
+curl "http://localhost:8787/__scheduled?cron=*/20+16-17+*+*+*"   # 1 起動ぶん（取り切るまで繰り返す）
+curl -X POST http://127.0.0.1:8790/__day/2                       # 翌日: 消える・値下げ・新着（LISTINGS_TODAY_OVERRIDE も翌日に）
+curl -X POST http://127.0.0.1:8790/__mode/429                    # 止まる動作の確認
+open http://localhost:8787/listings
 ```
 
 本番:
@@ -79,7 +99,68 @@ GitHub Actions のシークレット: `CLOUDFLARE_API_TOKEN`（Workers Scripts:E
 - **貸しやすさ**（市区町村単位）= 取得済み指標のパーセンタイルの加重平均。将来人口増減 20・人口増減(国勢調査) 15・単独世帯割合 20・賃貸用空き家率 25（低いほど良い）・40㎡以下の取引割合 20
 - 注意: 取引価格（アンケート）と成約価格（レインズ由来）は同じ取引を重複して含みうるので、既定は取引価格のみ。構成（築年・広さ）の変化で中央値が動くので、比較するときは築年帯・面積フィルタを揃える
 
-## 掲載情報・家賃相場（Data source B）を実装していない理由
+## 掲載情報（SUUMO）— 私的利用・既定は無効
+
+**私的・非商用の個人利用に限る**（SUUMO ご利用規約 第2条1項「私的利用の範囲」・第3条7号 商業目的の禁止）。許諾契約ではない。
+データは非公開の `/listings` でだけ見せ、公開ダッシュボードや API には出さない。robots.txt（2026-09-14）は `/ms/chuko/` を Disallow していない。
+
+### 取り方
+
+- 検索 URL: `https://suumo.jp/ms/chuko/fukuoka/sc_<slug>/?page=N`（1 ページ 20 件・サーバ描画）。物件 ID は `nc_<数字>`
+- スラッグは `src/suumo.ts` の `SUUMO_SLUGS`。2026-09-14 に市区町村一覧（`/ms/chuko/fukuoka/city/`）のリンク id と各ページの hidden `sc=<5桁コード>` で 23 件突き合わせた
+  - 福岡市: `fukuokashi{higashi,hakata,chuo,minami,nishi,jonan,sawara}`
+  - 近郊: `chikushino` `kasuga` `onojo` `dazaifu` `nakagawa` `itoshima` `munakata` `koga` `fukutsu` / 粕屋郡は `kasuyagun` + `umi` `sasaguri` `shime` `sue` `shingu` `hisayama` `kasuya`
+  - 久山町は掲載 0 件のため一覧のリンクに出ないが、URL は有効（「条件にあう物件がありません」）
+- 件数（2026-09-14）: 福岡市 3,583 件 ≒ 180 ページ + 近郊 851 件 ≒ 51 ページ = **1 日 ≒ 231 ページ**
+- 1 ページごとに **6 秒以上**（本番は 5 秒未満にできない）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
+- cron `*/20 16-17 * * *`（01:00〜02:40 JST・6 起動）。1 起動 10 分で切り上げ（≒ 80 ページ）→ 3 起動で終わり、残り 3 起動は再開の余裕
+- 進み具合は D1 `listing_crawl_cursor` に 1 ページごとに保存（ページの反映とカーソル前進は同じトランザクション）。落ちても次の起動が続きから
+- **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
+- 掲載終了は**全市区町村を取り切った回（complete）でだけ**付ける。取れなかった市区町村がある回・見えた件数がヒット件数合計の 85% 未満の回は付けない
+
+### Workers Paid が前提（Free で何が壊れるか）
+
+2026-09 確認の上限: Paid の Cron は CPU 30 秒（1 時間未満間隔）・実行 15 分・サブリクエスト 10,000・D1 クエリ 1,000/起動。
+
+| Free の上限 | 何が起きるか |
+|---|---|
+| CPU 10ms/起動 | 230KB の HTML を 1〜数ページ解析した時点で超え、起動ごと落ちる（進まない） |
+| サブリクエスト 50/起動・D1 クエリ 50/起動 | 1 ページ ≒ 7 クエリなので 1 起動 7 ページ前後で上限 |
+| Cron Trigger 数（アカウント合計 5） | この Worker で 2 本使う。他の Worker の cron と合わせて超えるとデプロイが失敗する |
+
+`LISTINGS_ENABLED=off` の間は cron が即 return するので、Free のままマージ・デプロイしても壊れない（ただし cron の本数は数に入る）。
+
+### 非公開にする仕組み（二重）
+
+1. **Cloudflare Access**（カスタムドメイン側）: Self-hosted アプリで `/listings`・`/api/listings` を保護。`scripts/access-app.ts` で作る
+   - workers.dev は Access をホスト名単位でしか掛けられず、掛けると公開の `/` まで閉じるので、`/listings` はカスタムドメイン（仮 `condo.kechiiiiin.com`）で見る
+2. **Worker 側の JWT 検証**（`src/access.ts`）: `Cf-Access-Jwt-Assertion` を `<team>.cloudflareaccess.com/cdn-cgi/access/certs` の鍵で RS256 検証し、iss・aud・exp と `ALLOWED_EMAILS` を確かめる。
+   どれかが未設定なら全員拒否 → workers.dev の `/listings` や Access の設定漏れも 401/403
+
+### 有効化の手順
+
+【Keisuke・ブラウザ】（初回だけ）
+1. Workers Paid にアップグレード
+2. API トークンを 1 本発行（アカウント: Access: Apps and Policies — Edit / Access: Organizations, Identity Providers, and Groups — Read）。カスタムドメインを wrangler で付けるなら、GitHub Actions 用トークンに Zone: Workers Routes — Edit と DNS — Edit（`kechiiiiin.com`）を足す
+3. `/listings` 用のホスト名を決める（仮 `condo.kechiiiiin.com`）
+
+【ヘスティア・コマンド】
+```sh
+git switch main && git merge --ff-only feat/suumo-listings
+# wrangler.toml の [[routes]]（カスタムドメイン）のコメントを外す
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... ACCESS_HOSTNAME=condo.kechiiiiin.com ACCESS_EMAILS=<メール> \
+  npm run access-app -- --apply            # 表示された CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD を wrangler.toml の [vars] へ
+npx wrangler secret put ALLOWED_EMAILS      # /listings を見てよいメール
+git push                                    # Actions: 型チェック → テスト → D1 マイグレーション（0003）→ デプロイ（まだ off）
+curl -sI https://condo.kechiiiiin.com/listings | head -3                 # 302 → cloudflareaccess.com
+curl -s -o /dev/null -w '%{http_code}\n' https://fukuoka-condo-watch.<sub>.workers.dev/listings   # 401
+# wrangler.toml の LISTINGS_ENABLED を "on" にして push → 翌 01:00 JST から
+npx wrangler tail                            # 初日の様子を見る。/listings の「クロールの状態」でも
+```
+
+止めるときは `LISTINGS_ENABLED = "off"` にして push（データは残る）。
+
+## 他のポータル・家賃相場（Data source B）を実装していない理由
 
 各ポータルの利用規約（2026-09-14 確認）:
 
@@ -88,13 +169,13 @@ GitHub Actions のシークレット: `CLOUDFLARE_API_TOKEN`（Workers Scripts:E
 | アットホーム | https://www.athome.co.jp/help/kiyaku.html | 第4条でクローラー等による情報取得を禁止 |
 | 不動産ジャパン | https://www.fudousan.or.jp/others/kiyaku.html | 事前同意のないスクレイピングを禁止 |
 | 楽待 | https://www.rakumachi.jp/agreement/ | 第10条でクローリング・スクレイピングを禁止 |
-| SUUMO | https://cdn.p.recruit.co.jp/terms/suu-t-1003/index.html | 名指しの条項は無いが、私的利用の範囲を超える使用を禁止 |
+| SUUMO | https://cdn.p.recruit.co.jp/terms/suu-t-1003/index.html | 名指しの条項は無いが、私的利用の範囲を超える使用を禁止 → 私的利用に限って上の「掲載情報（SUUMO）」で対応（既定 off） |
 | LIFULL HOME'S | https://www.homes.co.jp/kiyaku/ | 名指しの条項は無いが、無断の複製・転載等を禁止 |
 | Yahoo!不動産 | https://www.lycorp.co.jp/ja/company/terms/ | LINEヤフーのヘルプでクロール・スクレイピングを禁止と案内 |
 | レインズ | 会員（宅建業者）専用 | 個人は利用不可 |
 
 - LIFULL HOME'S データセットは研究機関限定（個人利用不可）
-- 許諾された情報源（公式 API・データ提供契約）が見つかったら `src/listing.ts` の `ListingSource` を実装して `ADAPTERS` に登録する。D1 には `listings`・`listing_price_history`・`listing_snapshots` を用意済み
+- 許諾された情報源（公式 API・データ提供契約）が見つかったら `src/listing.ts` の `ListingSource` を実装して `ADAPTERS` に登録する。D1 には `listings`・`listing_price_history`・`listing_snapshots`（0001）とクロール状態（0003）を用意済み
 - 家賃そのものは公的 API に区単位の粒度が無いため、賃貸需要は人口・世帯・空き家・小型住戸の流通で代わりに見ている
 
 ## 出典

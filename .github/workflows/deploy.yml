@@ -29,6 +29,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # パーサ・JWT 検証のテスト（実ページ由来のフィクスチャは CI に無いので、その分は skip される）
+      - name: Test
+        run: npm test
+
       # 必要なシークレット: CLOUDFLARE_API_TOKEN（Workers Scripts:Edit + D1:Edit）/ CLOUDFLARE_ACCOUNT_ID
       # wranglerVersion は package.json の devDependencies.wrangler と揃えること
       - name: Apply D1 migrations

@@ -2,3 +2,9 @@
 # wrangler dev と scripts/*.ts の両方がここを読む。空のままでも起動する（画面に「APIキー未設定」）。
 REINFOLIB_API_KEY=
 ESTAT_APP_ID=
+
+# ---- 掲載情報（SUUMO）のローカル確認用。本物の SUUMO には向けない ----
+# LISTINGS_ENABLED=on
+# SUUMO_ORIGIN=http://127.0.0.1:8790        # npm run fake-suumo の偽サーバ（localhost 以外は無視される）
+# LISTINGS_MIN_INTERVAL_MS=0                 # 偽サーバ相手のときだけ 5000 未満にできる
+# DEV_BYPASS_ACCESS=1                        # localhost のときだけ /listings の認証を迂回
