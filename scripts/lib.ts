@@ -56,8 +56,13 @@ export function executeSql(statements: string[], label: string): void {
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 福岡市 7 区をすっぽり覆う範囲（周辺市町の一部を含む） */
-export const FUKUOKA_BBOX = { west: 130.17, east: 130.5, south: 33.43, north: 33.72 };
+/**
+ * 対象 23 市区町村（福岡市 7 区 + 近郊 16 市町）を覆う範囲。境界の概略に余裕を持たせた値:
+ *   西 = 糸島市の西端（〜130.03）/ 東 = 筑紫野市・宗像市・篠栗町の東端（〜130.63）
+ *   南 = 那珂川市・筑紫野市の南端（〜33.40）/ 北 = 宗像市の大島（〜33.90）
+ * ⚠️ 宗像市の沖ノ島（無人・北緯 34.2 付近）は含めない。load-geo はメッシュ 0 件の市区町村を警告する。
+ */
+export const FUKUOKA_BBOX = { west: 130.0, east: 130.68, south: 33.37, north: 33.93 };
 
 export function lonLatToTile(lon: number, lat: number, z: number): { x: number; y: number } {
   const n = 2 ** z;

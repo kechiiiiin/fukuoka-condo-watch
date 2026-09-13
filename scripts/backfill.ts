@@ -1,24 +1,30 @@
 // 過去分の一括投入（XIT001 → D1）。Worker の CPU 上限を避けるためローカルで回す。
 //   npm run backfill -- --from 2010 --to 2025            # ローカル D1
 //   npm run backfill -- --from 2010 --to 2025 --remote   # 本番 D1
-//   npm run backfill -- --from 2024 --to 2024 --ward 40133 --remote
-// (区, 年, 四半期) ごとに DELETE → INSERT なので、何度流しても同じ結果になる。
+//   npm run backfill -- --from 2024 --to 2024 --ward 40133 --remote     # 1 市区町村だけ
+//   npm run backfill -- --from 2015 --to 2026 --scope suburb --remote   # 近郊 16 市町だけ（city = 福岡市の 7 区）
+// (市区町村, 年, 四半期) ごとに DELETE → INSERT なので、何度流しても同じ結果になる。
 import { fetchXit001, parseCondo, ReinfolibError } from "../src/reinfolib";
-import { WARDS } from "../src/wards";
+import { AREAS, areasInScope, parseScope } from "../src/wards";
 import { executeSql, option, requireVar, sleep, sqlLit } from "./lib";
 
 const SOURCE = "reinfolib:XIT001";
+const wardOpt = option("ward");
+const scopeOpt = option("scope");
+if (scopeOpt !== undefined && !["city", "suburb", "all"].includes(scopeOpt)) {
+  console.error(`--scope は city / suburb / all のどれかです（${scopeOpt}）`);
+  process.exit(1);
+}
+const wards = wardOpt ? AREAS.filter((w) => w.code === wardOpt) : scopeOpt ? areasInScope(parseScope(scopeOpt)) : [...AREAS];
+if (wards.length === 0) {
+  console.error(`--ward ${wardOpt} は対象の市区町村コードではありません（src/wards.ts の AREAS を参照）`);
+  process.exit(1);
+}
 const apiKey = requireVar("REINFOLIB_API_KEY");
 const now = new Date();
 const thisYear = now.getUTCFullYear();
 const from = Math.max(2005, Number(option("from") ?? thisYear - 10));
 const to = Math.min(thisYear, Number(option("to") ?? thisYear));
-const wardOpt = option("ward");
-const wards = wardOpt ? WARDS.filter((w) => w.code === wardOpt) : [...WARDS];
-if (wards.length === 0) {
-  console.error(`--ward ${wardOpt} は福岡市の区コードではありません`);
-  process.exit(1);
-}
 
 async function fetchWithRetry(year: number, quarter: number, city: string) {
   for (let attempt = 1; ; attempt++) {

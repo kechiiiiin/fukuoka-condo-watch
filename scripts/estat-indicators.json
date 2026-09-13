@@ -8,7 +8,7 @@
     "numerator": { "statsDataId": "0004021631", "params": {} },
     "denominator": { "statsDataId": "", "params": {} },
     "verified": false,
-    "note": "0004021631（令和5年住調 空き家の種類別空き家数）は表の存在のみ確認。区（40131〜）を含むか・「賃貸用の空き家」の cat コード・住宅総数の表は `npm run estat -- meta 0004021631` 等で確かめて埋める"
+    "note": "0004021631（令和5年住調 空き家の種類別空き家数）は表の存在のみ確認。対象 23 市区町村（区 40131〜40137・近郊の市 402xx・粕屋郡の町 403xx）を含むか・「賃貸用の空き家」の cat コード・住宅総数の表は `npm run estat -- meta 0004021631` 等で確かめて埋める。住調の市区町村別集計は一定人口以上の町村に限られるので、小さい町（例: 久山町）は値が無い可能性がある（meta の「この表に無い対象市区町村」で確認）"
   },
   {
     "indicator": "single_household_rate",
@@ -19,7 +19,7 @@
     "numerator": { "statsDataId": "", "params": {} },
     "denominator": { "statsDataId": "", "params": {} },
     "verified": false,
-    "note": "令和2年国勢調査の世帯の家族類型の表。`npm run estat -- search 国勢調査 世帯の家族類型 --statsCode 00200521` で区（21大都市の区）を含む表を探す"
+    "note": "令和2年国勢調査の世帯の家族類型の表。`npm run estat -- search 国勢調査 世帯の家族類型 --statsCode 00200521` で、区（21大都市の区）と近郊の市町の両方を含む市区町村別の表を探す（区と市町で表が分かれていれば cdArea が両方に効くか meta で確認）"
   },
   {
     "indicator": "pop_change_2015_2020",
@@ -30,6 +30,6 @@
     "numerator": { "statsDataId": "", "params": {} },
     "denominator": { "statsDataId": "", "params": {} },
     "verified": false,
-    "note": "国勢調査 人口等基本集計の区別総人口（2020 と 2015）。同じ表に両年があれば cdTime で分ける"
+    "note": "国勢調査 人口等基本集計の市区町村別総人口（2020 と 2015）。同じ表に両年があれば cdTime で分ける。対象は区 7・近郊の市町 16 の計 23"
   }
 ]

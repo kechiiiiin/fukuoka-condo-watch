@@ -1,6 +1,6 @@
 import { hasReinfolibKey, type Env } from "./env";
 import { fetchXit001, parseCondo, ReinfolibError } from "./reinfolib";
-import { WARDS } from "./wards";
+import { AREAS } from "./wards";
 
 export const XIT001_SOURCE = "reinfolib:XIT001";
 
@@ -91,14 +91,24 @@ export async function ingestWardQuarter(env: Env, wardCode: string, q: Quarter):
   return result;
 }
 
-/** cron 1 回あたりに取る (区, 四半期) の上限。CPU 時間と subrequest 上限に余裕を持たせる */
+/**
+ * cron 1 回あたりに取る (市区町村, 四半期) の上限。
+ * 無料プランは 1 起動あたり CPU 10ms（fetch の待ち時間は含まない）。XIT001 は市区町村の全種別（宅地・戸建て等）を
+ * gzip JSON で返し、その展開と JSON.parse が CPU を食うので、件数を増やさず 3 件のまま据え置く。
+ */
 export const CRON_BATCH = 3;
 /** 公表の遅れと遡及修正を拾うため、直近何四半期を毎日取り直すか */
 export const CRON_QUARTERS = 6;
 
 /**
- * 日次 cron。直近 CRON_QUARTERS 四半期 × 7 区のうち「JST の今日まだ取っていないもの」を CRON_BATCH 件まで取る。
- * wrangler.toml で 5 分おきに 24 回起動するので（最大 72 件）、42 件は失敗の再試行込みで 1 日の中で取り切れる。
+ * 日次 cron。直近 CRON_QUARTERS 四半期 × 対象 23 市区町村のうち「JST の今日まだ取っていないもの」を CRON_BATCH 件まで取る。
+ *
+ * 容量の計算（2026-09-14 に近郊 16 市町を足したときに見直し）:
+ *   必要数 = 6 四半期 × 23（7 区 + 16 市町）= 138 件/日
+ *   旧設定 `*／5 21-22 * * *` = 24 起動 × 3 件 = 72 件/日 → 足りない
+ *   新設定 `*／5 19-23 * * *` = 60 起動 × 3 件 = 180 件/日 → 138 件 + 再試行の余裕 42 件
+ * 起動は 04:00〜08:55 JST に収まり、JST の日付をまたがない（doneKeys が JST の「今日」基準なので重要）。
+ * 取り切った後の起動は fetch_log を 1 回読むだけで終わる。
  */
 export async function runDailyIngest(env: Env, now = new Date()): Promise<IngestResult[]> {
   if (!hasReinfolibKey(env)) {
@@ -106,19 +116,31 @@ export async function runDailyIngest(env: Env, now = new Date()): Promise<Ingest
     return [];
   }
   const todayJstStartUtc = jstDayStartUtc(now).toISOString();
-  const done = await env.DB.prepare(
-    "SELECT ward_code, year, quarter FROM fetch_log WHERE source = ? AND fetched_at >= ? AND status IN ('ok','empty')",
+  const logged = await env.DB.prepare(
+    "SELECT ward_code, year, quarter, status FROM fetch_log WHERE source = ? AND fetched_at >= ?",
   )
     .bind(XIT001_SOURCE, todayJstStartUtc)
-    .all<{ ward_code: string; year: number; quarter: number }>();
-  const doneKeys = new Set(done.results.map((r) => `${r.ward_code}:${r.year}:${r.quarter}`));
+    .all<{ ward_code: string; year: number; quarter: number; status: string }>();
+  const key = (code: string, q: Quarter) => `${code}:${q.year}:${q.quarter}`;
+  const doneKeys = new Set<string>();
+  const erroredKeys = new Set<string>();
+  for (const r of logged.results) {
+    const k = key(r.ward_code, r);
+    if (r.status === "ok" || r.status === "empty") doneKeys.add(k);
+    else if (r.status === "error") erroredKeys.add(k);
+  }
 
-  const todo: { ward: string; q: Quarter }[] = [];
+  const fresh: { ward: string; q: Quarter }[] = [];
+  const retries: { ward: string; q: Quarter }[] = [];
   for (const q of recentQuarters(now, CRON_QUARTERS)) {
-    for (const w of WARDS) {
-      if (!doneKeys.has(`${w.code}:${q.year}:${q.quarter}`)) todo.push({ ward: w.code, q });
+    for (const a of AREAS) {
+      const k = key(a.code, q);
+      if (doneKeys.has(k)) continue;
+      // 今日すでに失敗したものは後回しにする（ずっと失敗する 3 件が先頭に居座って残りが進まないのを防ぐ）
+      (erroredKeys.has(k) ? retries : fresh).push({ ward: a.code, q });
     }
   }
+  const todo = [...fresh, ...retries];
   const results: IngestResult[] = [];
   for (const item of todo.slice(0, CRON_BATCH)) {
     results.push(await ingestWardQuarter(env, item.ward, item.q));

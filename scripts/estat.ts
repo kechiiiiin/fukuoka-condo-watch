@@ -1,13 +1,14 @@
-// e-Stat API 3.0 から区別の統計を取り込む（ローカル実行・ESTAT_APP_ID を使う）
+// e-Stat API 3.0 から市区町村別（福岡市 7 区 + 近郊 16 市町）の統計を取り込む（ローカル実行・ESTAT_APP_ID を使う）
 // 仕様: https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0
 //
 //   npm run estat -- search 住宅・土地統計調査 空き家 [--statsCode 00200522]   # 表を探す（getStatsList）
-//   npm run estat -- meta 0004021631                                           # 分類コードと福岡市の区コードを見る（getMetaInfo）
+//   npm run estat -- meta 0004021631                                           # 分類コードと対象市区町村のコードを見る（getMetaInfo）
 //   npm run estat -- load [--remote]                                           # scripts/estat-indicators.json の定義で取り込む
 //
 // statsDataId と分類コードは推測で埋めず、search / meta で確かめてから estat-indicators.json に書く。
+// 表によっては区だけ・市だけ・一定人口以上の町村だけを載せる。meta の「対象に無いコード」表示で抜けを確かめること。
 import { readFileSync } from "node:fs";
-import { WARDS } from "../src/wards";
+import { AREAS as WARDS, isAreaCode } from "../src/wards";
 import { executeSql, option, requireVar, sqlLit } from "./lib";
 
 const BASE = "https://api.e-stat.go.jp/rest/3.0/app/json";
@@ -47,9 +48,14 @@ async function meta(id: string) {
   for (const obj of arr<any>(info?.METADATA_INF?.CLASS_INF?.CLASS_OBJ)) {
     const classes = arr<any>(obj.CLASS);
     const isArea = obj["@id"] === "area";
-    const shown = isArea ? classes.filter((c) => String(c["@code"]).startsWith("4013")) : classes;
-    console.log(`\n[${obj["@id"]}] ${obj["@name"]}（${classes.length} 区分${isArea ? "・福岡市分のみ表示" : ""}）`);
+    const shown = isArea ? classes.filter((c) => isAreaCode(String(c["@code"]))) : classes;
+    console.log(`\n[${obj["@id"]}] ${obj["@name"]}（${classes.length} 区分${isArea ? "・対象市区町村分のみ表示" : ""}）`);
     for (const c of shown.slice(0, 200)) console.log(`  ${c["@code"]}\t${c["@name"]}${c["@unit"] ? `\t(${c["@unit"]})` : ""}`);
+    if (isArea) {
+      const have = new Set(shown.map((c) => String(c["@code"])));
+      const lack = WARDS.filter((w) => !have.has(w.code));
+      if (lack.length) console.log(`  ⚠️ この表に無い対象市区町村: ${lack.map((w) => `${w.name}(${w.code})`).join(",")}`);
+    }
   }
 }
 
@@ -113,7 +119,7 @@ async function load() {
       }
       console.log(`${d.indicator} ${w.name}: ${value === null ? "—" : value.toFixed(2)}`);
       stmts.push(
-        `INSERT OR REPLACE INTO area_stats (area_level, area_code, indicator, period, value, unit, source, updated_at) VALUES ('ward', ${sqlLit(w.code)}, ${sqlLit(d.indicator)}, ${sqlLit(d.period)}, ${sqlLit(value)}, ${sqlLit(d.unit)}, ${sqlLit(`estat:${d.numerator.statsDataId}`)}, ${sqlLit(now)})`,
+        `INSERT OR REPLACE INTO area_stats (area_level, area_code, indicator, period, value, unit, source, updated_at) VALUES ('municipality', ${sqlLit(w.code)}, ${sqlLit(d.indicator)}, ${sqlLit(d.period)}, ${sqlLit(value)}, ${sqlLit(d.unit)}, ${sqlLit(`estat:${d.numerator.statsDataId}`)}, ${sqlLit(now)})`,
       );
     }
   }

@@ -5,9 +5,10 @@
 //   response_format=geojson, z=11..15, x, y。S12_001_ja 駅名 / S12_001c 駅コード / S12_002_ja 事業者 / S12_003_ja 路線
 //   乗降客数は S12_009(2011), S12_013(2012) … 4 つ飛びで S12_057(2023)。以後の年も同じ規則で続く前提で、あるだけ読む。
 // XKT013 将来推計人口 250m メッシュ: https://www.reinfolib.mlit.go.jp/help/apiManual/xkt013/
-//   MESH_ID / SHICODE（市区町村コード）/ PT00_20XX（総人口）。SHICODE ごとに合計して区の値にする。
+//   MESH_ID / SHICODE（市区町村コード）/ PT00_20XX（総人口）。SHICODE ごとに合計して市区町村の値にする。
+//   対象は src/wards.ts の AREAS（福岡市 7 区 + 近郊 16 市町）。範囲は scripts/lib.ts の FUKUOKA_BBOX。
 import { reinfolibGet } from "../src/reinfolib";
-import { WARD_NAME } from "../src/wards";
+import { AREAS, AREA_NAME, isAreaCode } from "../src/wards";
 import { executeSql, FUKUOKA_BBOX, option, requireVar, sleep, sqlLit, tilesForBbox } from "./lib";
 
 const apiKey = requireVar("REINFOLIB_API_KEY");
@@ -74,6 +75,9 @@ async function stations() {
   executeSql(stmts, "stations");
 }
 
+/** SHICODE を 5 桁に揃える（検査数字付きの 6 桁で来た場合に備える） */
+const normalizeShicode = (s: string) => (/^\d{6}$/.test(s) ? s.slice(0, 5) : s);
+
 async function futurePop() {
   const features = await tileFeatures("XKT013");
   const seenMesh = new Set<string>();
@@ -84,9 +88,9 @@ async function futurePop() {
     const mesh = str(p["MESH_ID"]);
     if (!mesh || seenMesh.has(mesh)) continue;
     seenMesh.add(mesh);
-    const shi = str(p["SHICODE"]);
-    if (!(shi in WARD_NAME)) {
-      if (shi.startsWith("4013")) otherCodes.add(shi);
+    const shi = normalizeShicode(str(p["SHICODE"]));
+    if (!isAreaCode(shi)) {
+      if (shi) otherCodes.add(shi);
       continue;
     }
     const byYear = sums.get(shi) ?? new Map<string, number>();
@@ -98,20 +102,24 @@ async function futurePop() {
     }
     sums.set(shi, byYear);
   }
-  if (otherCodes.size) console.warn(`区コード以外の 4013x が SHICODE に出ました（集計対象外）: ${[...otherCodes].join(",")}`);
+  if (otherCodes.size) console.log(`対象外の SHICODE（範囲の端にかかった周辺市町村。集計しない）: ${[...otherCodes].sort().join(",")}`);
   if (sums.size === 0) {
-    console.error("福岡市の区の SHICODE を持つメッシュがありませんでした。SHICODE の形式を確認してください。");
+    console.error("対象市区町村の SHICODE を持つメッシュがありませんでした。SHICODE の形式を確認してください。");
     return;
+  }
+  const missing = AREAS.filter((a) => !sums.has(a.code));
+  if (missing.length) {
+    console.warn(`⚠️ メッシュが 1 つも無かった市区町村: ${missing.map((a) => `${a.name}(${a.code})`).join(",")} — FUKUOKA_BBOX が足りない可能性`);
   }
   const now = new Date().toISOString();
   const stmts: string[] = [];
-  for (const [ward, byYear] of sums) {
+  for (const [code, byYear] of sums) {
     for (const [year, value] of byYear) {
       stmts.push(
-        `INSERT OR REPLACE INTO area_stats (area_level, area_code, indicator, period, value, unit, source, updated_at) VALUES ('ward', ${sqlLit(ward)}, 'future_pop', ${sqlLit(year)}, ${Math.round(value)}, '人', 'reinfolib:XKT013', ${sqlLit(now)})`,
+        `INSERT OR REPLACE INTO area_stats (area_level, area_code, indicator, period, value, unit, source, updated_at) VALUES ('municipality', ${sqlLit(code)}, 'future_pop', ${sqlLit(year)}, ${Math.round(value)}, '人', 'reinfolib:XKT013', ${sqlLit(now)})`,
       );
     }
-    console.log(`${WARD_NAME[ward]}: ${[...byYear.entries()].map(([y, v]) => `${y}=${Math.round(v)}`).join(" ")}`);
+    console.log(`${AREA_NAME[code]}: ${[...byYear.entries()].map(([y, v]) => `${y}=${Math.round(v)}`).join(" ")}`);
   }
   executeSql(stmts, "future-pop");
 }
