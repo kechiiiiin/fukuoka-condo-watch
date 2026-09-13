@@ -1,0 +1,35 @@
+[
+  {
+    "indicator": "vacant_rental_rate",
+    "label": "賃貸用空き家率（賃貸用の空き家 ÷ 住宅総数 × 100）",
+    "period": "2023",
+    "unit": "%",
+    "transform": "ratio",
+    "numerator": { "statsDataId": "0004021631", "params": {} },
+    "denominator": { "statsDataId": "", "params": {} },
+    "verified": false,
+    "note": "0004021631（令和5年住調 空き家の種類別空き家数）は表の存在のみ確認。区（40131〜）を含むか・「賃貸用の空き家」の cat コード・住宅総数の表は `npm run estat -- meta 0004021631` 等で確かめて埋める"
+  },
+  {
+    "indicator": "single_household_rate",
+    "label": "単独世帯の割合（単独世帯 ÷ 一般世帯 × 100）",
+    "period": "2020",
+    "unit": "%",
+    "transform": "ratio",
+    "numerator": { "statsDataId": "", "params": {} },
+    "denominator": { "statsDataId": "", "params": {} },
+    "verified": false,
+    "note": "令和2年国勢調査の世帯の家族類型の表。`npm run estat -- search 国勢調査 世帯の家族類型 --statsCode 00200521` で区（21大都市の区）を含む表を探す"
+  },
+  {
+    "indicator": "pop_change_2015_2020",
+    "label": "人口増減率（2020 ÷ 2015 − 1）",
+    "period": "2020",
+    "unit": "%",
+    "transform": "change",
+    "numerator": { "statsDataId": "", "params": {} },
+    "denominator": { "statsDataId": "", "params": {} },
+    "verified": false,
+    "note": "国勢調査 人口等基本集計の区別総人口（2020 と 2015）。同じ表に両年があれば cdTime で分ける"
+  }
+]

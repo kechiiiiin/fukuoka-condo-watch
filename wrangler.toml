@@ -1,0 +1,26 @@
+name = "fukuoka-condo-watch"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# 公開ダッシュボード（データは国交省の公開情報のみ。個人情報は載せない）
+workers_dev = true
+
+[observability]
+enabled = true
+
+# 毎日 06:00〜07:55 JST（= 21:00〜22:55 UTC）に 5 分おき起動する。
+# 1 回あたりの API 呼び出しは 3 件に刻み（無料プランの CPU 10ms 上限対策）、
+# 「JST の今日まだ取れていない (区, 四半期)」だけを順に取る。取り切った後の起動は即終了。
+# 何度走っても結果は同じ（冪等）。数年分の初回投入は Worker ではなく scripts/backfill.ts で行う。
+[triggers]
+crons = ["*/5 21-22 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fukuoka-condo-watch"
+database_id = "b4a51475-2441-43d5-9b3c-5b4fc40c4e9b"
+migrations_dir = "migrations"
+
+# 秘密は `wrangler secret put` で登録する（リポジトリには書かない）:
+#   REINFOLIB_API_KEY … 不動産情報ライブラリ API キー（未設定でも動く。画面に「APIキー未設定」）
+# e-Stat のアプリケーション ID は Worker には渡さない（scripts/estat.ts がローカルで使う。.dev.vars に置く）。

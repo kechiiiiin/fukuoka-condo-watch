@@ -1,0 +1,4 @@
+# cp .dev.vars.example .dev.vars （.dev.vars は .gitignore 済み）
+# wrangler dev と scripts/*.ts の両方がここを読む。空のままでも起動する（画面に「APIキー未設定」）。
+REINFOLIB_API_KEY=
+ESTAT_APP_ID=
