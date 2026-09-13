@@ -62,8 +62,8 @@ export interface PagedListingSource extends ListingSource {
   targets(): CrawlTarget[];
   pageUrl(target: CrawlTarget, page: number): string;
   parsePage(html: string, target: CrawlTarget): ParsedListPage;
-  /** 止まるべき応答なら種別（"http_429" 等）、問題なければ null */
-  detectBlock(status: number, html: string): string | null;
+  /** 止まるべき応答なら種別（"http_429" 等）、問題なければ null。3xx は redirect（要求 URL と Location）で判定 */
+  detectBlock(status: number, html: string, redirect?: { url: string; location: string | null }): string | null;
 }
 
 /** 「その日の全件」型の許諾済み情報源。現在は空（SUUMO はページ型なので listing-crawl.ts 側） */

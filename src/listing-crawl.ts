@@ -7,7 +7,9 @@
 //   - cron `*/20 16-17 * * *`（01:00〜02:40 JST・6 起動）で分割。1 起動は 10 分で自主的に切り上げ（15 分上限まで 5 分の余裕）。
 //     1 起動 ≒ 80 ページなので 3 起動で終わり、残り 3 起動は失敗時の再開の余裕。取り切った後の起動は数クエリで終わる
 //   - 進み具合は D1（listing_crawl_cursor）に 1 ページごとに保存 → どこで落ちても次の起動が続きから
-//   - D1 は 1 起動あたり 1,000 クエリ（Paid）。1 ページ ≒ 7 クエリ × 上限 100 ページ + 20 ≒ 720 に収める
+//   - D1 は 1 起動あたり 1,000 クエリ（Paid。batch 内の各文も 1 クエリ）。1 ページ ≒ 7〜8 クエリ
+//     （カーソル取得 1・取得前の記録 2・既存価格 1・反映 3〜4。止まった／失敗したページは 3〜4）
+//     × 上限 100 ページ + 起動前後 ≒ 20 → 最大 ≒ 820 に収める
 //   - 403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い → その日は打ち切り、72 時間クールダウンして記録
 //   - 「掲載終了」は全市区町村を取り切った回（complete）でだけ付ける。途中で止まった回・件数が合わない回では付けない
 //
@@ -19,6 +21,7 @@
 import type { Env } from "./env";
 import { jstToday } from "./ingest";
 import type { CrawlTarget, PagedListingSource, ParsedListPage } from "./listing";
+import { SUUMO_SOURCE_ID } from "./suumo";
 import { SuumoSource } from "./suumo-source";
 
 /** wrangler.toml の crons と一致させること（scheduled のディスパッチに使う） */
@@ -107,10 +110,32 @@ const defaultDeps: CrawlDeps = {
 };
 
 export interface CrawlSummary {
-  status: "disabled" | "cooldown" | "locked" | "running" | "complete" | "incomplete" | "blocked";
+  status: "disabled" | "cooldown" | "locked" | "running" | "complete" | "incomplete" | "blocked" | "error";
   runId?: string;
   pages: number;
   detail?: string;
+}
+
+/**
+ * cron が実際に起動したことを残す（/api/listings/status の lastCronRun）。scheduled の振り分けは
+ * controller.cron と LISTINGS_CRON の文字列一致なので、ずれて一度も起動していないことに気づけるようにする。
+ * on のときだけ呼ぶ（off なら D1 に触らない）。記録の失敗はクロール結果に影響させない。
+ */
+export async function recordCronInvocation(env: Env, cron: string, startedAt: string, r: CrawlSummary): Promise<void> {
+  try {
+    await event(
+      env.DB,
+      SUUMO_SOURCE_ID,
+      r.runId ?? null,
+      "cron",
+      null,
+      null,
+      JSON.stringify({ cron, startedAt, status: r.status, pages: r.pages, detail: r.detail }),
+      new Date().toISOString(),
+    ).run();
+  } catch (e) {
+    console.error("cron 起動の記録に失敗", e);
+  }
 }
 
 interface CursorRow {
@@ -215,6 +240,7 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
 
       let status: number;
       let html: string;
+      let location: string | null;
       try {
         const res = await deps.fetch(url, {
           headers: { "user-agent": source.userAgent, accept: "text/html", "accept-language": "ja" },
@@ -222,13 +248,15 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
           signal: AbortSignal.timeout(CRAWL.fetchTimeoutMs),
         });
         status = res.status;
+        location = res.headers.get("location");
         html = await res.text();
       } catch (e) {
         await cursorError(db, runId, source.id, cur, url, `fetch 失敗: ${String(e)}`, iso());
         continue;
       }
 
-      const block = source.detectBlock(status, html);
+      // 3xx で別ホスト・ボット確認らしき先へ飛ばされたら 403/429 と同じく止まる（取り直さない）
+      const block = source.detectBlock(status, html, { url, location });
       if (block) {
         const until = iso(deps.now() + CRAWL.cooldownHours * 3600_000);
         await db.batch([
@@ -241,7 +269,7 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
                  note = COALESCE(note || ' / ', '') || ? WHERE run_id = ?`,
             )
             .bind(iso(), iso(), `${block} で停止（${until} までクールダウン）`, runId),
-          event(db, source.id, runId, "blocked", status, url, `${block}; cooldown_until=${until}; body_head=${html.slice(0, 200)}`, iso()),
+          event(db, source.id, runId, "blocked", status, url, `${block}; cooldown_until=${until}${location ? `; location=${location.slice(0, 300)}` : ""}; body_head=${html.slice(0, 200)}`, iso()),
         ]);
         console.warn(`掲載クロール停止: ${block} ${status} ${url}`);
         return { status: "blocked", runId, pages, detail: block };
@@ -518,8 +546,8 @@ async function finalizeRun(
 }
 
 export async function buildListingStatus(env: Env) {
-  const source = "suumo:ms-chuko";
-  const [state, runs, cursors, events] = await Promise.all([
+  const source = SUUMO_SOURCE_ID;
+  const [state, runs, cursors, events, lastCron] = await Promise.all([
     env.DB.prepare("SELECT last_fetch_at, cooldown_until, last_block_kind, last_block_at FROM listing_crawl_state WHERE source = ?")
       .bind(source)
       .first(),
@@ -537,13 +565,30 @@ export async function buildListingStatus(env: Env) {
     )
       .bind(source)
       .all(),
-    env.DB.prepare("SELECT at, kind, http_status, url, detail FROM listing_crawl_events WHERE source = ? ORDER BY id DESC LIMIT 20")
+    env.DB.prepare(
+      "SELECT at, kind, http_status, url, detail FROM listing_crawl_events WHERE source = ? AND kind <> 'cron' ORDER BY id DESC LIMIT 20",
+    )
       .bind(source)
       .all(),
+    env.DB.prepare("SELECT at, run_id, detail FROM listing_crawl_events WHERE source = ? AND kind = 'cron' ORDER BY id DESC LIMIT 1")
+      .bind(source)
+      .first<{ at: string; run_id: string | null; detail: string | null }>(),
   ]);
+  let lastCronRun: Record<string, unknown> | null = null;
+  if (lastCron) {
+    let detail: unknown = lastCron.detail;
+    try {
+      detail = JSON.parse(lastCron.detail ?? "null");
+    } catch {
+      /* 文字列のまま */
+    }
+    lastCronRun = { at: lastCron.at, runId: lastCron.run_id, result: detail };
+  }
   return {
     enabled: listingsEnabled(env),
     cron: LISTINGS_CRON,
+    /** cron が実際に起動した最後の記録（on のときだけ残る）。null なら on にしてから一度も起動していない */
+    lastCronRun,
     settings: { intervalMs: crawlSettings(env).intervalMs, fakeOrigin: localOrigin(env) },
     state,
     runs: runs.results,

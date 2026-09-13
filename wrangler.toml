@@ -7,14 +7,19 @@ compatibility_date = "2026-09-01"
 #    Worker 側の JWT 検証（src/access.ts）が fail-closed で止める。Access が前に立つのは下のカスタムドメイン側。
 workers_dev = true
 
-# /listings を Cloudflare Access で守るためのカスタムドメイン（有効化のときにコメントを外す。README「掲載情報（SUUMO）」）
-# ホスト名は仮。決めたら scripts/access-app.ts に渡す ACCESS_HOSTNAME と揃える。
-# [[routes]]
-# pattern = "condo.kechiiiiin.com"
-# custom_domain = true
+# /listings を Cloudflare Access で守るためのカスタムドメイン（README「掲載情報（SUUMO）」）。
+# scripts/access-app.ts に渡す ACCESS_HOSTNAME と揃えること。2026-09-14 に有効化。
+[[routes]]
+pattern = "condo.kechiiiiin.com"
+custom_domain = true
 
 [observability]
 enabled = true
+
+# Workers Paid 前提（掲載クロールで HTML を解析するため）。Free プランでは cpu_ms を指定するとデプロイが失敗する。
+# 30 秒 = Paid の既定上限（1 時間未満間隔の Cron と同じ）。
+[limits]
+cpu_ms = 30000
 
 # cron は 2 系統（src/index.ts が controller.cron で振り分ける）:
 #

@@ -95,8 +95,8 @@ export class SuumoSource implements PagedListingSource {
     };
   }
 
-  detectBlock(status: number, html: string): string | null {
-    return detectBlock(status, html);
+  detectBlock(status: number, html: string, redirect?: { url: string; location: string | null }): string | null {
+    return detectBlock(status, html, redirect);
   }
 
   /**

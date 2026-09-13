@@ -2,7 +2,7 @@ import { requireAccess } from "./access";
 import { renderDashboard } from "./dashboard";
 import type { Env } from "./env";
 import { runDailyIngest } from "./ingest";
-import { buildListingStatus, LISTINGS_CRON, listingsEnabled, runListingCrawl } from "./listing-crawl";
+import { buildListingStatus, LISTINGS_CRON, listingsEnabled, recordCronInvocation, runListingCrawl } from "./listing-crawl";
 import { buildListingMetrics } from "./listing-metrics";
 import { renderListingsDashboard } from "./listings-dashboard";
 import { buildMetrics, buildStatus, parseFilters } from "./metrics";
@@ -68,7 +68,19 @@ export default {
     if (controller.cron === LISTINGS_CRON) {
       // off のときは D1 にも触らず終わる
       if (!listingsEnabled(env)) return;
-      ctx.waitUntil(runListingCrawl(env).then((r) => console.log(JSON.stringify({ listingCrawlResult: r }))));
+      const startedAt = new Date().toISOString();
+      ctx.waitUntil(
+        runListingCrawl(env).then(
+          (r) => {
+            console.log(JSON.stringify({ listingCrawlResult: r }));
+            return recordCronInvocation(env, controller.cron, startedAt, r);
+          },
+          (e) => {
+            console.error("掲載クロールが例外で終了", e);
+            return recordCronInvocation(env, controller.cron, startedAt, { status: "error", pages: 0, detail: String(e) });
+          },
+        ),
+      );
       return;
     }
     ctx.waitUntil(runDailyIngest(env));

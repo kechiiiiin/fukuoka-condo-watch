@@ -244,18 +244,60 @@ function hasListStructure(html: string): boolean {
   return html.includes('id="js-bukkenList"') || /pagination_set-hit/.test(html) || ZERO_HITS.test(html);
 }
 
-export type BlockKind = "http_403" | "http_429" | "http_503" | "captcha" | "unexpected_structure";
+export type BlockKind =
+  | "http_403"
+  | "http_429"
+  | "http_503"
+  | "captcha"
+  | "unexpected_structure"
+  | "redirect_offsite"
+  | "redirect_challenge";
+
+/** リダイレクト先（パス＋クエリ）がボット確認・拒否ページらしいか */
+const CHALLENGE_PATH_RE =
+  /captcha|challenge|robot|bot[-_]?check|verif|block|denied|forbidden|restrict|cdn-cgi|perimeterx|distil|incapsula|sorry|abuse|security/i;
+
+/**
+ * 3xx（fetch の redirect: "manual"）を止まるべき応答とみなすか。
+ * - Location が別ホスト（www 付きなども別扱い）・壊れている → redirect_offsite
+ * - 同じホストでも、パスがボット確認っぽい／検索結果（/ms/chuko/）の外 → redirect_challenge
+ * - 同じホストの /ms/chuko/ 内（最終ページを超えたときの戻し等）→ null（呼び出し側の通常処理）
+ * - Location が無い → null（判断できないのでページの失敗として数える）
+ * 2026-09-14 のレビュー指摘: 3xx を止めないと、ボット確認へ飛ばされ始めたときに 1 ページ目を
+ * 市区町村ごとに 3 回ずつ取り直してしまう（最大 ≒ 69 リクエスト/日）。
+ */
+export function detectRedirectBlock(requestUrl: string, location: string | null): BlockKind | null {
+  if (!location) return null;
+  let from: URL;
+  let to: URL;
+  try {
+    from = new URL(requestUrl);
+    to = new URL(location, requestUrl);
+  } catch {
+    return "redirect_offsite";
+  }
+  if (to.host !== from.host) return "redirect_offsite";
+  if (CHALLENGE_PATH_RE.test(to.pathname + to.search)) return "redirect_challenge";
+  if (!to.pathname.startsWith("/ms/chuko/")) return "redirect_challenge";
+  return null;
+}
 
 /**
  * 「礼儀正しく止まる」べき応答か。止まったら当日のクロールを打ち切り、クールダウンに入る（listing-crawl.ts）。
  * - 403 / 429 / 503 はそのまま
+ * - 3xx は redirect（要求 URL と Location）を渡すと detectRedirectBlock で判定
  * - 200 でも captcha・アクセス制限の文言があれば captcha
  * - 200 で一覧の構造（件数表示・js-bukkenList）が無ければ unexpected_structure（構造変更の疑い。取り続けない）
  */
-export function detectBlock(status: number, html: string): BlockKind | null {
+export function detectBlock(
+  status: number,
+  html: string,
+  redirect?: { url: string; location: string | null },
+): BlockKind | null {
   if (status === 403) return "http_403";
   if (status === 429) return "http_429";
   if (status === 503) return "http_503";
+  if (status >= 300 && status < 400) return redirect ? detectRedirectBlock(redirect.url, redirect.location) : null;
   if (status !== 200) return null;
   if (/captcha|recaptcha|hcaptcha|cf-challenge|challenge-platform|アクセスが集中|不正なアクセス|アクセスを制限/i.test(html)) {
     // 通常ページにも "recaptcha" の文字列が紛れる可能性があるので、一覧の構造が無いときだけ captcha とみなす

@@ -81,6 +81,26 @@ test("架空ページ: 件数・ページャ・0 件・止まるべき応答", (
   assert.equal(detectBlock(200, "<html>maintenance</html>"), "unexpected_structure");
 });
 
+test("3xx: 別ホスト・ボット確認らしき先へのリダイレクトは止まる", () => {
+  const url = suumoSearchUrl("kasuga", 1);
+  const r = (location: string | null, status = 302) => detectBlock(status, "", { url, location });
+  // 別ホスト
+  assert.equal(r("https://captcha.example.com/?from=suumo"), "redirect_offsite");
+  assert.equal(r("https://www.suumo.jp/ms/chuko/fukuoka/sc_kasuga/"), "redirect_offsite");
+  assert.equal(r("http://[::1"), "redirect_offsite");
+  // 同じホストのボット確認・拒否ページ
+  assert.equal(r("/captcha?return=/ms/chuko/"), "redirect_challenge");
+  assert.equal(r("https://suumo.jp/cdn-cgi/challenge-platform/h/b"), "redirect_challenge", "Cloudflare のチャレンジ");
+  assert.equal(r("/error/access_denied.html", 301), "redirect_challenge");
+  assert.equal(r("/"), "redirect_challenge", "検索結果の外（トップ）へ戻された");
+  // 検索結果内の普通のリダイレクト（最終ページ超え等）は止めない
+  assert.equal(r("/ms/chuko/fukuoka/sc_kasuga/"), null);
+  assert.equal(r("https://suumo.jp/ms/chuko/fukuoka/sc_kasuga/?page=2", 301), null);
+  // Location が無い・redirect 情報なしは従来どおり null（ページの失敗として数える）
+  assert.equal(r(null), null);
+  assert.equal(detectBlock(302, ""), null);
+});
+
 test("実データ: listing-probe の suumo_sample.json（福岡市中央区 20 件）の表記を正規化できる", { skip: !existsSync(join(PROBE, "suumo_sample.json")) }, () => {
   type Sample = { id: string; price: string; addr: string; built: string; area: string; station: string };
   const sample = JSON.parse(readFileSync(join(PROBE, "suumo_sample.json"), "utf8")) as Sample[];

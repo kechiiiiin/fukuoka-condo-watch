@@ -115,7 +115,8 @@ GitHub Actions のシークレット: `CLOUDFLARE_API_TOKEN`（Workers Scripts:E
 - 1 ページごとに **6 秒以上**（本番は 5 秒未満にできない）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
 - cron `*/20 16-17 * * *`（01:00〜02:40 JST・6 起動）。1 起動 10 分で切り上げ（≒ 80 ページ）→ 3 起動で終わり、残り 3 起動は再開の余裕
 - 進み具合は D1 `listing_crawl_cursor` に 1 ページごとに保存（ページの反映とカーソル前進は同じトランザクション）。落ちても次の起動が続きから
-- **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
+- **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い / 別ホストやボット確認らしき先への 3xx** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
+- cron が実際に起動した最後の時刻と結果は `/api/listings/status` の `lastCronRun`（`listing_crawl_events` の kind=`cron`。on のときだけ記録）
 - 掲載終了は**全市区町村を取り切った回（complete）でだけ**付ける。取れなかった市区町村がある回・見えた件数がヒット件数合計の 85% 未満の回は付けない
 
 ### Workers Paid が前提（Free で何が壊れるか）
@@ -125,7 +126,7 @@ GitHub Actions のシークレット: `CLOUDFLARE_API_TOKEN`（Workers Scripts:E
 | Free の上限 | 何が起きるか |
 |---|---|
 | CPU 10ms/起動 | 230KB の HTML を 1〜数ページ解析した時点で超え、起動ごと落ちる（進まない） |
-| サブリクエスト 50/起動・D1 クエリ 50/起動 | 1 ページ ≒ 7 クエリなので 1 起動 7 ページ前後で上限 |
+| サブリクエスト 50/起動・D1 クエリ 50/起動 | 1 ページ ≒ 7〜8 クエリなので 1 起動 6 ページ前後で上限 |
 | Cron Trigger 数（アカウント合計 5） | この Worker で 2 本使う。他の Worker の cron と合わせて超えるとデプロイが失敗する |
 
 `LISTINGS_ENABLED=off` の間は cron が即 return するので、Free のままマージ・デプロイしても壊れない（ただし cron の本数は数に入る）。
