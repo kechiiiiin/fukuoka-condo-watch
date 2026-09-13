@@ -35,7 +35,7 @@ cpu_ms = 30000
 #    （off なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 80 ページ・6 秒間隔）。
 #    1 日 ≒ 231 ページ → 3 起動で終わり、残りは再開の余裕。src/listing-crawl.ts の LISTINGS_CRON と一致させること。
 [triggers]
-crons = ["*/5 19-23 * * *", "*/20 16-17 * * *"]
+crons = ["*/5 19-23 * * *", "*/20 0-1 * * *"]
 
 [vars]
 # 掲載クロールのフラグ。有効化は Workers Paid・Access の準備が済んでから "on" にして push（README）
