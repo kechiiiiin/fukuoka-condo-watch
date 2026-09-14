@@ -31,11 +31,11 @@ cpu_ms = 30000
 #      バッチを増やすと 1 起動の CPU が 10ms を超えうるので、起動回数の方を増やした。詳細は src/ingest.ts。
 #    何度走っても結果は同じ（冪等）。数年分の初回投入は Worker ではなく scripts/backfill.ts で行う。
 #
-# 2) "*/20 16-17 * * *" … 掲載情報（SUUMO）。01:00〜02:40 JST に 20 分おき 6 起動。**LISTINGS_ENABLED が on のときだけ動く**
-#    （off なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 80 ページ・6 秒間隔）。
-#    1 日 ≒ 231 ページ → 3 起動で終わり、残りは再開の余裕。src/listing-crawl.ts の LISTINGS_CRON と一致させること。
+# 2) "*/15 16-20 * * *" … 掲載情報（SUUMO）。01:00〜05:45 JST に 15 分おき 20 起動。**LISTINGS_ENABLED が on のときだけ動く**
+#    （off なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 19 ページ・30 秒間隔）。
+#    1 日 ≒ 231 ページ → 13 起動ほどで終わり、残りは再開の余裕。src/listing-crawl.ts の LISTINGS_CRON と一致させること。
 [triggers]
-crons = ["*/5 19-23 * * *", "*/20 16-17 * * *"]
+crons = ["*/5 19-23 * * *", "*/15 16-20 * * *"]
 
 [vars]
 # 掲載クロールのフラグ。有効化は Workers Paid・Access の準備が済んでから "on" にして push（README）

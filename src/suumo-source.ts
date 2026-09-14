@@ -68,7 +68,7 @@ export class SuumoSource implements PagedListingSource {
   constructor(opts: SuumoSourceOptions = {}) {
     this.origin = opts.origin ?? SUUMO_ORIGIN;
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
-    this.minIntervalMs = opts.minIntervalMs ?? 6000;
+    this.minIntervalMs = opts.minIntervalMs ?? 30_000;
   }
 
   targets(): CrawlTarget[] {

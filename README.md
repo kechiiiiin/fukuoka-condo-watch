@@ -70,7 +70,7 @@ npm test                                # パーサ・JWT 検証（実ページ�
 npm run fake-suumo                                    # 偽サーバ http://127.0.0.1:8790
 npx wrangler dev --test-scheduled --var LISTINGS_ENABLED:on --var SUUMO_ORIGIN:http://127.0.0.1:8790 \
   --var LISTINGS_MIN_INTERVAL_MS:0 --var LISTINGS_MAX_PAGES_PER_INVOCATION:10 --var DEV_BYPASS_ACCESS:1
-curl "http://localhost:8787/__scheduled?cron=*/20+16-17+*+*+*"   # 1 起動ぶん（取り切るまで繰り返す）
+curl "http://localhost:8787/__scheduled?cron=*/15+16-20+*+*+*"   # 1 起動ぶん（取り切るまで繰り返す）
 curl -X POST http://127.0.0.1:8790/__day/2                       # 翌日: 消える・値下げ・新着（LISTINGS_TODAY_OVERRIDE も翌日に）
 curl -X POST http://127.0.0.1:8790/__mode/429                    # 止まる動作の確認
 open http://localhost:8787/listings
@@ -113,8 +113,9 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
   - 近郊: `chikushino` `kasuga` `onojo` `dazaifu` `nakagawa` `itoshima` `munakata` `koga` `fukutsu` / 粕屋郡は `kasuyagun` + `umi` `sasaguri` `shime` `sue` `shingu` `hisayama` `kasuya`
   - 久山町は掲載 0 件のため一覧のリンクに出ないが、URL は有効（「条件にあう物件がありません」）
 - 件数（2026-09-14）: 福岡市 3,583 件 ≒ 180 ページ + 近郊 851 件 ≒ 51 ページ = **1 日 ≒ 231 ページ**
-- 1 ページごとに **6 秒以上**（本番は 5 秒未満にできない）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
-- cron `*/20 16-17 * * *`（01:00〜02:40 JST・6 起動）。1 起動 10 分で切り上げ（≒ 80 ページ）→ 3 起動で終わり、残り 3 起動は再開の余裕
+- 1 ページごとに **30 秒**（本番は 20 秒未満にできない）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
+  - 2026-09-14 の初回は 6 秒間隔で 43 ページ目に Cloudflare から 503 を返されたため、時間をかけてでも間隔を広げた（231 ページ ≒ 2 時間）
+- cron `*/15 16-20 * * *`（01:00〜05:45 JST・20 起動）。1 起動 10 分で切り上げ（≒ 19 ページ）→ 13 起動ほどで終わり、残りは再開の余裕
 - 進み具合は D1 `listing_crawl_cursor` に 1 ページごとに保存（ページの反映とカーソル前進は同じトランザクション）。落ちても次の起動が続きから
 - **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い / 別ホストやボット確認らしき先への 3xx** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
 - cron が実際に起動した最後の時刻と結果は `/api/listings/status` の `lastCronRun`（`listing_crawl_events` の kind=`cron`。on のときだけ記録）
