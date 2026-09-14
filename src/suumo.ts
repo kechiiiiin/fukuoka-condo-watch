@@ -110,11 +110,13 @@ export function parseBuilt(raw: string): { year: number | null; month: number | 
 /**
  * "ＪＲ鹿児島本線「二日市」徒歩7分" → {line:"JR鹿児島本線", station:"二日市", walk:7, bus:false}
  * "西鉄バス「xx」バス10分停歩3分" のようなバス便は walk=null・bus=true（徒歩分を駅距離と取り違えない）。
+ * "420:雑餉隈-板付「西月隈三丁目」徒歩4分" のように路線名が「系統番号:区間」のものもバス停なので bus=true。
  */
 export function parseStation(raw: string): { line: string | null; station: string | null; walk: number | null; bus: boolean } {
   const s = toHalfWidth(raw).trim();
   const m = /^(.*?)「([^」]+)」/.exec(s);
-  const bus = /バス|停歩/.test(s);
+  const busRoute = !!m && /^\s*\d+\s*[:：]/.test(m[1] ?? "");
+  const bus = busRoute || /バス|停歩/.test(s);
   const w = /徒歩\s*(\d+)\s*分/.exec(s);
   return {
     line: m && m[1] ? m[1].trim() || null : null,

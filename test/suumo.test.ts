@@ -44,6 +44,11 @@ test("面積・築年月・駅", () => {
   assert.equal(bus.walk, null);
   assert.equal(bus.bus, true);
   assert.equal(bus.station, "春日原");
+  // 路線名が「系統番号:区間」はバス停（駅と取り違えない）
+  const route = parseStation("420:雑餉隈-板付「西月隈三丁目」徒歩4分");
+  assert.equal(route.bus, true);
+  assert.equal(route.walk, null);
+  assert.equal(route.station, "西月隈三丁目");
 });
 
 test("住所 → 市区町村コード（旧字・糟屋郡を含む）", () => {
