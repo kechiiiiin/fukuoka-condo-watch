@@ -44,17 +44,30 @@ export interface Windowed {
  * - ok: 順位を付けた
  * - no_data: 選んだ価格の種類でこの市区町村のデータが直近 16 四半期に 1 件も無い（例: 取引価格の近郊・どの種類でも久山町）
  * - insufficient: データはあるが直近か前期のどちらかが空で、価格維持が計算できない
+ * - few_sales: 直近・前期のどちらかの件数が MIN_RECENT_SALES / MIN_PRIOR_SALES 未満（宇美町・須恵町のように年 2 件程度で
+ *   1 件の値動きがそのままスコアを振り回す）。medRecent/medPrior は計算できるが件数が薄すぎるので順位に入れない
  * - few_candidates: 順位を付けられる市区町村が表示範囲に MIN_CANDIDATES 未満（1 つだけなら常に 50 点になり意味がない）
  */
-export type SellStatus = "ok" | "no_data" | "insufficient" | "few_candidates";
+export type SellStatus = "ok" | "no_data" | "insufficient" | "few_sales" | "few_candidates";
 
 export const SELL_STATUS_LABEL: Record<Exclude<SellStatus, "ok">, string> = {
   no_data: "データなし",
   insufficient: "件数不足",
+  few_sales: "件数不足",
   few_candidates: "比較対象不足",
 };
 
 export const MIN_CANDIDATES = 3;
+
+/**
+ * 市区町村の売りやすさに乗せる最低件数（直近8四半期・前8四半期）。
+ * 本番 D1（2026-09-14・成約価格）の分布は、宇美町 4 件/須恵町 5 件（＝年 2〜2.5 件）から
+ * 古賀市 30 件（＝年 15 件）へ一気に飛ぶ（30 市区町村中の外れ値は 2 つだけ）。
+ * その谷間を跨ぐよう、直近 20 件（年 10 件）・前期 10 件（年 5 件）を境目にした。
+ * 地区の 8 件/5 件より緩いのは意図的（市区町村は母数が大きいぶん、1 件の値動きの影響は小さくて済むため）。
+ */
+export const MIN_RECENT_SALES = 20;
+export const MIN_PRIOR_SALES = 10;
 
 export function sellScores(cands: { key: string; liquidity: number; retention: number }[]): Map<string, number> {
   const liq = cands.map((c) => c.liquidity);
@@ -64,7 +77,7 @@ export function sellScores(cands: { key: string; liquidity: number; retention: n
   );
 }
 
-/** 表示範囲の市区町村ごとに売りやすさを付ける。データの無い市区町村は順位の母数に入れず、状態で理由を返す */
+/** 表示範囲の市区町村ごとに売りやすさを付ける。データの無い・薄い市区町村は順位の母数に入れず、状態で理由を返す */
 export function wardSellResults(
   codes: string[],
   windows: Map<string, Windowed>,
@@ -77,6 +90,8 @@ export function wardSellResults(
       out.set(code, { score: null, status: "no_data" });
     } else if (!w.medRecent || !w.medPrior) {
       out.set(code, { score: null, status: "insufficient" });
+    } else if (w.nRecent < MIN_RECENT_SALES || w.nPrior < MIN_PRIOR_SALES) {
+      out.set(code, { score: null, status: "few_sales" });
     } else {
       cands.push({ key: code, liquidity: w.nRecent / 2, retention: w.medRecent / w.medPrior });
     }
@@ -153,14 +168,27 @@ export interface RentComponentDef {
 }
 
 /**
+ * 貸しやすさの市区町村側の状態。
+ * - ok: 2 指標以上・使えた指標の重みが有効指標の合計重みの MIN_RENT_WEIGHT_SHARE 以上あり、スコアを付けた
+ * - insufficient: 材料が薄すぎる（久山町が将来人口 1 本＝重み 20/100 だけで 80 点になるような偏りを避ける）
+ */
+export type RentStatus = "ok" | "insufficient";
+
+/** 貸しやすさに乗せる最低材料。1 指標だけの偏ったスコアを避けるため、指標数と重みシェアの両方を要求する */
+export const MIN_RENT_COMPONENTS = 2;
+export const MIN_RENT_WEIGHT_SHARE = 0.5;
+
+/**
  * 貸しやすさ = 100 × Σ(重み × 順位) ÷ Σ(使えた指標の重み)。
- * 指標ごとに、表示範囲で値のある市区町村が 2 つ以上あるときだけ使う（1 つだけでは順位にならない）。
+ * 指標ごとに、表示範囲で値のある市区町村が 2 つ以上あるときだけ使う（1 つだけでは順位にならない） = active。
+ * さらに市区町村ごとに、使えた指標が MIN_RENT_COMPONENTS 個以上・かつ有効指標の合計重みの MIN_RENT_WEIGHT_SHARE 以上を
+ * 占めないと材料不足として score を null にする（1 指標だけに支えられた点数を出さないため）。
  */
 export function rentScores(
   codes: string[],
   values: Map<string, Record<string, number | null>>,
   components: readonly RentComponentDef[],
-): { byArea: Map<string, { score: number | null; used: string[] }>; active: Set<string> } {
+): { byArea: Map<string, { score: number | null; used: string[]; status: RentStatus }>; active: Set<string> } {
   const active = new Set<string>();
   const pools = new Map<string, number[]>();
   for (const c of components) {
@@ -168,7 +196,8 @@ export function rentScores(
     pools.set(c.id, all);
     if (all.length >= 2) active.add(c.id);
   }
-  const byArea = new Map<string, { score: number | null; used: string[] }>();
+  const totalActiveWeight = components.filter((c) => active.has(c.id)).reduce((s, c) => s + c.weight, 0);
+  const byArea = new Map<string, { score: number | null; used: string[]; status: RentStatus }>();
   for (const code of codes) {
     let num = 0;
     let den = 0;
@@ -181,7 +210,8 @@ export function rentScores(
       den += c.weight;
       used.push(c.id);
     }
-    byArea.set(code, { score: den > 0 ? Math.round((100 * num) / den) : null, used });
+    const enough = used.length >= MIN_RENT_COMPONENTS && totalActiveWeight > 0 && den >= MIN_RENT_WEIGHT_SHARE * totalActiveWeight;
+    byArea.set(code, { score: enough ? Math.round((100 * num) / den) : null, used, status: enough ? "ok" : "insufficient" });
   }
   return { byArea, active };
 }

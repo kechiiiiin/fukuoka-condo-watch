@@ -236,8 +236,12 @@ const HTML = `<!doctype html>
     document.getElementById("rent-status").textContent =
       "貸しやすさの指標 — 使用中: " + (act.length ? act.join("、") : "なし") + "。取り込み待ち: " + (pend.length ? pend.join("、") : "なし") + "。";
     var cov = d.categoryCoverage;
-    document.getElementById("coverage-note").textContent = cov && cov.noData.length
-      ? "価格の種類「" + cov.label + "」でデータなし: " + cov.noData.join("・") + "（売りやすさは順位に入れていません）"
+    var covParts = [];
+    if (cov && cov.noData.length) covParts.push("価格の種類「" + cov.label + "」でデータなし: " + cov.noData.join("・"));
+    if (cov && cov.fewSales.length) covParts.push("件数不足（直近/前期が薄い）: " + cov.fewSales.join("・"));
+    if (cov && cov.fewRentMaterial.length) covParts.push("貸しやすさが材料不足: " + cov.fewRentMaterial.join("・"));
+    document.getElementById("coverage-note").textContent = covParts.length
+      ? covParts.join("／") + "（いずれも順位には入れていません）"
       : "";
 
     var many = d.wards.length > 7;
@@ -250,7 +254,7 @@ const HTML = `<!doctype html>
       d.wardScores.slice().sort(function (a, b) { return (b.sellScore == null ? -1 : b.sellScore) - (a.sellScore == null ? -1 : a.sellScore); })
         .map(function (w) {
           return [w.name, w.sellScore == null ? (w.sellStatusLabel || "データなし") : w.sellScore,
-            w.rentScore == null ? "データなし" : w.rentScore, num(w.liquidity), ratio(w.retention), man(w.medRecent), ratio(w.age20to30VsNew),
+            w.rentScore == null ? (w.rentStatusLabel || "データなし") : w.rentScore, num(w.liquidity), ratio(w.retention), man(w.medRecent), ratio(w.age20to30VsNew),
             w.rentUsed.length + "/" + d.rentComponentDefs.length];
         }));
 

@@ -80,13 +80,16 @@ export const FORMULAS = {
     "直近 = 選んだ価格の種類でデータが揃っている最新の四半期まで（一部の市区町村にしか入っていない四半期は待つ）。" +
     "価格の種類の既定は成約価格（2021Q1〜・データのある 22 市区町村すべてにある）。取引価格は福岡市の区と春日市にしか無いので、福岡市の長期推移向け。" +
     "順位 = 表示範囲（福岡市のみ／近郊のみ／すべて）の候補の中でのパーセンタイル（0〜1）。" +
-    "選んだ価格の種類でデータが無い市区町村は順位に入れず「データなし」、直近か前期が空なら「件数不足」、候補が3未満なら「比較対象不足」と表示する。" +
-    "地区は直近8件以上・前期5件以上のみ。" +
+    "選んだ価格の種類でデータが無い市区町村は順位に入れず「データなし」、直近か前期が空なら「件数不足」、" +
+    "件数はあっても直近20件未満／前期10件未満なら「件数不足（直近◯件）」、候補が3未満なら「比較対象不足」と表示する。" +
+    "地区は直近8件以上・前期5件以上のみ（市区町村より緩いのは意図的。母数が大きく1件の値動きの影響が小さいため）。" +
     "件数は区・市町の人口規模に左右されるので、「すべて」で比べるときは価格維持も併せて見る。築年帯・価格・面積フィルタを掛けると同じ条件の物件どうしで比べられる。",
   rent:
     "貸しやすさ（市区町村単位）= 100 × Σ(重み × 指標の順位) ÷ Σ(使えた指標の重み)。" +
     "重み: 将来人口の増減 20・人口増減(国勢調査) 15・単独世帯の割合 20・賃貸用空き家率 25（低いほど良い）・40㎡以下の取引の割合 20・駅乗降客数の増減 10。" +
-    "順位 = 表示範囲の市区町村の中でのパーセンタイル。値の無い指標（取り込み待ち・駅の無い町など）は除いて重みを割り直す。地区表の貸しやすさは所属する市区町村の値。",
+    "順位 = 表示範囲の市区町村の中でのパーセンタイル。値の無い指標（取り込み待ち・駅の無い町など）は除いて重みを割り直す。" +
+    "使えた指標が2つ未満、または重みシェアが有効指標の合計の50%未満（例: 将来人口1本＝重み20だけで採点）の市区町村は「材料不足（◯指標）」とし、順位に入れない。" +
+    "地区表の貸しやすさは所属する市区町村の値。",
 };
 
 type Cat = "transaction" | "contract" | "all";
@@ -465,6 +468,8 @@ export async function buildMetrics(env: Env, f: Filters) {
     cat: f.cat,
     label: catLabel,
     noData: scoped.filter((a) => wardSell.get(a.code)?.status === "no_data").map((a) => a.name),
+    fewSales: scoped.filter((a) => wardSell.get(a.code)?.status === "few_sales").map((a) => a.name),
+    fewRentMaterial: scoped.filter((a) => (rentScore.get(a.code)?.status ?? "insufficient") === "insufficient").map((a) => a.name),
   };
 
   const ageMed = (code: string, band: string) => ageBands.find((r) => r.ward_code === code && r.band === band)?.med ?? null;
@@ -478,13 +483,22 @@ export async function buildMetrics(env: Env, f: Filters) {
       group: a.group,
       subgroup: a.subgroup,
       sellScore: wardSell.get(a.code)?.score ?? null,
-      /** ok | no_data（データなし）| insufficient（件数不足）| few_candidates（比較対象不足） */
+      /** ok | no_data（データなし）| insufficient（件数不足・直近/前期が空）| few_sales（件数不足・薄い）| few_candidates（比較対象不足） */
       sellStatus: wardSell.get(a.code)?.status ?? "no_data",
       sellStatusLabel: (() => {
         const s = wardSell.get(a.code)?.status ?? "no_data";
-        return s === "ok" ? null : SELL_STATUS_LABEL[s];
+        if (s === "ok") return null;
+        if (s === "few_sales") return `件数不足（直近${win?.nRecent ?? 0}件）`;
+        return SELL_STATUS_LABEL[s];
       })(),
       rentScore: rentScore.get(a.code)?.score ?? null,
+      /** ok | insufficient（材料不足。used の指標数が MIN_RENT_COMPONENTS 未満、または重みシェアが MIN_RENT_WEIGHT_SHARE 未満） */
+      rentStatus: rentScore.get(a.code)?.status ?? "insufficient",
+      rentStatusLabel: (() => {
+        const r = rentScore.get(a.code);
+        if (!r || r.status === "ok") return null;
+        return `材料不足（${r.used.length}指標）`;
+      })(),
       rentUsed: rentScore.get(a.code)?.used ?? [],
       liquidity: win ? win.nRecent / 2 : null,
       retention: win?.medRecent && win.medPrior ? win.medRecent / win.medPrior : null,

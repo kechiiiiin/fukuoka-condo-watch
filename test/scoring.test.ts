@@ -4,6 +4,10 @@ import { test } from "node:test";
 import {
   futurePopChange,
   MIN_CANDIDATES,
+  MIN_PRIOR_SALES,
+  MIN_RECENT_SALES,
+  MIN_RENT_COMPONENTS,
+  MIN_RENT_WEIGHT_SHARE,
   pickLatestQuarter,
   rentScores,
   stationPassengerChange,
@@ -84,9 +88,9 @@ test("売りやすさ: データの無い市区町村は データなし（順�
 
 test("売りやすさ: 直近か前期が空なら 件数不足", () => {
   const windows = new Map<string, Windowed>([
-    ["a", win(10, 300000, 10, 290000)],
-    ["b", win(12, 310000, 11, 300000)],
-    ["c", win(14, 320000, 12, 300000)],
+    ["a", win(25, 300000, 12, 290000)],
+    ["b", win(28, 310000, 13, 300000)],
+    ["c", win(30, 320000, 14, 300000)],
     ["d", win(3, 250000, 0, null)],
   ]);
   const r = wardSellResults(["a", "b", "c", "d"], windows);
@@ -101,6 +105,25 @@ test("売りやすさ: 候補が 3 未満なら 比較対象不足（取引価�
   const r = wardSellResults(codes, windows);
   assert.deepEqual(r.get("40218"), { score: null, status: "few_candidates" });
   assert.deepEqual(r.get("40217"), { score: null, status: "no_data" });
+});
+
+test("売りやすさ: 件数が薄い市区町村（宇美町・須恵町のように年2〜3件）は 件数不足（直近◯件）・順位の母数に入れない", () => {
+  assert.equal(MIN_RECENT_SALES, 20);
+  assert.equal(MIN_PRIOR_SALES, 10);
+  const windows = new Map<string, Windowed>([
+    ["40131", win(100, 400000, 90, 380000)],
+    ["40132", win(200, 500000, 180, 450000)],
+    ["40133", win(300, 600000, 280, 520000)],
+    ["40341", win(4, 400000, 2, 390000)], // 宇美町: 直近4件・前期2件（どちらも閾値未満）
+    ["40344", win(19, 400000, 10, 390000)], // 須恵町相当: 直近が1件だけ閾値に届かない
+  ]);
+  const codes = ["40131", "40132", "40133", "40341", "40344"];
+  const r = wardSellResults(codes, windows);
+  assert.deepEqual(r.get("40341"), { score: null, status: "few_sales" });
+  assert.deepEqual(r.get("40344"), { score: null, status: "few_sales" });
+  assert.equal(r.get("40131")?.status, "ok");
+  // 件数不足の2町は候補から除かれるので、順位は残り3区だけで付く
+  assert.equal(r.get("40131")?.score, Math.round(100 * (0.5 * (0.5 / 3) + 0.5 * (0.5 / 3))));
 });
 
 test("将来人口の増減: PTN_2020 由来の 2020 を基準に 2040 と比べる", () => {
@@ -141,16 +164,18 @@ test("貸しやすさ: 取れている指標がすべて効き、used に並ぶ"
   const values = new Map<string, Record<string, number | null>>([
     ["x", { future_pop_change: 5, vacant_rental_rate: null, small_unit_share: 50, station_passengers_change: -5 }],
     ["y", { future_pop_change: -5, vacant_rental_rate: null, small_unit_share: 10, station_passengers_change: 5 }],
-    ["z", { future_pop_change: 0, vacant_rental_rate: null, small_unit_share: null, station_passengers_change: null }], // 取引も駅も無い町
+    ["z", { future_pop_change: 0, vacant_rental_rate: null, small_unit_share: null, station_passengers_change: null }], // 取引も駅も無い町（将来人口1本だけ）
   ]);
   const { byArea, active } = rentScores(["x", "y", "z"], values, comps);
   assert.deepEqual([...active].sort(), ["future_pop_change", "small_unit_share", "station_passengers_change"]);
   assert.deepEqual(byArea.get("x")?.used, ["future_pop_change", "small_unit_share", "station_passengers_change"]);
+  assert.equal(byArea.get("x")?.status, "ok");
   // x: 将来人口 2.5/3・小さい住戸 0.75・駅 0.25 → (20×5/6 + 20×0.75 + 10×0.25) / 50
   assert.equal(byArea.get("x")?.score, Math.round((100 * (20 * (2.5 / 3) + 20 * 0.75 + 10 * 0.25)) / 50));
-  // z は将来人口だけで採点される（重みを割り直す）
+  // z は将来人口 1 本（指標数 1 < MIN_RENT_COMPONENTS）なので材料不足。久山町が将来人口だけで80点になっていた問題への対応
   assert.deepEqual(byArea.get("z")?.used, ["future_pop_change"]);
-  assert.equal(byArea.get("z")?.score, 50);
+  assert.equal(byArea.get("z")?.score, null);
+  assert.equal(byArea.get("z")?.status, "insufficient");
 });
 
 test("貸しやすさ: 値のある市区町村が 1 つだけの指標は使わない", () => {
@@ -165,4 +190,29 @@ test("貸しやすさ: 値のある市区町村が 1 つだけの指標は使わ
   const { byArea, active } = rentScores(["x", "y"], values, comps);
   assert.deepEqual([...active], ["a"]);
   assert.deepEqual(byArea.get("x")?.used, ["a"]);
+  assert.equal(byArea.get("x")?.status, "insufficient");
+  assert.equal(byArea.get("x")?.score, null);
+});
+
+test("貸しやすさ: 指標数は2つ以上でも、重みシェアが有効指標合計の50%未満なら材料不足", () => {
+  assert.equal(MIN_RENT_COMPONENTS, 2);
+  assert.equal(MIN_RENT_WEIGHT_SHARE, 0.5);
+  // 有効指標の合計重み = 20+25+20+10 = 75。x は将来人口(20)+駅(10)=30 だけ効く → 30/75 = 40% < 50% で材料不足
+  const comps = [
+    { id: "future_pop_change", weight: 20, higherIsBetter: true },
+    { id: "vacant_rental_rate", weight: 25, higherIsBetter: false },
+    { id: "small_unit_share", weight: 20, higherIsBetter: true },
+    { id: "station_passengers_change", weight: 10, higherIsBetter: true },
+  ];
+  const values = new Map<string, Record<string, number | null>>([
+    ["x", { future_pop_change: 5, vacant_rental_rate: null, small_unit_share: null, station_passengers_change: -5 }],
+    ["y", { future_pop_change: -5, vacant_rental_rate: 1, small_unit_share: 10, station_passengers_change: 5 }],
+    ["z", { future_pop_change: 0, vacant_rental_rate: 2, small_unit_share: 20, station_passengers_change: null }],
+  ]);
+  const { byArea } = rentScores(["x", "y", "z"], values, comps);
+  assert.deepEqual(byArea.get("x")?.used, ["future_pop_change", "station_passengers_change"]);
+  assert.equal(byArea.get("x")?.status, "insufficient");
+  assert.equal(byArea.get("x")?.score, null);
+  // y はすべての指標が効き、重みシェア100% → ok
+  assert.equal(byArea.get("y")?.status, "ok");
 });

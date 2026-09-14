@@ -56,7 +56,7 @@ const HTML = `<!doctype html>
   </section>
   <section>
     <h2>市区町村別</h2>
-    <div class="formula">掲載日数 = 最後に見えた日 − 初出日 + 1（掲載終了した物件の中央値。最初の完走回に既にあった物件は開始日が不明なので除外）。値下げ率 = 期間内に掲載されていた物件のうち値下げを 1 回以上観測した割合。売出/取引 = 掲載中の㎡単価中央値 ÷ 国交省 取引価格の㎡単価中央値（直近 4 四半期）。時点・構成が違うので乖離の目安。</div>
+    <div class="formula">掲載日数 = 最後に見えた日 − 初出日 + 1（掲載終了した物件の中央値。最初の完走回に既にあった物件は開始日が不明なので除外）。値下げ率 = 期間内に掲載されていた物件のうち値下げを 1 回以上観測した割合。売出/成約 = 掲載中の㎡単価中央値 ÷ 成約価格（2021〜）の直近8四半期の㎡単価中央値と比較。時点・構成が違うので乖離の目安。成約の件数が20件未満（ダッシュボードの売りやすさと同じ最低件数）の市区町村は「件数不足」として比を出さない。</div>
     <div class="scroll"><table id="t-area"></table></div>
   </section>
   <section>
@@ -98,10 +98,10 @@ const HTML = `<!doctype html>
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }).then(function (m) {
-      document.getElementById("period").textContent = m.since + " 〜 " + m.today + "（ベースライン " + (m.baseline || "未") + "・完走 " + m.completeRuns + " 回）" + (m.txPeriod ? "／取引価格は " + m.txPeriod.year + "Q" + m.txPeriod.quarter + " までの 4 四半期" : "");
+      document.getElementById("period").textContent = m.since + " 〜 " + m.today + "（ベースライン " + (m.baseline || "未") + "・完走 " + m.completeRuns + " 回）" + (m.txPeriod ? "／成約価格（2021〜）は " + m.txPeriod.year + "Q" + m.txPeriod.quarter + " までの " + m.txPeriod.quarters + " 四半期" : "");
       document.getElementById("notices").innerHTML = m.notices.map(function (t) { return '<div class="notice">' + esc(t) + "</div>"; }).join("");
-      table("t-area", ["市区町村"].concat(COMMON, ["取引㎡単価 中央値(円)", "(取引n)", "売出/取引"]), m.areas.map(function (a) {
-        return [esc(a.name) + ' <span class="sub">' + esc(a.subgroup) + "</span>"].concat(common(a), [n(a.txUnitMedian), n(a.txN), a.askToTx === null ? "—" : a.askToTx.toFixed(2)]);
+      table("t-area", ["市区町村"].concat(COMMON, ["成約㎡単価 中央値(円)", "(成約n)", "売出/成約"]), m.areas.map(function (a) {
+        return [esc(a.name) + ' <span class="sub">' + esc(a.subgroup) + "</span>"].concat(common(a), [n(a.txUnitMedian), n(a.txN), a.askToTx === null ? (a.txStatus === "few_sales" ? "件数不足" : "—") : a.askToTx.toFixed(2)]);
       }).concat([["<b>合計</b>"].concat(common(m.overall), ["", "", ""])]));
       table("t-age", ["築年帯"].concat(COMMON), m.ageBands.map(function (b) { return [esc(b.label)].concat(common(b)); }));
       table("t-price", ["価格帯"].concat(COMMON), m.priceBands.map(function (b) { return [esc(b.label)].concat(common(b)); }));
