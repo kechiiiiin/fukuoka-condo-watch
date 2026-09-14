@@ -1,5 +1,18 @@
 import { hasReinfolibKey, type Env } from "./env";
 import { XIT001_SOURCE } from "./ingest";
+import {
+  futurePopChange,
+  pickLatestQuarter,
+  rentScores,
+  SELL_STATUS_LABEL,
+  sellScores,
+  stationPassengerChange,
+  wardSellResults,
+  windowBounds,
+  type Windowed,
+} from "./scoring";
+
+export { percentile } from "./scoring";
 import { AREAS, GROUP_LABEL, areasInScope, isAreaCode, parseScope, type Scope } from "./wards";
 
 export const AGE_BANDS = [
@@ -19,24 +32,61 @@ export const PRICE_BANDS: { id: string; label: string; hi: number | null }[] = [
   { id: "p6", label: "7千万〜", hi: null },
 ];
 
+const ESTAT_PENDING = "e-Stat からの取り込み待ち（アプリケーション ID 未設定・scripts/estat-indicators.json の表が未検証）";
+
 export const RENT_COMPONENTS = [
-  { id: "future_pop_change", label: "将来人口の増減 2020→2040", weight: 20, higherIsBetter: true, source: "不動産情報ライブラリ XKT013" },
-  { id: "pop_change_2015_2020", label: "人口増減 2015→2020", weight: 15, higherIsBetter: true, source: "e-Stat 国勢調査" },
-  { id: "single_household_rate", label: "単独世帯の割合", weight: 20, higherIsBetter: true, source: "e-Stat 国勢調査" },
-  { id: "vacant_rental_rate", label: "賃貸用空き家率", weight: 25, higherIsBetter: false, source: "e-Stat 住宅・土地統計調査" },
-  { id: "small_unit_share", label: "40㎡以下の取引の割合", weight: 20, higherIsBetter: true, source: "不動産情報ライブラリ XIT001" },
+  {
+    id: "future_pop_change",
+    label: "将来人口の増減 2020→2040",
+    weight: 20,
+    higherIsBetter: true,
+    source: "不動産情報ライブラリ XKT013",
+    pendingReason: "未取得（npm run load-geo -- --remote --only future-pop）",
+  },
+  { id: "pop_change_2015_2020", label: "人口増減 2015→2020", weight: 15, higherIsBetter: true, source: "e-Stat 国勢調査", pendingReason: ESTAT_PENDING },
+  { id: "single_household_rate", label: "単独世帯の割合", weight: 20, higherIsBetter: true, source: "e-Stat 国勢調査", pendingReason: ESTAT_PENDING },
+  {
+    id: "vacant_rental_rate",
+    label: "賃貸用空き家率",
+    weight: 25,
+    higherIsBetter: false,
+    source: "e-Stat 住宅・土地統計調査",
+    pendingReason: ESTAT_PENDING,
+  },
+  {
+    id: "small_unit_share",
+    label: "40㎡以下の取引の割合",
+    weight: 20,
+    higherIsBetter: true,
+    source: "不動産情報ライブラリ XIT001",
+    pendingReason: "選んだ価格の種類・範囲に直近8四半期の取引が無い",
+  },
+  {
+    id: "station_passengers_change",
+    label: "駅乗降客数の増減 2019→最新年（市区町村内の駅の合計）",
+    weight: 10,
+    higherIsBetter: true,
+    source: "不動産情報ライブラリ XKT015",
+    pendingReason: "駅と市区町村のひも付けが未取得（npm run load-geo -- --remote）",
+  },
 ] as const;
+
+export const DEFAULT_CAT = "contract";
 
 export const FORMULAS = {
   sell:
     "売りやすさ = 100 ×（0.5 × 流動性の順位 + 0.5 × 価格維持の順位）。" +
     "流動性 = 直近8四半期の取引件数 ÷ 2（件/年）。価格維持 = 直近8四半期の㎡単価中央値 ÷ その前の8四半期の中央値。" +
-    "順位 = 表示範囲（福岡市のみ／近郊のみ／すべて）の候補の中でのパーセンタイル（0〜1）。地区は直近8件以上・前期5件以上のみ。" +
+    "直近 = 選んだ価格の種類でデータが揃っている最新の四半期まで（一部の市区町村にしか入っていない四半期は待つ）。" +
+    "価格の種類の既定は成約価格（2021Q1〜・データのある 22 市区町村すべてにある）。取引価格は福岡市の区と春日市にしか無いので、福岡市の長期推移向け。" +
+    "順位 = 表示範囲（福岡市のみ／近郊のみ／すべて）の候補の中でのパーセンタイル（0〜1）。" +
+    "選んだ価格の種類でデータが無い市区町村は順位に入れず「データなし」、直近か前期が空なら「件数不足」、候補が3未満なら「比較対象不足」と表示する。" +
+    "地区は直近8件以上・前期5件以上のみ。" +
     "件数は区・市町の人口規模に左右されるので、「すべて」で比べるときは価格維持も併せて見る。築年帯・価格・面積フィルタを掛けると同じ条件の物件どうしで比べられる。",
   rent:
-    "貸しやすさ（市区町村単位）= 100 × Σ(重み × 指標の順位) ÷ Σ(取得済み指標の重み)。" +
-    "重み: 将来人口の増減 20・人口増減(国勢調査) 15・単独世帯の割合 20・賃貸用空き家率 25（低いほど良い）・40㎡以下の取引の割合 20。" +
-    "順位 = 表示範囲の市区町村の中でのパーセンタイル。未取得の指標は除いて重みを割り直す。地区表の貸しやすさは所属する市区町村の値。",
+    "貸しやすさ（市区町村単位）= 100 × Σ(重み × 指標の順位) ÷ Σ(使えた指標の重み)。" +
+    "重み: 将来人口の増減 20・人口増減(国勢調査) 15・単独世帯の割合 20・賃貸用空き家率 25（低いほど良い）・40㎡以下の取引の割合 20・駅乗降客数の増減 10。" +
+    "順位 = 表示範囲の市区町村の中でのパーセンタイル。値の無い指標（取り込み待ち・駅の無い町など）は除いて重みを割り直す。地区表の貸しやすさは所属する市区町村の値。",
 };
 
 type Cat = "transaction" | "contract" | "all";
@@ -76,7 +126,8 @@ export function parseFilters(url: URL): Filters {
     pmax: num("pmax"),
     amin: num("amin"),
     amax: num("amax"),
-    cat: cat === "contract" || cat === "all" ? cat : "transaction",
+    // 既定は成約価格（23 市区町村のうちデータのある 22 すべてにそろっている。取引価格は区と春日市だけ）
+    cat: cat === "transaction" || cat === "all" ? cat : DEFAULT_CAT,
     years: Math.min(20, Math.max(2, Math.round(num("years") ?? 10))),
   };
 }
@@ -152,18 +203,6 @@ async function medians<T extends Record<string, unknown>>(
   return res.results;
 }
 
-/** values の中で x がどの位置か（0〜1、同値は半分） */
-export function percentile(values: number[], x: number): number {
-  if (values.length === 0) return 0.5;
-  let below = 0;
-  let equal = 0;
-  for (const v of values) {
-    if (v < x) below++;
-    else if (v === x) equal++;
-  }
-  return (below + 0.5 * equal) / values.length;
-}
-
 export interface Status {
   reinfolibKey: boolean;
   rows: number;
@@ -209,13 +248,6 @@ export async function buildStatus(env: Env): Promise<Status> {
   };
 }
 
-interface Windowed {
-  nRecent: number;
-  medRecent: number | null;
-  nPrior: number;
-  medPrior: number | null;
-}
-
 function pairWindows(rows: { win: string; n: number; med: number }[], key: (r: never) => string): Map<string, Windowed> {
   const m = new Map<string, Windowed>();
   for (const r of rows) {
@@ -231,14 +263,6 @@ function pairWindows(rows: { win: string; n: number; med: number }[], key: (r: n
     m.set(k, cur);
   }
   return m;
-}
-
-function sellScores(cands: { key: string; liquidity: number; retention: number }[]): Map<string, number> {
-  const liq = cands.map((c) => c.liquidity);
-  const ret = cands.map((c) => c.retention);
-  return new Map(
-    cands.map((c) => [c.key, Math.round(100 * (0.5 * percentile(liq, c.liquidity) + 0.5 * percentile(ret, c.retention)))]),
-  );
 }
 
 export async function buildMetrics(env: Env, f: Filters) {
@@ -260,22 +284,30 @@ export async function buildMetrics(env: Env, f: Filters) {
     }>()
   ).results;
   const stationRows = (
-    await env.DB.prepare("SELECT station_code, operator, line, name, year, passengers FROM station_passengers").all<{
+    await env.DB.prepare("SELECT station_code, operator, line, name, year, passengers, area_code FROM station_passengers").all<{
       station_code: string;
       operator: string;
       line: string;
       name: string;
       year: number;
       passengers: number | null;
+      area_code: string | null;
     }>()
   ).results;
 
-  const catCond = f.cat === "all" ? "" : "WHERE price_category = ?";
   const catBinds: Bind[] = f.cat === "all" ? [] : [f.cat];
-  const latest = await env.DB.prepare(`SELECT MAX(${QI}) AS qi FROM transactions ${catCond}`)
-    .bind(...catBinds)
-    .first<{ qi: number | null }>();
-  const L = latest?.qi ?? null;
+  // 直近の基準の四半期: 表示範囲で「データのある市区町村が揃っている」最新の四半期（src/scoring.ts pickLatestQuarter）
+  const scLatest = scopeClause(f.scope);
+  const latestConds = [f.cat === "all" ? null : "price_category = ?", scLatest.sql].filter((c): c is string => !!c);
+  const coverageRows = (
+    await env.DB.prepare(
+      `SELECT ${QI} AS qi, COUNT(DISTINCT ward_code) AS areas FROM transactions ${latestConds.length ? `WHERE ${latestConds.join(" AND ")}` : ""}
+       GROUP BY qi ORDER BY qi DESC LIMIT 12`,
+    )
+      .bind(...catBinds, ...scLatest.binds)
+      .all<{ qi: number; areas: number }>()
+  ).results;
+  const L = pickLatestQuarter(coverageRows);
 
   let trend: { ward_code: string; qi: number; n: number; med: number }[] = [];
   let ageBands: { ward_code: string; band: string; n: number; med: number }[] = [];
@@ -326,19 +358,21 @@ export async function buildMetrics(env: Env, f: Filters) {
     ).results;
 
     // 直近8四半期 vs その前8四半期（1 市区町村への絞り込みは無視し、表示範囲の中で順位を付ける）
+    // 直近 = L-7..L、前期 = L-15..L-8（L はデータの揃った最新の四半期なので、空の未来の四半期は窓に入らない）
+    const wb = windowBounds(L);
     const wAll = whereClause(f, { ward: false });
     const winCase = `CASE WHEN ${QI} > ? THEN 'recent' ELSE 'prior' END`;
     const distRows = await medians<{ ward_code: string; district: string; win: string }>(
       env,
       `SELECT ward_code, COALESCE(district_name, '(地区不明)') AS district, ${winCase} AS win, unit_price AS v
        FROM transactions WHERE ${wAll.sql} AND ${QI} > ?`,
-      [L - 8, ...wAll.binds, L - 16],
+      [wb.recentAfter, ...wAll.binds, wb.priorAfter],
       ["ward_code", "district", "win"],
     );
     const wardRows = await medians<{ ward_code: string; win: string }>(
       env,
       `SELECT ward_code, ${winCase} AS win, unit_price AS v FROM transactions WHERE ${wAll.sql} AND ${QI} > ?`,
-      [L - 8, ...wAll.binds, L - 16],
+      [wb.recentAfter, ...wAll.binds, wb.priorAfter],
       ["ward_code", "win"],
     );
     for (const [k, v] of pairWindows(wardRows, (r: { ward_code: string }) => r.ward_code)) wardWindows.set(k, v);
@@ -374,48 +408,64 @@ export async function buildMetrics(env: Env, f: Filters) {
   }
 
   // ---- 市区町村のスコア（表示範囲の中で順位付け） ----
-  const wardSellCands = [...wardWindows.entries()]
-    .filter(([, v]) => v.medRecent && v.medPrior)
-    .map(([key, v]) => ({ key, liquidity: v.nRecent / 2, retention: (v.medRecent as number) / (v.medPrior as number) }));
-  const wardSell = sellScores(wardSellCands);
+  // データの無い市区町村は順位の母数に入れず、sellStatus で理由を返す（表からは消さない）
+  const wardSell = wardSellResults(
+    scoped.map((a) => a.code),
+    wardWindows,
+  );
 
   const latestStat = (code: string, indicator: string): number | null => {
     const rows = statsRows.filter((r) => r.area_code === code && r.indicator === indicator && r.value !== null);
     rows.sort((a, b) => (a.period < b.period ? 1 : -1));
     return rows[0]?.value ?? null;
   };
-  const statAt = (code: string, indicator: string, period: string): number | null =>
-    statsRows.find((r) => r.area_code === code && r.indicator === indicator && r.period === period)?.value ?? null;
+  const periodsOf = (code: string, indicator: string): Record<string, number | null> =>
+    Object.fromEntries(statsRows.filter((r) => r.area_code === code && r.indicator === indicator).map((r) => [r.period, r.value]));
+
+  const stationChange = stationPassengerChange(
+    stationRows.map((r) => ({ key: `${r.station_code}|${r.operator}|${r.line}`, area_code: r.area_code, year: r.year, passengers: r.passengers })),
+  );
 
   const componentValues = new Map<string, Record<string, number | null>>();
   for (const a of scoped) {
-    const p2020 = statAt(a.code, "future_pop", "2020");
-    const p2040 = statAt(a.code, "future_pop", "2040");
     componentValues.set(a.code, {
-      future_pop_change: p2020 && p2040 ? (100 * (p2040 - p2020)) / p2020 : null,
+      future_pop_change: futurePopChange(periodsOf(a.code, "future_pop"))?.value ?? null,
       pop_change_2015_2020: latestStat(a.code, "pop_change_2015_2020"),
       single_household_rate: latestStat(a.code, "single_household_rate"),
       vacant_rental_rate: latestStat(a.code, "vacant_rental_rate"),
       small_unit_share: smallShare.get(a.code) ?? null,
+      station_passengers_change: stationChange.get(a.code)?.value ?? null,
     });
   }
-  const rentScore = new Map<string, { score: number | null; used: string[] }>();
-  for (const a of scoped) {
-    let num = 0;
-    let den = 0;
-    const used: string[] = [];
-    for (const c of RENT_COMPONENTS) {
-      const all = scoped.map((x) => componentValues.get(x.code)?.[c.id] ?? null).filter((v): v is number => v !== null);
-      const mine = componentValues.get(a.code)?.[c.id] ?? null;
-      if (all.length < 2 || mine === null) continue;
-      const pr = percentile(all, mine);
-      num += c.weight * (c.higherIsBetter ? pr : 1 - pr);
-      den += c.weight;
-      used.push(c.id);
-    }
-    rentScore.set(a.code, { score: den > 0 ? Math.round((100 * num) / den) : null, used });
-  }
+  const rent = rentScores(
+    scoped.map((a) => a.code),
+    componentValues,
+    RENT_COMPONENTS,
+  );
+  const rentScore = rent.byArea;
   for (const d of districts) d.rentScore = rentScore.get(d.ward_code)?.score ?? null;
+
+  /** どの指標が効いていて、どれが取り込み待ちか（画面に出す） */
+  const rentComponentStatus = RENT_COMPONENTS.map((c) => {
+    const areas = scoped.filter((a) => componentValues.get(a.code)?.[c.id] != null).length;
+    const active = rent.active.has(c.id);
+    return {
+      id: c.id,
+      label: c.label,
+      weight: c.weight,
+      source: c.source,
+      active,
+      areas,
+      reason: active ? null : areas === 1 ? "値のある市区町村が 1 つだけで順位にならない" : c.pendingReason,
+    };
+  });
+
+  const catLabel = f.cat === "contract" ? "成約価格" : f.cat === "transaction" ? "取引価格" : "両方";
+  const categoryCoverage = {
+    cat: f.cat,
+    label: catLabel,
+    noData: scoped.filter((a) => wardSell.get(a.code)?.status === "no_data").map((a) => a.name),
+  };
 
   const ageMed = (code: string, band: string) => ageBands.find((r) => r.ward_code === code && r.band === band)?.med ?? null;
   const wardScores = scoped.map((a) => {
@@ -427,7 +477,13 @@ export async function buildMetrics(env: Env, f: Filters) {
       name: a.name,
       group: a.group,
       subgroup: a.subgroup,
-      sellScore: wardSell.get(a.code) ?? null,
+      sellScore: wardSell.get(a.code)?.score ?? null,
+      /** ok | no_data（データなし）| insufficient（件数不足）| few_candidates（比較対象不足） */
+      sellStatus: wardSell.get(a.code)?.status ?? "no_data",
+      sellStatusLabel: (() => {
+        const s = wardSell.get(a.code)?.status ?? "no_data";
+        return s === "ok" ? null : SELL_STATUS_LABEL[s];
+      })(),
       rentScore: rentScore.get(a.code)?.score ?? null,
       rentUsed: rentScore.get(a.code)?.used ?? [],
       liquidity: win ? win.nRecent / 2 : null,
@@ -482,6 +538,8 @@ export async function buildMetrics(env: Env, f: Filters) {
     ageBandDefs: AGE_BANDS,
     priceBandDefs: PRICE_BANDS,
     rentComponentDefs: RENT_COMPONENTS,
+    rentComponentStatus,
+    categoryCoverage,
     formulas: FORMULAS,
     trend,
     ageBands,

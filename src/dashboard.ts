@@ -81,7 +81,7 @@ const HTML = `<!doctype html>
       <label>面積 下限（㎡）<input name="amin" type="number" inputmode="numeric" min="0" step="5"></label>
       <label>面積 上限（㎡）<input name="amax" type="number" inputmode="numeric" min="0" step="5"></label>
       <label>価格の種類<select name="cat">
-        <option value="transaction">取引価格（2005〜）</option><option value="contract">成約価格（2021〜）</option><option value="all">両方（重複の恐れ）</option></select></label>
+        <option value="contract" selected>成約価格（2021〜・全域）</option><option value="transaction">取引価格（2015〜・福岡市の区と春日市のみ）</option><option value="all">両方（重複の恐れ）</option></select></label>
       <label>推移の期間<select name="years"><option value="5">5年</option><option value="10" selected>10年</option><option value="15">15年</option><option value="20">20年</option></select></label>
       <button type="submit">更新</button>
     </form>
@@ -92,6 +92,8 @@ const HTML = `<!doctype html>
     <div class="sub" id="scope-note"></div>
     <div class="formula" id="f-sell"></div>
     <div class="formula" id="f-rent"></div>
+    <div class="formula" id="rent-status"></div>
+    <div class="sub" id="coverage-note"></div>
     <div class="scroll"><table id="t-ward"></table></div>
   </section>
 
@@ -228,6 +230,15 @@ const HTML = `<!doctype html>
     document.getElementById("scope-note").textContent = SCOPE_NOTE[d.filters.scope] || "";
     document.getElementById("f-sell").textContent = d.formulas.sell;
     document.getElementById("f-rent").textContent = d.formulas.rent;
+    var rs = d.rentComponentStatus || [];
+    var act = rs.filter(function (c) { return c.active; }).map(function (c) { return c.label + "（重み " + c.weight + "・" + c.areas + " 市区町村）"; });
+    var pend = rs.filter(function (c) { return !c.active; }).map(function (c) { return c.label + " — " + c.reason; });
+    document.getElementById("rent-status").textContent =
+      "貸しやすさの指標 — 使用中: " + (act.length ? act.join("、") : "なし") + "。取り込み待ち: " + (pend.length ? pend.join("、") : "なし") + "。";
+    var cov = d.categoryCoverage;
+    document.getElementById("coverage-note").textContent = cov && cov.noData.length
+      ? "価格の種類「" + cov.label + "」でデータなし: " + cov.noData.join("・") + "（売りやすさは順位に入れていません）"
+      : "";
 
     var many = d.wards.length > 7;
     ["w-trend", "w-count", "w-age"].forEach(function (id) { document.getElementById(id).className = many ? "chart tall" : "chart"; });
@@ -238,7 +249,8 @@ const HTML = `<!doctype html>
        { label: "価格維持" }, { label: "㎡単価(万)" }, { label: "築20-30/築0-10" }, { label: "賃貸指標" }],
       d.wardScores.slice().sort(function (a, b) { return (b.sellScore == null ? -1 : b.sellScore) - (a.sellScore == null ? -1 : a.sellScore); })
         .map(function (w) {
-          return [w.name, w.sellScore, w.rentScore, num(w.liquidity), ratio(w.retention), man(w.medRecent), ratio(w.age20to30VsNew),
+          return [w.name, w.sellScore == null ? (w.sellStatusLabel || "データなし") : w.sellScore,
+            w.rentScore == null ? "データなし" : w.rentScore, num(w.liquidity), ratio(w.retention), man(w.medRecent), ratio(w.age20to30VsNew),
             w.rentUsed.length + "/" + d.rentComponentDefs.length];
         }));
 
