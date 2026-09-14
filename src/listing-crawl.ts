@@ -25,7 +25,7 @@ import { SUUMO_SOURCE_ID } from "./suumo";
 import { SuumoSource } from "./suumo-source";
 
 /** wrangler.toml の crons と一致させること（scheduled のディスパッチに使う） */
-export const LISTINGS_CRON = "*/20 0-1 * * *"; // 一時: 2026-09-14 の初回を JST 09:00〜10:40 に前倒し。終わったら 16-17 に戻す
+export const LISTINGS_CRON = "*/20 16-17 * * *";
 
 export const CRAWL = {
   /** 既定のページ間隔 */
