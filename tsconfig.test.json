@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["test/**/*.ts", "src/suumo.ts", "src/access.ts", "src/wards.ts", "src/scoring.ts", "src/listing-scoring.ts", "scripts/fake-suumo-server.ts"]
+  "include": ["test/**/*.ts", "src/suumo.ts", "src/access.ts", "src/wards.ts", "src/scoring.ts", "src/listing-scoring.ts", "src/listing-grouping.ts", "scripts/fake-suumo-server.ts"]
 }

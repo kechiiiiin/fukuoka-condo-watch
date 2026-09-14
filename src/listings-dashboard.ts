@@ -42,7 +42,7 @@ const HTML = `<!doctype html>
 <body>
 <header>
   <h1>中古マンション 掲載ウォッチ（SUUMO・非公開）</h1>
-  <div class="sub">私的・非商用の個人利用。公開ダッシュボードは <a href="/">/</a>（国交省の公開データのみ）</div>
+  <div class="sub">私的・非商用の個人利用。公開ダッシュボードは <a href="/">/</a>（国交省の公開データのみ）・<a href="/listings/picks">条件に合う新着・掲載中の物件 →</a></div>
   <div class="sub" id="period">読み込み中…</div>
   <div id="notices"></div>
 </header>

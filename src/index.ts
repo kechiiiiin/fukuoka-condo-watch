@@ -4,7 +4,9 @@ import type { Env } from "./env";
 import { runDailyIngest } from "./ingest";
 import { buildListingStatus, LISTINGS_CRON, listingsEnabled, recordCronInvocation, runListingCrawl } from "./listing-crawl";
 import { buildListingMetrics } from "./listing-metrics";
+import { buildListingPicks } from "./listing-picks";
 import { renderListingsDashboard } from "./listings-dashboard";
+import { renderListingsPicksDashboard } from "./listings-picks-dashboard";
 import { buildMetrics, buildStatus, parseFilters } from "./metrics";
 
 const json = (body: unknown, status = 200) =>
@@ -38,10 +40,15 @@ export default {
           case "/listings":
           case "/listings/":
             return new Response(renderListingsDashboard(), { headers: { "content-type": "text/html; charset=utf-8", ...priv } });
+          case "/listings/picks":
+          case "/listings/picks/":
+            return new Response(renderListingsPicksDashboard(), { headers: { "content-type": "text/html; charset=utf-8", ...priv } });
           case "/api/listings/metrics":
             return json(await buildListingMetrics(env, url));
           case "/api/listings/status":
             return json(await buildListingStatus(env));
+          case "/api/listings/picks":
+            return json(await buildListingPicks(env, url));
           default:
             return new Response("Not Found", { status: 404, headers: priv });
         }
