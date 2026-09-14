@@ -4,7 +4,7 @@
 
 - 公開ダッシュボード（`/`）のデータは公的な公開情報だけ（国土交通省 不動産情報ライブラリ API・e-Stat）
 - 掲載情報（SUUMO・私的利用）の日次取得を**同梱しているが既定は無効**（`LISTINGS_ENABLED=off`）。見る画面 `/listings` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
-- Cloudflare Workers（TypeScript）+ D1 + Cron Trigger。デプロイは GitHub Actions + `cloudflare/wrangler-action`
+- Cloudflare Workers（TypeScript）+ D1 + Cron Trigger。デプロイは手元の `wrangler`（GitHub Actions は型チェックとテストだけ）
 
 ## 仕組み
 
@@ -90,7 +90,8 @@ npm run estat -- meta <statsDataId>                        # 分類コードと�
 npm run estat -- load --remote
 ```
 
-GitHub Actions のシークレット: `CLOUDFLARE_API_TOKEN`（Workers Scripts:Edit・D1:Edit）と `CLOUDFLARE_ACCOUNT_ID`。main に push すると型チェック → D1 マイグレーション → デプロイ。
+GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェックとテストだけを行う。Cloudflare のトークンは GitHub に置かない。
+デプロイは手元で `npx wrangler d1 migrations apply fukuoka-condo-watch --remote` → `npx wrangler deploy`。
 
 ## スコアの考え方
 
@@ -152,7 +153,7 @@ git switch main && git merge --ff-only feat/suumo-listings
 CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... ACCESS_HOSTNAME=condo.kechiiiiin.com ACCESS_EMAILS=<メール> \
   npm run access-app -- --apply            # 表示された CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD を wrangler.toml の [vars] へ
 npx wrangler secret put ALLOWED_EMAILS      # /listings を見てよいメール
-git push                                    # Actions: 型チェック → テスト → D1 マイグレーション（0003）→ デプロイ（まだ off）
+npx wrangler d1 migrations apply fukuoka-condo-watch --remote && npx wrangler deploy   # 0003 → デプロイ（まだ off）
 curl -sI https://condo.kechiiiiin.com/listings | head -3                 # 302 → cloudflareaccess.com
 curl -s -o /dev/null -w '%{http_code}\n' https://fukuoka-condo-watch.<sub>.workers.dev/listings   # 401
 # wrangler.toml の LISTINGS_ENABLED を "on" にして push → 翌 01:00 JST から

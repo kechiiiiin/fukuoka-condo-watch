@@ -1,0 +1,36 @@
+name: CI
+
+# 型チェックとテストだけ。デプロイと D1 マイグレーションは手元の wrangler で行う（トークンを GitHub に置かない）
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # astro check 等だけでは import 漏れを見逃した前例があるので、tsc を必ず通す
+      - name: Type check
+        run: npm run typecheck
+
+      # パーサ・JWT 検証のテスト（実ページ由来のフィクスチャは CI に無いので、その分は skip される）
+      - name: Test
+        run: npm test
