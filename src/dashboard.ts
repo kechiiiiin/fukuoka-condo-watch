@@ -44,6 +44,9 @@ const HTML = `<!doctype html>
   .scope input:checked + span { background: var(--accent); color: #fff; font-weight: 600; }
   .scope input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: -4px; }
   .formula { font-size: .82rem; color: var(--muted); background: var(--bg); padding: 6px 8px; border-radius: 6px; margin: 4px 0 8px; }
+  .formula-details { margin: 4px 0 8px; }
+  .formula-details summary { cursor: pointer; font-size: .85rem; color: var(--accent); font-weight: 600; padding: 4px 0; }
+  .formula-details[open] summary { margin-bottom: 4px; }
   .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { border-collapse: collapse; width: 100%; font-size: .85rem; white-space: nowrap; }
   th, td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: right; }
@@ -90,9 +93,20 @@ const HTML = `<!doctype html>
   <section>
     <h2>市区町村ごとの「売りやすさ」と「貸しやすさ」</h2>
     <div class="sub" id="scope-note"></div>
-    <div class="formula" id="f-sell"></div>
-    <div class="formula" id="f-rent"></div>
-    <div class="formula" id="rent-status"></div>
+    <div class="sub">売りやすさ＝取引の多さと値持ちの良さ／貸しやすさ＝人口・世帯・空き家など6指標。どちらも表示範囲の中での相対順位（0〜100）</div>
+    <details class="formula-details">
+      <summary>計算方法と見方</summary>
+      <div class="formula" id="f-sell"></div>
+      <div class="formula" id="f-rent"></div>
+      <div class="formula" id="rent-status"></div>
+      <div class="formula">
+        画面の見方・読むときのコツ —
+        点数は絶対評価ではなく、表示範囲の中で並べたときの位置（50点でも悪いわけではない）。
+        地域を比べるときは築年帯と面積の絞り込みを揃えると公平。
+        成約価格は2021年からなので、価格維持は直近2年とその前2年の比較で、値上がり局面を含む。
+        「件数不足」「材料不足」「データなし」は順位の母数に入れていない。
+      </div>
+    </details>
     <div class="sub" id="coverage-note"></div>
     <div class="scroll"><table id="t-ward"></table></div>
   </section>
