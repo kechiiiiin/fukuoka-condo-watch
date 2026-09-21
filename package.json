@@ -5,6 +5,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p tsconfig.test.json",
     "test": "node --import tsx --test test/*.test.ts",
     "fake-suumo": "tsx scripts/fake-suumo-server.ts",
+    "crawl:local": "tsx scripts/suumo-crawl-local.ts",
     "access-app": "tsx scripts/access-app.ts",
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",

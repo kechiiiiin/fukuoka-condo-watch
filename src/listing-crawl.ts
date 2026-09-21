@@ -1,8 +1,16 @@
-// 掲載情報（SUUMO）の日次クロール。**LISTINGS_ENABLED が on のときだけ動く（既定 off・off なら D1 にも触らず即 return）**。
+// 掲載情報（SUUMO）の日次クロールの D1 側。取得する場所は LISTINGS_ENABLED で 2 通り:
+//   - "external"（2026-09-22〜 本番）… Mac（launchd・scripts/suumo-crawl-local.ts）が取ってきた 1 ページぶんの結果を
+//     POST /api/listings/ingest（handleListingIngest）で受け、下の applyOutcome で反映する。cron は取りに行かない
+//   - "on" … Worker の cron（runListingCrawl）が自分で取る。2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で 503
+//     （Cloudflare Workers の送信元が弾かれている様子。同じ URL を自宅回線から curl すると 200）ため external に移した
+//   - "off"（既定）… どちらも動かない。cron は D1 にも触らず即 return、取り込みは 409
+// どちらの経路でも「ページの反映とカーソル前進を同じトランザクションで」「完走回だけ掲載終了」「85% ルール」は同じ関数を通る。
+// クールダウン・最終取得時刻（listing_crawl_state）は取得元ごとに持つ（Worker = SUUMO_SOURCE_ID、Mac = LOCAL_STATE_KEY）。
+// 送信元 IP が違うので、Worker の IP が受けたクールダウンで Mac を止めない（逆も同じ）。
 //
-// 設計（Workers Paid 前提。2026-09 確認: Cron の CPU 30s（1 時間未満間隔）/ 実行時間 15 分 / サブリクエスト 10,000）
+// 以下は Worker cron 方式（on）の設計メモ（Workers Paid 前提。2026-09 確認: Cron の CPU 30s（1 時間未満間隔）/ 実行時間 15 分 / サブリクエスト 10,000）
 //   - 1 日ぶん ≒ 福岡市 180 ページ + 近郊 51 ページ ≒ 231 ページ（2026-09-14 の件数から）
-//   - 1 ページごとに 30 秒あける（下限 20 秒。state.last_fetch_at で起動をまたいでも守る）
+//   - 1 ページごとに 30 秒あける（下限 30 秒。state.last_fetch_at で起動をまたいでも守る）
 //     2026-09-14 の初回は 6 秒間隔で 43 ページ目に Cloudflare から 503 を返されたため、時間をかけてでも間隔を広げた
 //     → 1 ページ ≒ 31 秒 → 231 ページ ≒ 2 時間
 //   - cron `*/15 16-20 * * *`（01:00〜05:45 JST・20 起動）で分割。1 起動は 10 分で自主的に切り上げ（15 分上限まで 5 分の余裕）。
@@ -21,82 +29,38 @@
 
 import type { Env } from "./env";
 import { jstToday } from "./ingest";
-import type { CrawlTarget, PagedListingSource, ParsedListPage } from "./listing";
+import { checkIngestToken } from "./ingest-auth";
+import {
+  CRAWL,
+  crawlSettings,
+  fetchAndClassify,
+  type IngestCursor,
+  type IngestResponse,
+  listingsMode,
+  LOCAL_FETCHER_SUFFIX,
+  localOrigin,
+  outcomeMessage,
+  type PageOutcome,
+  parseIngestRequest,
+} from "./listing-crawl-core";
+import type { CrawlTarget, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
 import { SuumoSource } from "./suumo-source";
 
 /** wrangler.toml の crons と一致させること（scheduled のディスパッチに使う） */
 export const LISTINGS_CRON = "*/15 16-20 * * *";
 
-export const CRAWL = {
-  /** 既定のページ間隔 */
-  minIntervalMs: 30_000,
-  /** 本番（suumo.jp）で許す最小間隔。LISTINGS_MIN_INTERVAL_MS でもこれより短くできない */
-  floorIntervalMs: 20_000,
-  /** 1 起動の持ち時間（Cron の実行時間上限 15 分に対し余裕 5 分） */
-  runBudgetMs: 10 * 60_000,
-  fetchTimeoutMs: 30_000,
-  /** 二重起動よけ（前の起動が落ちてもこの時間で解ける） */
-  leaseMs: 14 * 60_000,
-  /** 同じページの失敗がこの回数に達したら、その市区町村はその日 error（= その回は complete にならない） */
-  maxAttempts: 3,
-  cooldownHours: 72,
-  maxPagesPerArea: 150,
-  /** D1 クエリ上限（Paid 1,000/起動）から逆算 */
-  maxPagesPerInvocation: 100,
-  /** 取り切った回でも、見えた件数がヒット件数合計のこの割合未満なら掲載終了を付けない（取りこぼしの疑い） */
-  minSeenRatio: 0.85,
-  /** complete な回で何回続けて見えなかったら掲載終了にするか（1 だとクロール中の並びずれで誤判定するため 2） */
-  delistAfterMissedCompleteRuns: 2,
-};
+// 設定・応答の振り分け・取り込み要求の検証は Node（Mac 側）と共有するため src/listing-crawl-core.ts に置いた
+export { CRAWL, crawlSettings, listingsMode, localOrigin } from "./listing-crawl-core";
+export type { CrawlSettings, ListingsMode } from "./listing-crawl-core";
 
+/** Worker の cron が SUUMO を取りに行くか（LISTINGS_ENABLED=on のときだけ）。external・off では取らない */
 export function listingsEnabled(env: Pick<Env, "LISTINGS_ENABLED">): boolean {
-  const v = (env.LISTINGS_ENABLED ?? "").trim().toLowerCase();
-  return v === "on" || v === "1" || v === "true";
+  return listingsMode(env) === "on";
 }
 
-/** SUUMO_ORIGIN はローカルの偽サーバ（http://127.0.0.1 / localhost）だけ受け付ける。それ以外は無視して suumo.jp */
-export function localOrigin(env: Pick<Env, "SUUMO_ORIGIN">): string | null {
-  const o = env.SUUMO_ORIGIN?.trim();
-  if (!o) return null;
-  try {
-    const u = new URL(o);
-    if (u.protocol === "http:" && (u.hostname === "127.0.0.1" || u.hostname === "localhost")) return u.origin;
-  } catch {
-    /* 無視 */
-  }
-  return null;
-}
-
-export interface CrawlSettings {
-  origin: string | undefined;
-  intervalMs: number;
-  budgetMs: number;
-  maxPages: number;
-  todayOverride: string | null;
-  userAgent: string | undefined;
-}
-
-export function crawlSettings(env: Env): CrawlSettings {
-  const local = localOrigin(env);
-  const num = (v: string | undefined) => (v !== undefined && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
-  const reqInterval = num(env.LISTINGS_MIN_INTERVAL_MS);
-  // 間隔・持ち時間・日付の上書きは偽サーバ相手のときだけ効く（本番で間隔を詰められないように）
-  const intervalMs = local
-    ? Math.max(0, reqInterval ?? CRAWL.minIntervalMs)
-    : Math.max(CRAWL.floorIntervalMs, reqInterval ?? CRAWL.minIntervalMs);
-  const budget = local ? num(env.LISTINGS_RUN_BUDGET_MS) : null;
-  const maxPages = local ? num(env.LISTINGS_MAX_PAGES_PER_INVOCATION) : null;
-  const today = local && /^\d{4}-\d{2}-\d{2}$/.test(env.LISTINGS_TODAY_OVERRIDE ?? "") ? env.LISTINGS_TODAY_OVERRIDE! : null;
-  return {
-    origin: local ?? undefined,
-    intervalMs,
-    budgetMs: budget && budget > 0 ? Math.min(budget, CRAWL.runBudgetMs) : CRAWL.runBudgetMs,
-    maxPages: maxPages && maxPages > 0 ? Math.min(maxPages, CRAWL.maxPagesPerInvocation) : CRAWL.maxPagesPerInvocation,
-    todayOverride: today,
-    userAgent: env.LISTINGS_USER_AGENT?.trim() || undefined,
-  };
-}
+/** Mac 側の取得の状態（クールダウン・最終取得時刻）の置き場。Worker cron の状態（SUUMO_SOURCE_ID）とは別 */
+export const LOCAL_STATE_KEY = `${SUUMO_SOURCE_ID}${LOCAL_FETCHER_SUFFIX}`;
 
 export interface CrawlDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
@@ -148,27 +112,38 @@ interface CursorRow {
   attempts: number;
 }
 
-export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): Promise<CrawlSummary> {
-  if (!listingsEnabled(env)) {
-    console.log("LISTINGS_ENABLED が on ではないため掲載クロールはスキップ");
-    return { status: "disabled", pages: 0 };
-  }
-  const s = crawlSettings(env);
-  const source = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
-  const db = env.DB;
-  const startedMs = deps.now();
-  const iso = (ms = deps.now()) => new Date(ms).toISOString();
-  const date = s.todayOverride ?? jstToday(new Date(startedMs));
+interface OpenedRun {
+  status: CrawlSummary["status"];
+  runId: string;
+  lastFetchAt: string | null;
+  detail?: string;
+}
+
+/**
+ * 今日（date）の回を開く（無ければ回とカーソルを作る）。stateKey の取得元がクールダウン中・回が完了済み・
+ * 他が実行中なら running 以外を返す。running のときは lease を取った状態で返す（呼んだ側が releaseLease する）。
+ */
+async function openRun(
+  db: D1Database,
+  source: PagedSource,
+  stateKey: string,
+  date: string,
+  now: () => number,
+  leaseMs: number,
+): Promise<OpenedRun> {
+  const iso = (ms = now()) => new Date(ms).toISOString();
+  const startedMs = now();
   const runId = `${source.id}:${date}`;
 
-  await db.prepare("INSERT OR IGNORE INTO listing_crawl_state (source) VALUES (?)").bind(source.id).run();
+  await db.prepare("INSERT OR IGNORE INTO listing_crawl_state (source) VALUES (?)").bind(stateKey).run();
   const state = await db
     .prepare("SELECT last_fetch_at, cooldown_until FROM listing_crawl_state WHERE source = ?")
-    .bind(source.id)
+    .bind(stateKey)
     .first<{ last_fetch_at: string | null; cooldown_until: string | null }>();
+  const lastFetchAt = state?.last_fetch_at ?? null;
   if (state?.cooldown_until && state.cooldown_until > iso()) {
-    console.log(`掲載クロールはクールダウン中（${state.cooldown_until} まで）`);
-    return { status: "cooldown", pages: 0, detail: state.cooldown_until };
+    console.log(`掲載クロール（${stateKey}）はクールダウン中（${state.cooldown_until} まで）`);
+    return { status: "cooldown", runId, lastFetchAt, detail: state.cooldown_until };
   }
 
   // 前日以前の走りかけの回は未完了として閉じる（掲載終了は付けない）
@@ -201,28 +176,139 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
     .prepare("SELECT status FROM listing_crawl_runs WHERE run_id = ?")
     .bind(runId)
     .first<{ status: CrawlSummary["status"] }>();
-  if (!run || run.status !== "running") return { status: run?.status ?? "incomplete", runId, pages: 0 };
+  if (!run || run.status !== "running") return { status: run?.status ?? "incomplete", runId, lastFetchAt };
 
   const lease = await db
     .prepare(
       `UPDATE listing_crawl_runs SET lease_until = ?, invocations = invocations + 1, updated_at = ?
        WHERE run_id = ? AND status = 'running' AND (lease_until IS NULL OR lease_until < ?)`,
     )
-    .bind(iso(startedMs + CRAWL.leaseMs), iso(), runId, iso())
+    .bind(iso(startedMs + leaseMs), iso(), runId, iso())
     .run();
-  if (!lease.meta.changes) return { status: "locked", runId, pages: 0 };
+  if (!lease.meta.changes) return { status: "locked", runId, lastFetchAt };
+  return { status: "running", runId, lastFetchAt };
+}
 
-  let lastFetch = state?.last_fetch_at ? Date.parse(state.last_fetch_at) : 0;
+/** 次に取るページ（試行回数の少ない順・市区町村の並び順） */
+async function nextCursor(db: D1Database, runId: string): Promise<CursorRow | null> {
+  return db
+    .prepare(
+      `SELECT area_code, slug, next_page, total_pages, total_hits, attempts FROM listing_crawl_cursor
+       WHERE run_id = ? AND status = 'pending' ORDER BY attempts, sort_order LIMIT 1`,
+    )
+    .bind(runId)
+    .first<CursorRow>();
+}
+
+/** 1 リクエストを記録する（0 件ページ・404・失敗も「1 リクエスト」として数え、間隔の起点にする） */
+async function recordFetch(db: D1Database, stateKey: string, runId: string, at: string): Promise<void> {
+  await db.batch([
+    db.prepare("UPDATE listing_crawl_state SET last_fetch_at = ? WHERE source = ?").bind(at, stateKey),
+    db.prepare("UPDATE listing_crawl_runs SET pages_fetched = pages_fetched + 1 WHERE run_id = ?").bind(runId),
+  ]);
+}
+
+async function releaseLease(db: D1Database, runId: string): Promise<void> {
+  await db.prepare("UPDATE listing_crawl_runs SET lease_until = NULL WHERE run_id = ? AND status = 'running'").bind(runId).run();
+}
+
+/**
+ * 1 ページぶんの結果を D1 に反映する（Worker cron と Mac からの取り込みで共通）。
+ * blocked なら stateKey の取得元を 72 時間クールダウンにして、その回を blocked で閉じる。
+ */
+async function applyOutcome(
+  db: D1Database,
+  source: PagedSource,
+  stateKey: string,
+  runId: string,
+  date: string,
+  cur: CursorRow,
+  outcome: PageOutcome,
+  url: string,
+  now: () => number,
+): Promise<{ blocked?: string }> {
+  const iso = (ms = now()) => new Date(ms).toISOString();
+  switch (outcome.kind) {
+    case "fetch_error":
+    case "http_error":
+      await cursorError(db, runId, source.id, cur, url, outcomeMessage(outcome), iso());
+      return {};
+    case "gone":
+      // 取っている間に件数が減って、最後のページが無くなった
+      await cursorDone(db, runId, cur, cur.total_pages, cur.total_hits, 0, iso());
+      return {};
+    case "parsed":
+      await applyPage(db, source, runId, date, cur, outcome.page, url, iso());
+      return {};
+    case "blocked": {
+      const { block, status, location, bodyHead } = outcome;
+      const until = iso(now() + CRAWL.cooldownHours * 3600_000);
+      await db.batch([
+        db
+          .prepare("UPDATE listing_crawl_state SET cooldown_until = ?, last_block_kind = ?, last_block_at = ? WHERE source = ?")
+          .bind(until, block, iso(), stateKey),
+        db
+          .prepare(
+            `UPDATE listing_crawl_runs SET status = 'blocked', finished_at = ?, lease_until = NULL, updated_at = ?,
+               note = COALESCE(note || ' / ', '') || ? WHERE run_id = ?`,
+          )
+          .bind(iso(), iso(), `${block} で停止（${stateKey}・${until} までクールダウン）`, runId),
+        event(
+          db,
+          source.id,
+          runId,
+          "blocked",
+          status,
+          url,
+          `${block}; via=${stateKey}; cooldown_until=${until}${location ? `; location=${location.slice(0, 300)}` : ""}; body_head=${bodyHead.slice(0, 200)}`,
+          iso(),
+        ),
+      ]);
+      console.warn(`掲載クロール停止: ${block} ${status} ${url}（${stateKey}）`);
+      return { blocked: block };
+    }
+  }
+}
+
+/** 残りのページが無ければ回を締める（complete のときだけ掲載終了を付ける）。残っていれば running */
+async function closeIfDone(
+  db: D1Database,
+  sourceId: string,
+  runId: string,
+  date: string,
+  at: string,
+): Promise<{ status: CrawlSummary["status"]; detail?: string }> {
+  const pending = await db
+    .prepare("SELECT COUNT(*) AS n FROM listing_crawl_cursor WHERE run_id = ? AND status = 'pending'")
+    .bind(runId)
+    .first<{ n: number }>();
+  if ((pending?.n ?? 0) > 0) return { status: "running" };
+  const r = await finalizeRun(db, sourceId, runId, date, at);
+  return { status: r.status, detail: r.detail };
+}
+
+/** Worker の cron が自分で取る（LISTINGS_ENABLED=on のときだけ）。1 起動は 10 分で切り上げ、続きは次の起動 */
+export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): Promise<CrawlSummary> {
+  if (!listingsEnabled(env)) {
+    console.log("LISTINGS_ENABLED が on ではないため Worker の掲載クロールはスキップ");
+    return { status: "disabled", pages: 0 };
+  }
+  const s = crawlSettings(env);
+  const source = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
+  const db = env.DB;
+  const startedMs = deps.now();
+  const iso = (ms = deps.now()) => new Date(ms).toISOString();
+  const date = s.todayOverride ?? jstToday(new Date(startedMs));
+
+  const opened = await openRun(db, source, source.id, date, deps.now, CRAWL.leaseMs);
+  const runId = opened.runId;
+  if (opened.status !== "running") return { status: opened.status, runId, pages: 0, detail: opened.detail };
+
+  let lastFetch = opened.lastFetchAt ? Date.parse(opened.lastFetchAt) : 0;
   let pages = 0;
   try {
     for (;;) {
-      const cur = await db
-        .prepare(
-          `SELECT area_code, slug, next_page, total_pages, total_hits, attempts FROM listing_crawl_cursor
-           WHERE run_id = ? AND status = 'pending' ORDER BY attempts, sort_order LIMIT 1`,
-        )
-        .bind(runId)
-        .first<CursorRow>();
+      const cur = await nextCursor(db, runId);
       if (!cur) break;
       if (pages >= s.maxPages) break;
       const wait = Math.max(0, lastFetch + s.intervalMs - deps.now());
@@ -232,72 +318,141 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
       const target: CrawlTarget = { areaCode: cur.area_code, key: cur.slug };
       const url = source.pageUrl(target, cur.next_page);
       lastFetch = deps.now();
-      // 取りに行く前に記録する（0 件ページ・404・失敗も「1 リクエスト」として数え、間隔の起点にする）
-      await db.batch([
-        db.prepare("UPDATE listing_crawl_state SET last_fetch_at = ? WHERE source = ?").bind(iso(lastFetch), source.id),
-        db.prepare("UPDATE listing_crawl_runs SET pages_fetched = pages_fetched + 1 WHERE run_id = ?").bind(runId),
-      ]);
+      // 取りに行く前に記録する
+      await recordFetch(db, source.id, runId, iso(lastFetch));
       pages++;
 
-      let status: number;
-      let html: string;
-      let location: string | null;
-      try {
-        const res = await deps.fetch(url, {
-          headers: { "user-agent": source.userAgent, accept: "text/html", "accept-language": "ja" },
-          redirect: "manual",
-          signal: AbortSignal.timeout(CRAWL.fetchTimeoutMs),
-        });
-        status = res.status;
-        location = res.headers.get("location");
-        html = await res.text();
-      } catch (e) {
-        await cursorError(db, runId, source.id, cur, url, `fetch 失敗: ${String(e)}`, iso());
-        continue;
-      }
-
-      // 3xx で別ホスト・ボット確認らしき先へ飛ばされたら 403/429 と同じく止まる（取り直さない）
-      const block = source.detectBlock(status, html, { url, location });
-      if (block) {
-        const until = iso(deps.now() + CRAWL.cooldownHours * 3600_000);
-        await db.batch([
-          db
-            .prepare("UPDATE listing_crawl_state SET cooldown_until = ?, last_block_kind = ?, last_block_at = ? WHERE source = ?")
-            .bind(until, block, iso(), source.id),
-          db
-            .prepare(
-              `UPDATE listing_crawl_runs SET status = 'blocked', finished_at = ?, lease_until = NULL, updated_at = ?,
-                 note = COALESCE(note || ' / ', '') || ? WHERE run_id = ?`,
-            )
-            .bind(iso(), iso(), `${block} で停止（${until} までクールダウン）`, runId),
-          event(db, source.id, runId, "blocked", status, url, `${block}; cooldown_until=${until}${location ? `; location=${location.slice(0, 300)}` : ""}; body_head=${html.slice(0, 200)}`, iso()),
-        ]);
-        console.warn(`掲載クロール停止: ${block} ${status} ${url}`);
-        return { status: "blocked", runId, pages, detail: block };
-      }
-
-      if (cur.next_page > 1 && (status === 404 || (status >= 300 && status < 400))) {
-        // 取っている間に件数が減って、最後のページが無くなった
-        await cursorDone(db, runId, cur, cur.total_pages, cur.total_hits, 0, iso());
-        continue;
-      }
-      if (status !== 200) {
-        await cursorError(db, runId, source.id, cur, url, `HTTP ${status}`, iso());
-        continue;
-      }
-      await applyPage(db, source, runId, date, cur, source.parsePage(html, target), url, iso());
+      const outcome = await fetchAndClassify(deps.fetch, source, target, cur.next_page, url);
+      const r = await applyOutcome(db, source, source.id, runId, date, cur, outcome, url, deps.now);
+      if (r.blocked) return { status: "blocked", runId, pages, detail: r.blocked };
     }
-
-    const pending = await db
-      .prepare("SELECT COUNT(*) AS n FROM listing_crawl_cursor WHERE run_id = ? AND status = 'pending'")
-      .bind(runId)
-      .first<{ n: number }>();
-    if ((pending?.n ?? 0) > 0) return { status: "running", runId, pages };
-    return { ...(await finalizeRun(db, source.id, runId, date, iso())), pages };
+    return { ...(await closeIfDone(db, source.id, runId, date, iso())), runId, pages };
   } finally {
-    await db.prepare("UPDATE listing_crawl_runs SET lease_until = NULL WHERE run_id = ? AND status = 'running'").bind(runId).run();
+    await releaseLease(db, runId);
     console.log(JSON.stringify({ listingCrawl: { runId, pages } }));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mac（launchd）からの取り込み: POST /api/listings/ingest（LISTINGS_ENABLED=external のときだけ）
+//   Authorization: Bearer <LISTINGS_INGEST_TOKEN>（src/ingest-auth.ts・未設定なら全員 401）
+//   {op:"begin"} → 今日の回を開き、次に取るページを返す
+//   {op:"page", runId, areaCode, page, url, fetchedAt, outcome} → 1 ページ反映して次を返す
+//     送られた (areaCode, page) がカーソルの位置と違えば反映せず stale:true で今の位置を返す（再送しても二重計上しない）
+//   {op:"end", runId, summary} → lease を返し、kind='local' のイベントに結果を残す（/api/listings/status の lastLocalRun）
+// 1 リクエスト = 1 起動なので D1 クエリは 1 ページ ≒ 10 本で済む（上限 1,000）。
+// ---------------------------------------------------------------------------
+
+/** Mac 側クローラの取り込み口（POST・Bearer 認証）。src/index.ts が Access の判定より先に振り分ける */
+export const INGEST_PATH = "/api/listings/ingest";
+
+const MAX_INGEST_BODY = 512 * 1024;
+
+const ingestJson = (body: IngestResponse, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex", ...extra },
+  });
+
+async function cursorView(db: D1Database, runId: string): Promise<IngestCursor | null> {
+  const c = await nextCursor(db, runId);
+  return c ? { areaCode: c.area_code, slug: c.slug, page: c.next_page } : null;
+}
+
+/**
+ * 次に取るページを返す。残りが無ければ締める。
+ * extendLease: 実際にページを反映したときだけ lease を延ばす（再送・begin では延ばさない。
+ * 終わった実行の再送で lease が張り直され、次の実行が待たされるのを防ぐ）
+ */
+async function afterIngestStep(
+  db: D1Database,
+  runId: string,
+  date: string,
+  now: () => number,
+  extendLease: boolean,
+): Promise<IngestResponse> {
+  const iso = (ms = now()) => new Date(ms).toISOString();
+  const next = await cursorView(db, runId);
+  if (next) {
+    if (extendLease) {
+      await db
+        .prepare("UPDATE listing_crawl_runs SET lease_until = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
+        .bind(iso(now() + CRAWL.ingestLeaseMs), iso(), runId)
+        .run();
+    }
+    return { ok: true, status: "running", runId, next };
+  }
+  const done = await closeIfDone(db, SUUMO_SOURCE_ID, runId, date, iso());
+  if (done.status !== "running") await releaseLease(db, runId);
+  return { ok: true, status: done.status, runId, next: null, detail: done.detail };
+}
+
+export async function handleListingIngest(req: Request, env: Env, now: () => number = () => Date.now()): Promise<Response> {
+  if (req.method !== "POST") return ingestJson({ ok: false, error: "method_not_allowed" }, 405, { allow: "POST" });
+  // 認証を最初に（未認証の相手にはモードも何も教えない）
+  if (!(await checkIngestToken(req.headers.get("authorization"), env.LISTINGS_INGEST_TOKEN))) {
+    return ingestJson({ ok: false, error: "unauthorized" }, 401, { "www-authenticate": "Bearer" });
+  }
+  if (listingsMode(env) !== "external") {
+    return ingestJson({ ok: false, error: "LISTINGS_ENABLED が external ではないため取り込まない" }, 409);
+  }
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_INGEST_BODY) return ingestJson({ ok: false, error: "too_large" }, 413);
+  const text = await req.text();
+  if (text.length > MAX_INGEST_BODY) return ingestJson({ ok: false, error: "too_large" }, 413);
+  let r;
+  try {
+    r = parseIngestRequest(JSON.parse(text));
+  } catch (e) {
+    return ingestJson({ ok: false, error: `bad_request: ${e instanceof Error ? e.message : "JSON が不正"}` }, 400);
+  }
+
+  const db = env.DB;
+  const source = new SuumoSource();
+  const iso = (ms = now()) => new Date(ms).toISOString();
+
+  if (r.op === "begin") {
+    const date = crawlSettings(env).todayOverride ?? jstToday(new Date(now()));
+    const o = await openRun(db, source, LOCAL_STATE_KEY, date, now, CRAWL.ingestLeaseMs);
+    if (o.status !== "running") {
+      return ingestJson({ ok: true, status: o.status, runId: o.runId, next: null, lastFetchAt: o.lastFetchAt, detail: o.detail });
+    }
+    // lease は openRun が取った
+    const step = await afterIngestStep(db, o.runId, date, now, false);
+    return ingestJson({ ...step, lastFetchAt: o.lastFetchAt });
+  }
+
+  const run = await db
+    .prepare("SELECT crawl_date, status FROM listing_crawl_runs WHERE run_id = ? AND source = ?")
+    .bind(r.runId, source.id)
+    .first<{ crawl_date: string; status: string }>();
+
+  if (r.op === "end") {
+    // クールダウン中は回そのものが作られていないので、回が無くても実行の記録は残す
+    if (run) await releaseLease(db, r.runId);
+    await event(db, source.id, r.runId, "local", null, null, JSON.stringify({ ...r.summary, runStatus: run?.status ?? null }), iso()).run();
+    return ingestJson({ ok: true, status: run?.status ?? r.summary.status, runId: r.runId, next: null });
+  }
+
+  // op === "page"
+  if (!run) return ingestJson({ ok: false, error: "unknown_run" }, 404);
+  if (run.status !== "running") return ingestJson({ ok: true, status: run.status, runId: r.runId, next: null });
+  const cur = await db
+    .prepare(
+      `SELECT area_code, slug, next_page, total_pages, total_hits, attempts, status FROM listing_crawl_cursor
+       WHERE run_id = ? AND area_code = ?`,
+    )
+    .bind(r.runId, r.areaCode)
+    .first<CursorRow & { status: string }>();
+  if (!cur || cur.status !== "pending" || cur.next_page !== r.page) {
+    const step = await afterIngestStep(db, r.runId, run.crawl_date, now, false);
+    return ingestJson({ ...step, stale: true });
+  }
+  // 取った時刻は Mac の申告（未来・15 分より昔は丸める）。次の間隔の起点になる
+  const fetchedMs = Math.min(now(), Math.max(now() - 15 * 60_000, Date.parse(r.fetchedAt)));
+  await recordFetch(db, LOCAL_STATE_KEY, r.runId, iso(fetchedMs));
+  const res = await applyOutcome(db, source, LOCAL_STATE_KEY, r.runId, run.crawl_date, cur, r.outcome, r.url, now);
+  if (res.blocked) return ingestJson({ ok: true, status: "blocked", runId: r.runId, next: null, detail: res.blocked });
+  return ingestJson(await afterIngestStep(db, r.runId, run.crawl_date, now, true));
 }
 
 function event(
@@ -383,7 +538,7 @@ ON CONFLICT (source, external_id, observed_on) DO UPDATE SET price = excluded.pr
 /** 1 ページぶんを 1 回の D1 batch（= 1 トランザクション）で反映する。カーソルも同じ batch で進める（途中で落ちても二重計上しない） */
 async function applyPage(
   db: D1Database,
-  source: PagedListingSource,
+  source: PagedSource,
   runId: string,
   date: string,
   cur: CursorRow,
@@ -546,12 +701,27 @@ async function finalizeRun(
   return { status: "complete", runId };
 }
 
+function parseEventDetail(row: { at: string; run_id: string | null; detail: string | null } | null) {
+  if (!row) return null;
+  let detail: unknown = row.detail;
+  try {
+    detail = JSON.parse(row.detail ?? "null");
+  } catch {
+    /* 文字列のまま */
+  }
+  return { at: row.at, runId: row.run_id, result: detail };
+}
+
 export async function buildListingStatus(env: Env) {
   const source = SUUMO_SOURCE_ID;
-  const [state, runs, cursors, events, lastCron] = await Promise.all([
-    env.DB.prepare("SELECT last_fetch_at, cooldown_until, last_block_kind, last_block_at FROM listing_crawl_state WHERE source = ?")
-      .bind(source)
-      .first(),
+  const mode = listingsMode(env);
+  const activeKey = mode === "external" ? LOCAL_STATE_KEY : source;
+  const [states, runs, cursors, events, lastCron, lastLocal] = await Promise.all([
+    env.DB.prepare(
+      "SELECT source AS fetcher, last_fetch_at, cooldown_until, last_block_kind, last_block_at FROM listing_crawl_state WHERE source IN (?, ?)",
+    )
+      .bind(source, LOCAL_STATE_KEY)
+      .all<{ fetcher: string; last_fetch_at: string | null; cooldown_until: string | null; last_block_kind: string | null; last_block_at: string | null }>(),
     env.DB.prepare(
       `SELECT run_id, crawl_date, status, started_at, finished_at, invocations, pages_fetched, listings_seen, total_hits,
          new_count, price_change_count, gone_count, skipped_count, note
@@ -567,31 +737,32 @@ export async function buildListingStatus(env: Env) {
       .bind(source)
       .all(),
     env.DB.prepare(
-      "SELECT at, kind, http_status, url, detail FROM listing_crawl_events WHERE source = ? AND kind <> 'cron' ORDER BY id DESC LIMIT 20",
+      "SELECT at, kind, http_status, url, detail FROM listing_crawl_events WHERE source = ? AND kind NOT IN ('cron', 'local') ORDER BY id DESC LIMIT 20",
     )
       .bind(source)
       .all(),
     env.DB.prepare("SELECT at, run_id, detail FROM listing_crawl_events WHERE source = ? AND kind = 'cron' ORDER BY id DESC LIMIT 1")
       .bind(source)
       .first<{ at: string; run_id: string | null; detail: string | null }>(),
+    env.DB.prepare("SELECT at, run_id, detail FROM listing_crawl_events WHERE source = ? AND kind = 'local' ORDER BY id DESC LIMIT 1")
+      .bind(source)
+      .first<{ at: string; run_id: string | null; detail: string | null }>(),
   ]);
-  let lastCronRun: Record<string, unknown> | null = null;
-  if (lastCron) {
-    let detail: unknown = lastCron.detail;
-    try {
-      detail = JSON.parse(lastCron.detail ?? "null");
-    } catch {
-      /* 文字列のまま */
-    }
-    lastCronRun = { at: lastCron.at, runId: lastCron.run_id, result: detail };
-  }
+  const state = states.results.find((s) => s.fetcher === activeKey) ?? null;
   return {
-    enabled: listingsEnabled(env),
+    /** off 以外なら true（on = Worker cron が取る / external = Mac から受け取る） */
+    enabled: mode !== "off",
+    mode,
     cron: LISTINGS_CRON,
     /** cron が実際に起動した最後の記録（on のときだけ残る）。null なら on にしてから一度も起動していない */
-    lastCronRun,
+    lastCronRun: parseEventDetail(lastCron),
+    /** Mac 側クローラの最後の実行（external のとき。{op:"end"} で残る） */
+    lastLocalRun: parseEventDetail(lastLocal),
     settings: { intervalMs: crawlSettings(env).intervalMs, fakeOrigin: localOrigin(env) },
+    /** いまのモードで取っている取得元の状態（external なら Mac 側） */
     state,
+    /** 取得元ごとの状態（Worker = SUUMO_SOURCE_ID、Mac = LOCAL_STATE_KEY） */
+    states: states.results,
     runs: runs.results,
     latestCursors: cursors.results,
     events: events.results,

@@ -3,7 +3,7 @@
 福岡市 7 区と福岡都市圏の近郊 16 市町の中古マンション市場を毎日追いかけて、「どこが売りやすいか（流動性・価格維持）」と「どこが貸しやすいか（賃貸需要）」を市区町村・地区ごとに見る Cloudflare Worker。ダッシュボードは「福岡市のみ／近郊のみ／すべて」を切り替え、ランキングは選んだ範囲の中で付ける。
 
 - 公開ダッシュボード（`/`）のデータは公的な公開情報だけ（国土交通省 不動産情報ライブラリ API・e-Stat）
-- 掲載情報（SUUMO・私的利用）の日次取得を**同梱しているが既定は無効**（`LISTINGS_ENABLED=off`）。見る画面 `/listings` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
+- 掲載情報（SUUMO・私的利用）の日次取得を同梱（コードの既定は無効。本番は `LISTINGS_ENABLED=external` = **Keisuke の Mac（launchd）が取って Worker に送る**）。見る画面 `/listings` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
 - Cloudflare Workers（TypeScript）+ D1 + Cron Trigger。デプロイは手元の `wrangler`（GitHub Actions は型チェックとテストだけ）
 
 ## 仕組み
@@ -16,7 +16,10 @@
 | `src/metrics.ts` | 件数・㎡単価中央値・築年帯・価格帯・売りやすさ/貸しやすさスコア（式は画面にも表示）。`scope=city|suburb|all` で範囲を切り替え |
 | `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` / `PagedListingSource` 差し込み口 |
 | `src/suumo.ts` / `src/suumo-source.ts` | SUUMO 検索結果 HTML のパーサ・正規化（価格→万円・㎡・築年月・駅/徒歩・市区町村コード）と `SuumoSource` |
-| `src/listing-crawl.ts` | 掲載の日次クロール（`LISTINGS_ENABLED=on` のときだけ）。D1 のカーソルで複数起動に分割・止められたら停止・完走回だけ掲載終了 |
+| `src/listing-crawl.ts` | 掲載の日次クロールの D1 側。Mac からの取り込み口 `POST /api/listings/ingest`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了 |
+| `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
+| `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
+| `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から毎日 01:00 JST |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
 | `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順 |
 | `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
@@ -69,12 +72,19 @@ npm test                                # パーサ・JWT 検証（実ページ�
 
 ```sh
 npm run fake-suumo                                    # 偽サーバ http://127.0.0.1:8790
-npx wrangler dev --test-scheduled --var LISTINGS_ENABLED:on --var SUUMO_ORIGIN:http://127.0.0.1:8790 \
-  --var LISTINGS_MIN_INTERVAL_MS:0 --var LISTINGS_MAX_PAGES_PER_INVOCATION:10 --var DEV_BYPASS_ACCESS:1
-curl "http://localhost:8787/__scheduled?cron=*/15+16-20+*+*+*"   # 1 起動ぶん（取り切るまで繰り返す）
-curl -X POST http://127.0.0.1:8790/__day/2                       # 翌日: 消える・値下げ・新着（LISTINGS_TODAY_OVERRIDE も翌日に）
-curl -X POST http://127.0.0.1:8790/__mode/429                    # 止まる動作の確認
+# wrangler.toml にカスタムドメインの route があるので --local-upstream が要る。取り込み口は external のときだけ開く
+npx wrangler dev --port 8787 --local-upstream 127.0.0.1:8787 \
+  --var LISTINGS_ENABLED:external --var LISTINGS_INGEST_TOKEN:local-test-token-0123456789abcdef0123456789 \
+  --var SUUMO_ORIGIN:http://127.0.0.1:8790 --var LISTINGS_TODAY_OVERRIDE:2026-09-22 --var DEV_BYPASS_ACCESS:1
+# Mac 側クローラ → 取り込み口 → ローカル D1（偽サーバ相手だけ間隔を 0 にできる）
+FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/listings/ingest \
+  LISTINGS_INGEST_TOKEN=local-test-token-0123456789abcdef0123456789 \
+  SUUMO_ORIGIN=http://127.0.0.1:8790 LISTINGS_MIN_INTERVAL_MS=0 npm run crawl:local
+curl -X POST http://127.0.0.1:8790/__day/2      # 翌日: 消える・値下げ・新着（wrangler dev の LISTINGS_TODAY_OVERRIDE も翌日にして起動し直す）
+curl -X POST http://127.0.0.1:8790/__mode/429   # 止まる動作の確認（Mac 側が 72 時間クールダウンになる）
 open http://localhost:8787/listings
+# Worker cron で取る旧方式（on）を試すなら: --var LISTINGS_ENABLED:on にして
+#   curl "http://localhost:8787/__scheduled?cron=*/15+16-20+*+*+*"
 ```
 
 本番:
@@ -107,10 +117,42 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
   - 将来人口の 2020 年は XKT013 の `PTN_2020`（国勢調査人口）、2025 年以降は `PT00_YYYY`。駅は XKT013 のメッシュ（SHICODE 付き）で市区町村にひも付ける（`station_passengers.area_code`・migrations/0004）
 - 注意: 取引価格（アンケート）と成約価格（レインズ由来）は同じ取引を重複して含みうるので、「両方」は重複の恐れがある。構成（築年・広さ）の変化で中央値が動くので、比較するときは築年帯・面積フィルタを揃える
 
-## 掲載情報（SUUMO）— 私的利用・既定は無効
+## 掲載情報（SUUMO）— 私的利用・Mac から取る
 
 **私的・非商用の個人利用に限る**（SUUMO ご利用規約 第2条1項「私的利用の範囲」・第3条7号 商業目的の禁止）。許諾契約ではない。
 データは非公開の `/listings` でだけ見せ、公開ダッシュボードや API には出さない。robots.txt（2026-09-14）は `/ms/chuko/` を Disallow していない。
+
+### 取る場所（`LISTINGS_ENABLED`）
+
+| 値 | 誰が SUUMO を取るか | 備考 |
+|---|---|---|
+| `off`（コードの既定・不明な値） | 誰も取らない | cron は D1 にも触らず即 return、取り込み口は 409 |
+| `on` | Worker の cron（`*/15 16-20 * * *`） | 2026-09-14〜09-22 の方式。下の経緯でやめた |
+| **`external`（本番・2026-09-22〜）** | **Keisuke の Mac（launchd・毎日 01:00 JST）** | cron は取らない。Mac が 1 ページ取るごとに `POST /api/listings/ingest` へ送る |
+
+**Mac へ移した経緯**: Worker の cron から取ると、2026-09-14 に 43 ページ目で 503、9/17・9/20 のクールダウン明けは 1 ページ目で即 503 だった。
+Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/ms/chuko/fukuoka/sc_fukuokashihigashi/`）を自宅回線から curl すると 200・29 件が取れた。
+
+### Mac 側の仕組み
+
+- `scripts/suumo-crawl-local.ts`（`npm run crawl:local`）が、取得・ブロック判定・解析を **Worker cron と同じ関数**（`src/listing-crawl-core.ts` の `fetchAndClassify`）で行い、解析済みの 1 ページぶん（物件 20 件の JSON）を送る
+- D1 への反映・カーソル前進・掲載終了の判定は **Worker 側の同じ関数**（`src/listing-crawl.ts` の `applyOutcome` / `finalizeRun`）。Mac は毎回「次にどのページを取るか」を Worker に聞く
+  - 送ったページがカーソルの位置と違えば（通信の再送など）反映せず `stale` で今の位置を返す → 二重計上しない
+  - Mac が途中で落ちても、翌日（または手動の再実行で）カーソルの続きから。lease は 10 分で解ける
+- 取り込み口の認証は **Bearer の共有シークレット**（Worker secret `LISTINGS_INGEST_TOKEN`・32 文字以上・定数時間比較・**未設定なら全員 401**）。Access の JWT 検証（`src/access.ts`）は変えていない
+  - カスタムドメイン（`condo.kechiiiiin.com`）は `/api/listings/*` の前に Access が立っているので届かない。Mac は **workers.dev** の URL に送る
+- クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
+  送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
+- 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ
+- 1 回の上限: 500 ページ・6 時間（通常は ≒ 231 ページ × 31 秒 ≒ 2 時間）
+- 置き場所:
+
+| もの | 場所 | 備考 |
+|---|---|---|
+| トークンと送り先 | `~/.config/fukuoka-condo-watch/env`（chmod 600） | `LISTINGS_INGEST_URL=` と `LISTINGS_INGEST_TOKEN=` の 2 行。plist・リポジトリには書かない |
+| launchd | `~/Library/LaunchAgents/com.kechiiiiin.fukuoka-condo-watch.suumo.plist` | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋める |
+| ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log` | 1 ページ 1 行 |
+| 最後の実行結果 | `/api/listings/status` の `lastLocalRun`（`/listings` の「クロールの状態」にも） | D1 `listing_crawl_events` の kind=`local` |
 
 ### 取り方
 
@@ -120,15 +162,17 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
   - 近郊: `chikushino` `kasuga` `onojo` `dazaifu` `nakagawa` `itoshima` `munakata` `koga` `fukutsu` / 粕屋郡は `kasuyagun` + `umi` `sasaguri` `shime` `sue` `shingu` `hisayama` `kasuya`
   - 久山町は掲載 0 件のため一覧のリンクに出ないが、URL は有効（「条件にあう物件がありません」）
 - 件数（2026-09-14）: 福岡市 3,583 件 ≒ 180 ページ + 近郊 851 件 ≒ 51 ページ = **1 日 ≒ 231 ページ**
-- 1 ページごとに **30 秒**（本番は 20 秒未満にできない）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
+- 1 ページごとに **30 秒**（本番の suumo.jp 相手は 30 秒未満にできない。2026-09-22 に下限を 20 → 30 秒に上げた。偽サーバ相手だけ短縮可）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
   - 2026-09-14 の初回は 6 秒間隔で 43 ページ目に Cloudflare から 503 を返されたため、時間をかけてでも間隔を広げた（231 ページ ≒ 2 時間）
-- cron `*/15 16-20 * * *`（01:00〜05:45 JST・20 起動）。1 起動 10 分で切り上げ（≒ 19 ページ）→ 13 起動ほどで終わり、残りは再開の余裕
+- （`on` のとき）cron `*/15 16-20 * * *`（01:00〜05:45 JST・20 起動）。1 起動 10 分で切り上げ（≒ 19 ページ）→ 13 起動ほどで終わり、残りは再開の余裕
 - 進み具合は D1 `listing_crawl_cursor` に 1 ページごとに保存（ページの反映とカーソル前進は同じトランザクション）。落ちても次の起動が続きから
 - **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い / 別ホストやボット確認らしき先への 3xx** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
-- cron が実際に起動した最後の時刻と結果は `/api/listings/status` の `lastCronRun`（`listing_crawl_events` の kind=`cron`。on のときだけ記録）
+- cron が実際に起動した最後の時刻と結果は `/api/listings/status` の `lastCronRun`（`listing_crawl_events` の kind=`cron`。on のときだけ記録）。Mac の実行は `lastLocalRun`
 - 掲載終了は**全市区町村を取り切った回（complete）でだけ**付ける。取れなかった市区町村がある回・見えた件数がヒット件数合計の 85% 未満の回は付けない
 
 ### Workers Paid が前提（Free で何が壊れるか）
+
+※ `external`（Mac 方式）では解析は Mac 側で済み、取り込みは 1 リクエスト = 1 ページ（D1 ≒ 10 クエリ）なので、下の cron の上限には当たらない。以下は `on` のときの話。
 
 2026-09 確認の上限: Paid の Cron は CPU 30 秒（1 時間未満間隔）・実行 15 分・サブリクエスト 10,000・D1 クエリ 1,000/起動。
 
@@ -147,7 +191,30 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
 2. **Worker 側の JWT 検証**（`src/access.ts`）: `Cf-Access-Jwt-Assertion` を `<team>.cloudflareaccess.com/cdn-cgi/access/certs` の鍵で RS256 検証し、iss・aud・exp と `ALLOWED_EMAILS` を確かめる。
    どれかが未設定なら全員拒否 → workers.dev の `/listings` や Access の設定漏れも 401/403
 
-### 有効化の手順
+### Mac 方式のセットアップ（2026-09-22〜）
+
+【Keisuke・ブラウザ】**なし**（Access・Workers Paid・カスタムドメインは 2026-09-14 に済んでいる。トークンは CLI で生成して secret に入れる）
+
+【ヘスティア・コマンド】（Mac のターミナルで。トークンの値は画面に出ない）
+```sh
+cd ~/work/fukuoka-condo-watch && npm ci
+npx wrangler deploy                       # LISTINGS_ENABLED=external と取り込み口。表示される workers.dev の URL を控える
+bash ops/setup-ingest-token.sh https://fukuoka-condo-watch.<sub>.workers.dev
+                                          # トークン生成 → wrangler secret put（stdin）→ ~/.config/fukuoka-condo-watch/env（600）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://fukuoka-condo-watch.<sub>.workers.dev/api/listings/ingest   # 401（認証なしは拒否）
+npm run crawl:local -- --dry-run          # 設定の確認だけ（取得先 https://suumo.jp・間隔 30000ms と出る）
+bash ops/launchd/install.sh               # launchd に登録（毎日 01:00。入れた瞬間には走らない）
+npm run crawl:local -- --max-pages 2      # 試し走り: 2 ページ（≒ 30 秒）で切り上げ。続きはカーソルから
+launchctl kickstart gui/$(id -u)/com.kechiiiiin.fukuoka-condo-watch.suumo   # 通しの初回を今すぐ（≒ 2 時間）
+tail -f ~/Library/Logs/fukuoka-condo-watch/suumo-crawl.out.log
+```
+
+止めるとき: `bash ops/launchd/uninstall.sh`（データ・ログ・env は残る）。Worker 側も閉じるなら `LISTINGS_ENABLED = "off"` にして deploy。
+トークンを替えるとき: `bash ops/setup-ingest-token.sh <同じ URL>` をもう一度（secret と env の両方が新しい値になる）。
+Mac 側のクールダウンを手で解くとき（原因が分かって解消したときだけ）:
+`npx wrangler d1 execute fukuoka-condo-watch --remote --command "UPDATE listing_crawl_state SET cooldown_until = NULL WHERE source = 'suumo:ms-chuko@mac'"`
+
+### 初回の有効化の手順（2026-09-14・Worker cron 方式のとき。記録として残す）
 
 【Keisuke・ブラウザ】（初回だけ）
 1. Workers Paid にアップグレード

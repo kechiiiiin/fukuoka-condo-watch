@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  テンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
+  ~/Library/LaunchAgents/ に置き、launchctl bootstrap する。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>com.kechiiiiin.fukuoka-condo-watch.suumo</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/ops/launchd/run-suumo-crawl.sh</string>
+  </array>
+  <key>WorkingDirectory</key> <string>__REPO__</string>
+
+  <!-- 毎日 01:00（Mac のタイムゾーン = JST）。スリープしていた間に過ぎたら、起きたあと 1 回だけ走る。
+       電源が切れていた日は走らない（翌日カーソルの続きから）。1 回 ≒ 231 ページ × 31 秒 ≒ 2 時間。 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>   <integer>1</integer>
+    <key>Minute</key> <integer>0</integer>
+  </dict>
+  <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->
+  <key>RunAtLoad</key>        <false/>
+
+  <!-- launchd は PATH を継承しないので、install.sh が解決した node を渡す -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_BIN</key>       <string>__NODE_BIN__</string>
+    <key>PATH</key>           <string>__PATH__</string>
+  </dict>
+
+  <key>StandardOutPath</key>  <string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-crawl.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-crawl.err.log</string>
+
+  <!-- ⚠️ トークンは絶対にここへ書かない（launchctl print / ps から丸見えになる）。
+       ~/.config/fukuoka-condo-watch/env（chmod 600）からクローラ自身がファイルとして読む。 -->
+</dict>
+</plist>

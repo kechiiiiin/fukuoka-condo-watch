@@ -4,7 +4,8 @@ REINFOLIB_API_KEY=
 ESTAT_APP_ID=
 
 # ---- 掲載情報（SUUMO）のローカル確認用。本物の SUUMO には向けない ----
-# LISTINGS_ENABLED=on
+# LISTINGS_ENABLED=external                  # Mac 側クローラから受け取る（on = Worker cron が取る旧方式）
+# LISTINGS_INGEST_TOKEN=local-test-token-0123456789abcdef0123456789   # 取り込み口の Bearer（32 文字以上。本番値は入れない）
 # SUUMO_ORIGIN=http://127.0.0.1:8790        # npm run fake-suumo の偽サーバ（localhost 以外は無視される）
-# LISTINGS_MIN_INTERVAL_MS=0                 # 偽サーバ相手のときだけ 5000 未満にできる
+# LISTINGS_MIN_INTERVAL_MS=0                 # 偽サーバ相手のときだけ 30000 未満にできる
 # DEV_BYPASS_ACCESS=1                        # localhost のときだけ /listings の認証を迂回

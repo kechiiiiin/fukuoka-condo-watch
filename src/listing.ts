@@ -9,27 +9,10 @@
 // （アットホーム・不動産ジャパン・楽待・Yahoo!不動産）は実装しない。
 
 import type { Env } from "./env";
+import type { CrawlTarget, ListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 
-export interface ListingRecord {
-  externalId: string;
-  kind: "sale" | "rent";
-  wardCode?: string;
-  districtName?: string;
-  buildingName?: string;
-  buildingYear?: number;
-  builtMonth?: number;
-  areaSqm?: number;
-  floorPlan?: string;
-  lineName?: string;
-  stationName?: string;
-  walkMinutes?: number;
-  /** 駅までバス便（walkMinutes は入れない） */
-  bus?: boolean;
-  address?: string;
-  url?: string;
-  /** 売買は総額（円）、賃貸は月額賃料（円） */
-  price: number;
-}
+// 純粋な型は src/listing-types.ts（Mac 側クローラからも使うため D1 に依存させない）
+export type { CrawlTarget, ListingRecord, PagedSource, ParsedListPage };
 
 export interface ListingSource {
   /** listings.source に入る ID（例: "partner-feed-x"） */
@@ -40,31 +23,7 @@ export interface ListingSource {
   fetchActive(env: Env): Promise<ListingRecord[]>;
 }
 
-export interface CrawlTarget {
-  /** 市区町村コード（5 桁） */
-  areaCode: string;
-  /** 情報源側のキー（SUUMO なら sc_<slug> の slug） */
-  key: string;
-}
-
-export interface ParsedListPage {
-  /** 検索全体のヒット件数。0 件ページは zeroHits=true・totalHits=null */
-  totalHits: number | null;
-  zeroHits: boolean;
-  maxPageLinked: number | null;
-  records: ListingRecord[];
-  /** 価格が読めず捨てた件数 */
-  skipped: number;
-}
-
-export interface PagedListingSource extends ListingSource {
-  readonly pageSize: number;
-  targets(): CrawlTarget[];
-  pageUrl(target: CrawlTarget, page: number): string;
-  parsePage(html: string, target: CrawlTarget): ParsedListPage;
-  /** 止まるべき応答なら種別（"http_429" 等）、問題なければ null。3xx は redirect（要求 URL と Location）で判定 */
-  detectBlock(status: number, html: string, redirect?: { url: string; location: string | null }): string | null;
-}
+export interface PagedListingSource extends ListingSource, PagedSource {}
 
 /** 「その日の全件」型の許諾済み情報源。現在は空（SUUMO はページ型なので listing-crawl.ts 側） */
 export const ADAPTERS: ListingSource[] = [];

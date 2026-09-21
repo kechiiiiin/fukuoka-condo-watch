@@ -32,14 +32,20 @@ cpu_ms = 30000
 #    何度走っても結果は同じ（冪等）。数年分の初回投入は Worker ではなく scripts/backfill.ts で行う。
 #
 # 2) "*/15 16-20 * * *" … 掲載情報（SUUMO）。01:00〜05:45 JST に 15 分おき 20 起動。**LISTINGS_ENABLED が on のときだけ動く**
-#    （off なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 19 ページ・30 秒間隔）。
+#    （off・external なら D1 にも触らず即 return）。Workers Paid 前提（1 起動 10 分で切り上げ・約 19 ページ・30 秒間隔）。
 #    1 日 ≒ 231 ページ → 13 起動ほどで終わり、残りは再開の余裕。src/listing-crawl.ts の LISTINGS_CRON と一致させること。
+#    ⚠️ 2026-09-22 から本番は external（Mac の launchd が取る）なので、この cron は起動しても即 return する。
+#       on に戻せばそのまま使えるよう、トリガーは残してある。
 [triggers]
 crons = ["*/5 19-23 * * *", "*/15 16-20 * * *"]
 
 [vars]
-# 掲載クロールのフラグ。有効化は Workers Paid・Access の準備が済んでから "on" にして push（README）
-LISTINGS_ENABLED = "on"
+# 掲載クロールの取り方（src/listing-crawl-core.ts の listingsMode・README「掲載情報（SUUMO）」）:
+#   "off"      … 何もしない
+#   "on"       … Worker の cron が SUUMO を取る（Cloudflare の送信元が 503 で弾かれたため 2026-09-22 にやめた）
+#   "external" … Mac（ops/launchd/・毎日 01:00 JST）が取って POST /api/listings/ingest に送る。cron は取らない
+#                取り込みの認証は secret LISTINGS_INGEST_TOKEN（未設定なら全員 401）
+LISTINGS_ENABLED = "external"
 # Access アプリ「fukuoka-condo-watch listings」（2026-09-14 に scripts/access-app.ts で作成）の値。秘密ではない。ALLOWED_EMAILS は secret
 CF_ACCESS_TEAM_DOMAIN = "https://kechiiiiin.cloudflareaccess.com"
 CF_ACCESS_AUD = "786b6144ce3802310060fb9c63ba605a97275588caa0fa612a5215a109f89858"
@@ -53,4 +59,6 @@ migrations_dir = "migrations"
 # 秘密は `wrangler secret put` で登録する（リポジトリには書かない）:
 #   REINFOLIB_API_KEY … 不動産情報ライブラリ API キー（未設定でも動く。画面に「APIキー未設定」）
 #   ALLOWED_EMAILS    … /listings を見てよいメール（カンマ区切り）。未設定なら /listings は全員 403
+#   LISTINGS_INGEST_TOKEN … Mac 側クローラの取り込み用（32 文字以上）。未設定なら /api/listings/ingest は全員 401
+#                           ops/setup-ingest-token.sh が生成して secret と Mac の ~/.config/fukuoka-condo-watch/env の両方に置く
 # e-Stat のアプリケーション ID は Worker には渡さない（scripts/estat.ts がローカルで使う。.dev.vars に置く）。

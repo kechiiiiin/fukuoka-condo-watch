@@ -2,7 +2,15 @@ import { requireAccess } from "./access";
 import { renderDashboard } from "./dashboard";
 import type { Env } from "./env";
 import { runDailyIngest } from "./ingest";
-import { buildListingStatus, LISTINGS_CRON, listingsEnabled, recordCronInvocation, runListingCrawl } from "./listing-crawl";
+import {
+  buildListingStatus,
+  handleListingIngest,
+  INGEST_PATH,
+  LISTINGS_CRON,
+  listingsEnabled,
+  recordCronInvocation,
+  runListingCrawl,
+} from "./listing-crawl";
 import { buildListingMetrics } from "./listing-metrics";
 import { buildListingPicks } from "./listing-picks";
 import { renderListingsDashboard } from "./listings-dashboard";
@@ -15,7 +23,7 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
-/** 非公開（Cloudflare Access + Worker 側の JWT 検証）にするパス */
+/** 非公開（Cloudflare Access + Worker 側の JWT 検証）にするパス。INGEST_PATH だけは先に分岐して Bearer で守る */
 export function isPrivatePath(pathname: string): boolean {
   return (
     pathname === "/listings" ||
@@ -27,10 +35,20 @@ export function isPrivatePath(pathname: string): boolean {
 
 export default {
   async fetch(req, env): Promise<Response> {
+    const url = new URL(req.url);
+    // Mac（launchd）からの掲載取り込み。Access ではなく共有シークレット（Bearer）で守る → Access の前段が無い
+    // workers.dev で使う（カスタムドメイン側は /api/listings/* に Access が立っているので届かない）
+    if (url.pathname === INGEST_PATH) {
+      try {
+        return await handleListingIngest(req, env);
+      } catch (e) {
+        console.error(e);
+        return json({ ok: false, error: "internal_error" }, 500);
+      }
+    }
     if (req.method !== "GET" && req.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405 });
     }
-    const url = new URL(req.url);
     try {
       if (isPrivatePath(url.pathname)) {
         const auth = await requireAccess(req, env);
@@ -73,7 +91,7 @@ export default {
 
   async scheduled(controller, env, ctx): Promise<void> {
     if (controller.cron === LISTINGS_CRON) {
-      // off のときは D1 にも触らず終わる
+      // on（Worker が取る）以外は D1 にも触らず終わる。external では Mac が取って /api/listings/ingest に送る
       if (!listingsEnabled(env)) return;
       const startedAt = new Date().toISOString();
       ctx.waitUntil(

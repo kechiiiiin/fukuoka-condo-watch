@@ -1,8 +1,8 @@
 // SuumoSource: SUUMO 中古マンション検索（市区町村ごと）を ListingSource / PagedListingSource として包む。
 // ⚠️ 私的・非商用の個人利用に限る。既定は無効（LISTINGS_ENABLED）。日次の取り方は src/listing-crawl.ts。
+// Env・D1 に依存させない（Mac 側クローラ scripts/suumo-crawl-local.ts からも使う）。
 
-import type { Env } from "./env";
-import type { CrawlTarget, ListingRecord, PagedListingSource, ParsedListPage } from "./listing";
+import type { CrawlTarget, ListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import {
   detectBlock,
   parseSuumoListPage,
@@ -16,7 +16,7 @@ import {
 
 /** 正直に名乗る（ブラウザを装わない）。LISTINGS_USER_AGENT で上書きできる */
 export const DEFAULT_USER_AGENT =
-  "fukuoka-condo-watch/1.0 (personal, non-commercial; 1 req per 6s; +https://github.com/kechiiiiin/fukuoka-condo-watch)";
+  "fukuoka-condo-watch/1.0 (personal, non-commercial; 1 req per 30s; +https://github.com/kechiiiiin/fukuoka-condo-watch)";
 
 export function toListingRecord(l: SuumoListing): ListingRecord | null {
   if (l.priceMan === null) return null;
@@ -55,7 +55,7 @@ export interface SuumoSourceOptions {
   minIntervalMs?: number;
 }
 
-export class SuumoSource implements PagedListingSource {
+export class SuumoSource implements PagedSource {
   readonly id = SUUMO_SOURCE_ID;
   readonly permission =
     "私的・非商用の個人利用（SUUMO ご利用規約 第2条1項「私的利用の範囲」・第3条7号 商業目的の禁止。許諾契約ではない）。" +
@@ -103,7 +103,7 @@ export class SuumoSource implements PagedListingSource {
    * 1 回で全件を取る（ListingSource 互換。ローカルの偽サーバ相手の確認用）。
    * 本番の日次取得は Workers の時間上限に収まらないので使わず、listing-crawl.ts のカーソル方式を使う。
    */
-  async fetchActive(_env: Env): Promise<ListingRecord[]> {
+  async fetchActive(_env?: unknown): Promise<ListingRecord[]> {
     const out = new Map<string, ListingRecord>();
     let last = 0;
     for (const t of this.targets()) {

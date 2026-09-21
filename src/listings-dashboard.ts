@@ -123,7 +123,7 @@ const HTML = `<!doctype html>
     fetch("/api/listings/status", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (s) {
       var st = s.state || {};
       var cool = st.cooldown_until && st.cooldown_until > new Date().toISOString();
-      document.getElementById("crawl-state").innerHTML = "LISTINGS_ENABLED: <b>" + (s.enabled ? "on" : "off") + "</b>・cron " + esc(s.cron) + "・間隔 " + n(s.settings.intervalMs) + "ms・最終取得 " + esc(st.last_fetch_at || "—") + "・最終 cron 起動 " + esc((s.lastCronRun && s.lastCronRun.at) || "—") + (cool ? ' ・<span class="bad">クールダウン中 ' + esc(st.cooldown_until) + "（" + esc(st.last_block_kind) + "）</span>" : "");
+      document.getElementById("crawl-state").innerHTML = "LISTINGS_ENABLED: <b>" + esc(s.mode || (s.enabled ? "on" : "off")) + "</b>" + (s.mode === "external" ? "（Mac から取り込み）・最終 Mac 実行 " + esc((s.lastLocalRun && s.lastLocalRun.at) || "—") : "・cron " + esc(s.cron) + "・最終 cron 起動 " + esc((s.lastCronRun && s.lastCronRun.at) || "—")) + "・間隔 " + n(s.settings.intervalMs) + "ms・最終取得 " + esc(st.last_fetch_at || "—") + (cool ? ' ・<span class="bad">クールダウン中 ' + esc(st.cooldown_until) + "（" + esc(st.last_block_kind) + "）</span>" : "");
       table("t-runs", ["日付", "状態", "起動", "ページ", "見えた件数", "ヒット合計", "新着", "価格変更", "掲載終了", "メモ"], s.runs.map(function (r) {
         return [esc(r.crawl_date), r.status === "blocked" ? '<span class="bad">blocked</span>' : esc(r.status), n(r.invocations), n(r.pages_fetched), n(r.listings_seen), n(r.total_hits), n(r.new_count), n(r.price_change_count), n(r.gone_count), '<span class="sub">' + esc(r.note) + "</span>"];
       }));
