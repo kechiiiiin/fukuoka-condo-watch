@@ -5,6 +5,9 @@
 // 同じ部屋が複数の仲介業者から別の external_id で重複掲載されるため（例: アンピール空港南が 11 件）、
 // 建物名（正規化）＋専有面積（±0.5㎡）＋間取り＋築年でグルーピングして 1 枚のカードにまとめる。
 
+import { districtHasEnoughSales, municipalityHasEnoughSales, retentionOf, type Windowed } from "./scoring";
+import { AREAS } from "./wards";
+
 export interface ListingPickRow {
   source: string;
   external_id: string;
@@ -81,8 +84,8 @@ export interface PickFilters {
 }
 
 export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
-  priceMaxMan: 3600,
-  areaMin: 65,
+  priceMaxMan: 4800,
+  areaMin: 70,
   planRoomsMin: 3,
   includeDK: false,
   ageMax: 25,
@@ -131,6 +134,13 @@ export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string
     freshOnly: bool(params, "fresh", DEFAULT_PICK_FILTERS.freshOnly),
     freshDays: DEFAULT_PICK_FILTERS.freshDays,
   };
+}
+
+/** 並べ替え。newest = 新着順（既定）/ retention = 価格維持の高い順 */
+export type PickSort = "newest" | "retention";
+
+export function parsePickSort(params: URLSearchParams): PickSort {
+  return params.get("sort") === "retention" ? "retention" : "newest";
 }
 
 /** 行が条件に合うか（掲載中かどうかはここでは見ない。呼び出し側で delisted_on IS NULL を絞ってから使う） */
@@ -294,10 +304,171 @@ function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
   };
 }
 
+/**
+ * 並べ替えに要る最小限の形。ListingGroup（グルーピング直後）も /api/listings/picks のカードもこれを満たすので、
+ * どちらもそのまま並べられる。retention は価格維持（無い・計算できないものは null / 省略）。
+ */
+export interface SortableGroup {
+  latestFirstSeen: string;
+  minPrice: number;
+  retention?: { value: number } | null;
+}
+
+function compareNewest(a: SortableGroup, b: SortableGroup): number {
+  if (a.latestFirstSeen !== b.latestFirstSeen) return a.latestFirstSeen < b.latestFirstSeen ? 1 : -1;
+  return a.minPrice - b.minPrice;
+}
+
 /** 新着順（グループの最新 first_seen が新しい順）。同着は価格が安い順 */
-export function sortGroupsNewestFirst(groups: ListingGroup[]): ListingGroup[] {
+export function sortGroupsNewestFirst<T extends SortableGroup>(groups: readonly T[]): T[] {
+  return [...groups].sort(compareNewest);
+}
+
+/** 価格維持の高い順。価格維持が無いものは末尾（その中は新着順）。同値も新着順→価格が安い順 */
+export function sortGroupsByRetention<T extends SortableGroup>(groups: readonly T[]): T[] {
   return [...groups].sort((a, b) => {
-    if (a.latestFirstSeen !== b.latestFirstSeen) return a.latestFirstSeen < b.latestFirstSeen ? 1 : -1;
-    return a.minPrice - b.minPrice;
+    const ra = a.retention?.value ?? null;
+    const rb = b.retention?.value ?? null;
+    if (ra === null && rb !== null) return 1;
+    if (ra !== null && rb === null) return -1;
+    if (ra !== null && rb !== null && ra !== rb) return rb - ra;
+    return compareNewest(a, b);
   });
+}
+
+export function sortPicks<T extends SortableGroup>(groups: readonly T[], sort: PickSort): T[] {
+  return sort === "retention" ? sortGroupsByRetention(groups) : sortGroupsNewestFirst(groups);
+}
+
+// ---------------------------------------------------------------- 住所 → 町名（地区名）
+
+/** 旧字・異体字を台帳（src/wards.ts）側の表記に寄せる（src/suumo.ts municipalityCodeFromAddress と同じ扱い） */
+function canonicalizeAddress(addr: string): string {
+  return addr
+    .normalize("NFKC")
+    .replace(/[\s　]/g, "")
+    .replace(/^福岡県/, "")
+    .replace(/糟屋郡/g, "粕屋郡")
+    .replace(/須惠町/g, "須恵町");
+}
+
+/** 長い名前から先に試す（「春日市」より先に…のような前方一致の取り違えを避ける） */
+const MUNICIPALITY_PREFIXES: string[] = AREAS.flatMap((a) =>
+  a.group === "city" ? [`福岡市${a.name}`, a.name] : [`粕屋郡${a.name}`, a.name],
+).sort((x, y) => y.length - x.length);
+
+const KANJI_NUM = "〇一二三四五六七八九十百";
+
+/**
+ * 地区名の突き合わせキー。国交省 XIT001 の DistrictName（丁目を含まない町名。例「千早」「藤崎」）と、
+ * districtNameFromAddress の結果の両方をこれに通してから比べる。
+ * 全角/半角・空白を揃え、先頭の「大字」「字」を落とし、「ヶ」「ヵ」「ケ」を揃える（どちらの表記でも同じ地区になるように）。
+ */
+export function normalizeDistrictKey(name: string | null | undefined): string {
+  if (!name) return "";
+  return name
+    .normalize("NFKC")
+    .replace(/[\s　]/g, "")
+    .replace(/[ヶヵ]/g, "ケ")
+    .replace(/^大字/, "")
+    .replace(/^字/, "");
+}
+
+/**
+ * SUUMO の住所文字列から町名（丁目・番地を除いた地区名）を起こす。
+ * SUUMO の掲載は地区名を持たない（listings.district_name は常に NULL）ので、XIT001 の DistrictName と
+ * 突き合わせるためにここで作る。読めなければ null。
+ *
+ * 吸収する表記ゆれ:
+ * - 県名・市名・郡名の有無（「福岡県福岡市東区千早４」「東区千早4丁目」「福岡市東区千早」）
+ * - 全角/半角数字、丁目の有無（「千早４」「千早4丁目」「千早四丁目」「千早4-1-2」）
+ * - 旧字（「糟屋郡須惠町」）、先頭の「大字」「字」
+ * - 台帳に無い市区町村でも「〇〇市△△町」「〇〇郡〇〇町△△」の形なら市区町村部分を落とす
+ * 町名に漢数字を含むもの（「二日市南」「五十川」「三苫」）は、漢数字の直後が「丁目」のときだけ切る。
+ */
+export function districtNameFromAddress(address: string | null | undefined): string | null {
+  if (!address) return null;
+  let s = canonicalizeAddress(address);
+
+  const known = MUNICIPALITY_PREFIXES.find((p) => s.startsWith(p));
+  if (known) {
+    s = s.slice(known.length);
+  } else {
+    // 台帳に無い市区町村: 「〇〇市」→（政令市なら）「〇〇区」、または「〇〇郡〇〇町/村」を落とす
+    const m = /^(?:[^\d市郡]{1,6}郡[^\d町村]{1,6}[町村]|[^\d市]{1,6}市(?:[^\d区]{1,4}区)?)/.exec(s);
+    if (!m) return null;
+    s = s.slice(m[0].length);
+  }
+
+  s = s.replace(/^大字/, "").replace(/^字/, "");
+  // 丁目・番地より前（最初の数字、または「漢数字+丁目」の手前）で切る
+  const cut = new RegExp(`(\\d|[${KANJI_NUM}]+丁目|丁目|番地|[-‐－ー―の]\\d)`).exec(s);
+  if (cut) s = s.slice(0, cut.index);
+  s = s.replace(/[-‐－―]+$/, "");
+  return s.length > 0 ? s : null;
+}
+
+// ---------------------------------------------------------------- 価格維持
+
+export type RetentionLevel = "district" | "municipality";
+
+export interface PickRetention {
+  /** district = 地区（町名）の値 / municipality = 地区の件数が足りず市区町村の値に落とした */
+  level: RetentionLevel;
+  /** 直近8四半期の㎡単価中央値 ÷ その前8四半期の中央値 */
+  value: number;
+  /** 値を取った範囲の名前（地区なら町名、市区町村なら市区町村名） */
+  areaName: string;
+  nRecent: number;
+  nPrior: number;
+}
+
+/**
+ * 地区の窓を「突き合わせキー」で引けるようにする。
+ * windows のキーは `${市区町村コード}\t${district_name}`（src/metrics.ts buildMetricsWithWindows）。
+ * 「大字◯◯」「◯◯」のように同じキーに落ちるものが複数あれば、直近の件数が多い方を採る。
+ */
+export function indexDistrictWindows(windows: Map<string, Windowed>): Map<string, { name: string; w: Windowed }> {
+  const out = new Map<string, { name: string; w: Windowed }>();
+  for (const [key, w] of windows) {
+    const [code = "", district = ""] = key.split("\t");
+    const norm = normalizeDistrictKey(district);
+    if (!code || !norm) continue;
+    const k = `${code}\t${norm}`;
+    const cur = out.get(k);
+    if (!cur || w.nRecent > cur.w.nRecent) out.set(k, { name: district, w });
+  }
+  return out;
+}
+
+/**
+ * カード 1 枚の価格維持。地区の値が最低件数（直近8件・前期5件）を満たせば地区、
+ * そうでなければ市区町村（直近20件・前期10件）、どちらも無ければ null。
+ */
+export function pickRetention(
+  wardCode: string | null,
+  districtName: string | null,
+  districtIndex: Map<string, { name: string; w: Windowed }>,
+  wardWindows: Map<string, Windowed>,
+  municipalityName: (code: string) => string | null,
+): PickRetention | null {
+  if (!wardCode) return null;
+  const norm = normalizeDistrictKey(districtName);
+  if (norm) {
+    const d = districtIndex.get(`${wardCode}\t${norm}`);
+    if (d && districtHasEnoughSales(d.w)) {
+      return { level: "district", value: retentionOf(d.w) as number, areaName: d.name, nRecent: d.w.nRecent, nPrior: d.w.nPrior };
+    }
+  }
+  const m = wardWindows.get(wardCode);
+  if (m && municipalityHasEnoughSales(m)) {
+    return {
+      level: "municipality",
+      value: retentionOf(m) as number,
+      areaName: municipalityName(wardCode) ?? wardCode,
+      nRecent: m.nRecent,
+      nPrior: m.nPrior,
+    };
+  }
+  return null;
 }

@@ -2,6 +2,7 @@
 // データは /api/listings/picks（src/listing-picks.ts）。
 // ⚠️ クライアント側スクリプトではバッククォートと「ドル記号+波括弧」を使わない（この TS テンプレートに展開されてしまう）。
 
+import { DEFAULT_PICK_FILTERS } from "./listing-grouping";
 import { AREAS, GROUP_LABEL } from "./wards";
 
 export function renderListingsPicksDashboard(): string {
@@ -11,6 +12,10 @@ export function renderListingsPicksDashboard(): string {
 const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 const AREAS_JSON = safeJson(AREAS);
 const GROUPS_JSON = safeJson(GROUP_LABEL);
+const D = DEFAULT_PICK_FILTERS;
+const DEFAULTS_TEXT =
+  `既定の条件: ${D.priceMaxMan.toLocaleString("ja-JP")}万円以下・${D.areaMin}㎡以上・${D.planRoomsMin}LDK以上・` +
+  `築${D.ageMax}年以内・駅徒歩${D.walkMax}分以内（バス便は除く）。空欄の項目は既定の値で絞ります。`;
 
 const HTML = `<!doctype html>
 <html lang="ja">
@@ -71,15 +76,17 @@ const HTML = `<!doctype html>
 <main>
   <section>
     <form id="filters">
-      <label>価格 上限(万円)<input type="number" name="pmax" min="0" step="100"></label>
-      <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1"></label>
-      <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1"></label>
-      <label>築年数 上限(年)<input type="number" name="age" min="0" step="1"></label>
-      <label>徒歩 上限(分)<input type="number" name="walk" min="0" step="1"></label>
+      <div class="sub full">${DEFAULTS_TEXT}</div>
+      <label>価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="${D.priceMaxMan}"></label>
+      <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="${D.areaMin}"></label>
+      <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>
+      <label>築年数 上限(年)<input type="number" name="age" min="0" step="1" placeholder="${D.ageMax}"></label>
+      <label>徒歩 上限(分)<input type="number" name="walk" min="0" step="1" placeholder="${D.walkMax}"></label>
+      <label>並べ替え<select name="sort"><option value="newest">新着順</option><option value="retention">価格維持の高い順</option></select></label>
       <div class="toggles">
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
-        <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（7日以内）</label>
+        <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
         <summary>市区町村を絞る（既定はすべて）</summary>
@@ -94,7 +101,7 @@ const HTML = `<!doctype html>
   </section>
 </main>
 <footer class="sub">
-  データの出典: SUUMO（株式会社リクルート）の掲載情報（私的利用）。売りやすさ・貸しやすさ・売出/成約比は国交省 不動産情報ライブラリ・e-Stat 等をもとにした市区町村単位の目安（<a href="/listings">掲載ウォッチ</a>参照）。
+  データの出典: SUUMO（株式会社リクルート）の掲載情報（私的利用）。売りやすさ・貸しやすさ・売出/成約比は国交省 不動産情報ライブラリ・e-Stat 等をもとにした市区町村単位の目安（<a href="/listings">掲載ウォッチ</a>参照）。価格維持は同じ不動産情報ライブラリの成約価格から、地区（町名）または市区町村単位で出した目安。
 </footer>
 <script>
 (function () {
@@ -130,7 +137,7 @@ const HTML = `<!doctype html>
       var f = document.getElementById("filters");
       var data = {
         pmax: f.pmax.value, amin: f.amin.value, plan: f.plan.value, age: f.age.value, walk: f.walk.value,
-        dk: f.dk.checked, bus: f.bus.checked, fresh: f.fresh.checked,
+        dk: f.dk.checked, bus: f.bus.checked, fresh: f.fresh.checked, sort: f.sort.value,
         muni: Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; }),
       };
       localStorage.setItem(LS_KEY, JSON.stringify(data));
@@ -147,6 +154,7 @@ const HTML = `<!doctype html>
     f.dk.checked = !!saved.dk;
     f.bus.checked = !!saved.bus;
     f.fresh.checked = !!saved.fresh;
+    if (saved.sort === "retention" || saved.sort === "newest") f.sort.value = saved.sort;
     if (saved.muni && saved.muni.length) {
       Array.prototype.forEach.call(sel.options, function (o) { o.selected = saved.muni.indexOf(o.value) !== -1; });
     }
@@ -164,6 +172,7 @@ const HTML = `<!doctype html>
     if (f.dk.checked) p.set("dk", "1");
     if (f.bus.checked) p.set("bus", "1");
     if (f.fresh.checked) p.set("fresh", "1");
+    if (f.sort.value === "retention") p.set("sort", "retention");
     var munis = Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; });
     if (munis.length) p.set("muni", munis.join(","));
     return p;
@@ -172,6 +181,12 @@ const HTML = `<!doctype html>
   function scoreLabel(score, statusLabel) {
     if (score !== null && score !== undefined) return score + "点";
     return statusLabel || "—";
+  }
+
+  function retentionLabel(r) {
+    if (!r) return '<span>価格維持 <b>—</b><span class="meta">（地区・市区町村とも件数不足）</span></span>';
+    var where = r.level === "district" ? ("地区「" + esc(r.areaName) + "」") : (esc(r.areaName) + "全体・地区は件数不足");
+    return '<span>価格維持 <b>' + Number(r.value).toFixed(2) + '</b><span class="meta">（' + where + '・直近' + n(r.nRecent) + '件/前期' + n(r.nPrior) + '件）</span></span>';
   }
 
   function card(it) {
@@ -195,6 +210,7 @@ const HTML = `<!doctype html>
       '<span>貸しやすさ <b>' + scoreLabel(it.rentScore, it.rentStatusLabel) + '</b></span>' +
       '<span>売出/成約 <b>' + (it.askToTx === null ? (it.askToTxStatus === "few_sales" ? "件数不足" : "—") : it.askToTx.toFixed(2)) + '</b></span>' +
       '</div>' +
+      '<div class="scoreline">' + retentionLabel(it.retention) + '</div>' +
       '<ul class="urls">' + urls + '</ul>' +
       '</div>';
   }
@@ -216,7 +232,10 @@ const HTML = `<!doctype html>
           ? "直近の起動で 23 市区町村すべて取得済み"
           : '取得できていない市区町村（直近の起動）: <span class="miss">' + missing.map(function (a) { return esc(a.name) + "(" + esc(a.status) + ")"; }).join("・") + "</span>";
       }
-      document.getElementById("count").textContent = d.groups + " 件（重複を含む掲載 " + d.matchedListings + " 件をまとめた数）";
+      var rb = d.retentionBasis;
+      document.getElementById("count").textContent = d.groups + " 件（重複を含む掲載 " + d.matchedListings + " 件をまとめた数）・" +
+        (d.filters && d.filters.sort === "retention" ? "価格維持の高い順（値の無いものは末尾）" : "新着順") +
+        (rb && rb.latestQuarter ? "。価格維持は" + rb.label + " " + rb.recentFrom + "〜" + rb.latestQuarter + " ÷ " + rb.priorFrom + "〜" + rb.priorTo : "");
       document.getElementById("cards").innerHTML = d.items.length ? d.items.map(card).join("") : '<div class="empty">条件に合う物件はありませんでした</div>';
     }).catch(function (e) {
       document.getElementById("notices").innerHTML = '<div class="notice">読み込み失敗: ' + esc(e.message) + "</div>";

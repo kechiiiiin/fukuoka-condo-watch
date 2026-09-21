@@ -4,19 +4,28 @@
 // 市区町村の売りやすさ・貸しやすさ（公開ダッシュボードと同じ src/metrics.ts の buildMetrics）と、
 // 売出㎡単価/成約㎡単価の比（src/listing-metrics.ts の buildListingMetrics）をそのまま再利用する
 // （scope=all・価格の種類は既定の成約価格で1回だけ計算し、市区町村コードで引く）。
+//
+// カードごとの価格維持（直近8四半期の㎡単価中央値 ÷ その前8四半期）も同じ buildMetrics の計算から引く
+// （buildMetricsWithWindows が返す地区・市区町村の窓。カードごとに D1 へ問い合わせない）。
+// SUUMO の掲載は地区名を持たないので、住所から町名を起こして（districtNameFromAddress）XIT001 の DistrictName に当てる。
 
 import type { Env } from "./env";
 import { jstToday } from "./ingest";
 import {
+  districtNameFromAddress,
   groupListings,
+  indexDistrictWindows,
   matchesConditions,
   parsePickFilters,
-  sortGroupsNewestFirst,
+  parsePickSort,
+  pickRetention,
+  sortPicks,
   type ListingPickRow,
   type PickFilters,
 } from "./listing-grouping";
 import { buildListingMetrics } from "./listing-metrics";
-import { buildMetrics, DEFAULT_CAT } from "./metrics";
+import { buildMetricsWithWindows, DEFAULT_CAT } from "./metrics";
+import { windowBounds } from "./scoring";
 import { SUUMO_SOURCE_ID } from "./suumo";
 import { AREAS, AREA_NAME, isAreaCode } from "./wards";
 
@@ -63,8 +72,8 @@ async function buildCoverage(env: Env) {
 
 /** 市区町村ごとの売りやすさ・貸しやすさ・売出/成約比（表示範囲=すべて・価格の種類=既定の成約価格で1回だけ計算） */
 async function buildAreaScores(env: Env) {
-  const [metrics, listingMetrics] = await Promise.all([
-    buildMetrics(env, {
+  const [detailed, listingMetrics] = await Promise.all([
+    buildMetricsWithWindows(env, {
       scope: "all",
       ward: null,
       age: "all",
@@ -77,15 +86,22 @@ async function buildAreaScores(env: Env) {
     }),
     buildListingMetrics(env, new URL("https://internal.invalid/api/listings/metrics?scope=all&days=90")),
   ]);
-  const bySell = new Map(metrics.wardScores.map((w) => [w.ward_code, w]));
+  const bySell = new Map(detailed.metrics.wardScores.map((w) => [w.ward_code, w]));
   const byAskTx = new Map(listingMetrics.areas.map((a) => [a.code, a]));
-  return { bySell, byAskTx };
+  return {
+    bySell,
+    byAskTx,
+    latestQi: detailed.latestQi,
+    wardWindows: detailed.wardWindows,
+    districtIndex: indexDistrictWindows(detailed.districtWindows),
+  };
 }
 
 export async function buildListingPicks(env: Env, url: URL) {
   const today = jstToday();
   const nowYear = Number(today.slice(0, 4));
   const filters: PickFilters = parsePickFilters(url.searchParams, isAreaCode);
+  const sort = parsePickSort(url.searchParams);
 
   const [rowsRes, coverage, scores] = await Promise.all([
     env.DB.prepare(
@@ -101,18 +117,23 @@ export async function buildListingPicks(env: Env, url: URL) {
   ]);
 
   const active = rowsRes.results.filter((r) => matchesConditions(r, filters, nowYear, today));
-  const groups = sortGroupsNewestFirst(groupListings(active));
+  const groups = groupListings(active);
+  const municipalityName = (code: string) => AREA_NAME[code] ?? null;
 
-  const cards = groups.map((g) => {
+  const unsorted = groups.map((g) => {
     const sell = g.wardCode ? scores.bySell.get(g.wardCode) : undefined;
     const askTx = g.wardCode ? scores.byAskTx.get(g.wardCode) : undefined;
     const unitPriceMin = g.areaSqm ? Math.round(g.minPrice / g.areaSqm) : null;
     const unitPriceMax = g.areaSqm ? Math.round(g.maxPrice / g.areaSqm) : null;
+    // SUUMO の掲載は地区名を持たないので住所から起こす。district_name に値があっても市区町村名そのもの（「東区」）なら町名ではないので使わない
+    const muniName = g.wardCode ? (AREA_NAME[g.wardCode] ?? null) : null;
+    const districtName =
+      districtNameFromAddress(g.address) ?? (g.districtName && g.districtName !== muniName ? g.districtName : null);
     return {
       buildingName: g.buildingName,
       wardCode: g.wardCode,
       wardName: g.wardCode ? (AREA_NAME[g.wardCode] ?? null) : null,
-      districtName: g.districtName,
+      districtName,
       address: g.address,
       areaSqm: g.areaSqm,
       floorPlan: g.floorPlan,
@@ -139,8 +160,12 @@ export async function buildListingPicks(env: Env, url: URL) {
       rentStatusLabel: sell?.rentStatusLabel ?? null,
       askToTx: askTx?.askToTx ?? null,
       askToTxStatus: askTx?.txStatus ?? null,
+      /** 価格維持（成約価格）。level で地区の値か市区町村の値かを区別する。どちらも件数不足なら null */
+      retention: pickRetention(g.wardCode, districtName, scores.districtIndex, scores.wardWindows, municipalityName),
     };
   });
+  const cards = sortPicks(unsorted, sort);
+  const wb = scores.latestQi === null ? null : windowBounds(scores.latestQi);
 
   return {
     today,
@@ -155,6 +180,15 @@ export async function buildListingPicks(env: Env, url: URL) {
       muni: filters.municipalities,
       fresh: filters.freshOnly,
       freshDays: filters.freshDays,
+      sort,
+    },
+    retentionBasis: {
+      cat: DEFAULT_CAT,
+      label: "成約価格",
+      latestQuarter: scores.latestQi === null ? null : qiLabel(scores.latestQi),
+      recentFrom: wb ? qiLabel(wb.recentFirst) : null,
+      priorFrom: wb ? qiLabel(wb.priorFirst) : null,
+      priorTo: wb ? qiLabel(wb.recentFirst - 1) : null,
     },
     allMunicipalities: AREAS.map((a) => ({ code: a.code, name: a.name, group: a.group })),
     matchedListings: active.length,
@@ -163,9 +197,15 @@ export async function buildListingPicks(env: Env, url: URL) {
     notes: [
       "ペット可かどうかは取得項目に無いので、リンク先で確認してください。",
       "データは SUUMO の掲載情報（私的利用）。同じ部屋が複数の仲介業者から重複掲載されることがあるため、建物名・面積・間取り・築年でまとめて1枚のカードにしています。",
+      "価格維持 = 直近2年（8四半期）の成約㎡単価の中央値 ÷ その前2年の中央値（国交省 不動産情報ライブラリ）。1.00 より大きいほど値上がり。住所から町名を起こして地区の値を出し、地区の件数が足りない（直近8件・前期5件未満）ときは市区町村の値を出します。",
     ],
     items: cards,
   };
+}
+
+/** 四半期の通し番号（year*4 + quarter - 1）→ "2026Q2" */
+function qiLabel(qi: number): string {
+  return `${Math.floor(qi / 4)}Q${(qi % 4) + 1}`;
 }
 
 function addDays(d: string, n: number): string {

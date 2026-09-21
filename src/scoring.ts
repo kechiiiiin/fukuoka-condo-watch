@@ -69,6 +69,25 @@ export const MIN_CANDIDATES = 3;
 export const MIN_RECENT_SALES = 20;
 export const MIN_PRIOR_SALES = 10;
 
+/** 地区の売りやすさ・価格維持に乗せる最低件数（直近8四半期・前8四半期）。市区町村より緩い理由は MIN_RECENT_SALES の注記 */
+export const MIN_DISTRICT_RECENT_SALES = 8;
+export const MIN_DISTRICT_PRIOR_SALES = 5;
+
+/** 価格維持 = 直近8四半期の㎡単価中央値 ÷ その前8四半期の中央値。どちらかが空なら null */
+export function retentionOf(w: Windowed | undefined): number | null {
+  return w?.medRecent && w.medPrior ? w.medRecent / w.medPrior : null;
+}
+
+/** 地区の最低件数を満たすか */
+export function districtHasEnoughSales(w: Windowed | undefined): boolean {
+  return !!w && w.nRecent >= MIN_DISTRICT_RECENT_SALES && w.nPrior >= MIN_DISTRICT_PRIOR_SALES && retentionOf(w) !== null;
+}
+
+/** 市区町村の最低件数を満たすか */
+export function municipalityHasEnoughSales(w: Windowed | undefined): boolean {
+  return !!w && w.nRecent >= MIN_RECENT_SALES && w.nPrior >= MIN_PRIOR_SALES && retentionOf(w) !== null;
+}
+
 export function sellScores(cands: { key: string; liquidity: number; retention: number }[]): Map<string, number> {
   const liq = cands.map((c) => c.liquidity);
   const ret = cands.map((c) => c.retention);

@@ -1,9 +1,11 @@
 import { hasReinfolibKey, type Env } from "./env";
 import { XIT001_SOURCE } from "./ingest";
 import {
+  districtHasEnoughSales,
   futurePopChange,
   pickLatestQuarter,
   rentScores,
+  retentionOf,
   SELL_STATUS_LABEL,
   sellScores,
   stationPassengerChange,
@@ -269,6 +271,17 @@ function pairWindows(rows: { win: string; n: number; med: number }[], key: (r: n
 }
 
 export async function buildMetrics(env: Env, f: Filters) {
+  return (await buildMetricsWithWindows(env, f)).metrics;
+}
+
+/**
+ * buildMetrics の本体。画面・API に出す metrics に加えて、価格維持の元になる直近/前期の窓（件数・中央値）を
+ * 絞り込み前（districts の上位 150 件への切り詰め前）のまま返す。/api/listings/picks がカードごとの
+ * 価格維持を引くのに使う（同じ D1 クエリを 2 度投げないため）。
+ * - wardWindows: 市区町村コード → 窓
+ * - districtWindows: `${市区町村コード}\t${district_name}`（district_name が NULL の取引は '(地区不明)'）→ 窓
+ */
+export async function buildMetricsWithWindows(env: Env, f: Filters) {
   const status = await buildStatus(env);
   /** 表示範囲の市区町村。ランキング（パーセンタイル）はこの中だけで付ける */
   const scoped = areasInScope(f.scope);
@@ -328,6 +341,7 @@ export async function buildMetrics(env: Env, f: Filters) {
     rentScore: number | null;
   }[] = [];
   const wardWindows = new Map<string, Windowed>();
+  let distWindows = new Map<string, Windowed>();
   const smallShare = new Map<string, number>();
 
   if (L !== null) {
@@ -381,9 +395,10 @@ export async function buildMetrics(env: Env, f: Filters) {
     for (const [k, v] of pairWindows(wardRows, (r: { ward_code: string }) => r.ward_code)) wardWindows.set(k, v);
 
     const distMap = pairWindows(distRows, (r: { ward_code: string; district: string }) => `${r.ward_code}\t${r.district}`);
+    distWindows = distMap;
     const eligible = [...distMap.entries()]
-      .filter(([, v]) => v.nRecent >= 8 && v.nPrior >= 5 && v.medRecent && v.medPrior)
-      .map(([key, v]) => ({ key, liquidity: v.nRecent / 2, retention: (v.medRecent as number) / (v.medPrior as number) }));
+      .filter(([, v]) => districtHasEnoughSales(v))
+      .map(([key, v]) => ({ key, liquidity: v.nRecent / 2, retention: retentionOf(v) as number }));
     const dScores = sellScores(eligible);
     districts = [...distMap.entries()].map(([key, v]) => {
       const [ward_code = "", district = ""] = key.split("\t");
@@ -392,7 +407,7 @@ export async function buildMetrics(env: Env, f: Filters) {
         district,
         ...v,
         liquidity: v.nRecent / 2,
-        retention: v.medRecent && v.medPrior ? v.medRecent / v.medPrior : null,
+        retention: retentionOf(v),
         sellScore: dScores.get(key) ?? null,
         rentScore: null,
       };
@@ -540,7 +555,7 @@ export async function buildMetrics(env: Env, f: Filters) {
     .slice(0, 40);
 
   const scopedCodes = new Set(scoped.map((a) => a.code));
-  return {
+  const metrics = {
     status,
     filters: f,
     latestQi: L,
@@ -565,4 +580,5 @@ export async function buildMetrics(env: Env, f: Filters) {
       .slice(0, 150),
     stations,
   };
+  return { metrics, latestQi: L, wardWindows, districtWindows: distWindows };
 }
