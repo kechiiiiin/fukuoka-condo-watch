@@ -16,7 +16,7 @@ import {
 
 /** 正直に名乗る（ブラウザを装わない）。LISTINGS_USER_AGENT で上書きできる */
 export const DEFAULT_USER_AGENT =
-  "fukuoka-condo-watch/1.0 (personal, non-commercial; 1 req per 30s; +https://github.com/kechiiiiin/fukuoka-condo-watch)";
+  "fukuoka-condo-watch/1.0 (personal, non-commercial; 1 req per 60s; +https://github.com/kechiiiiin/fukuoka-condo-watch)";
 
 export function toListingRecord(l: SuumoListing): ListingRecord | null {
   if (l.priceMan === null) return null;
@@ -68,7 +68,7 @@ export class SuumoSource implements PagedSource {
   constructor(opts: SuumoSourceOptions = {}) {
     this.origin = opts.origin ?? SUUMO_ORIGIN;
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
-    this.minIntervalMs = opts.minIntervalMs ?? 30_000;
+    this.minIntervalMs = opts.minIntervalMs ?? 60_000;
   }
 
   targets(): CrawlTarget[] {

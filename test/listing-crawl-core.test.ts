@@ -17,16 +17,16 @@ test("LISTINGS_ENABLED の解釈（不明な値は off に倒す）", () => {
   assert.equal(listingsMode({ LISTINGS_ENABLED: "External" }), "external");
 });
 
-test("本番（suumo.jp）は 30 秒未満にできない・偽サーバ相手だけ詰められる", () => {
-  assert.equal(CRAWL.floorIntervalMs, 30_000);
-  assert.equal(crawlSettings({}).intervalMs, 30_000);
-  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "0" }).intervalMs, 30_000);
-  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "20000" }).intervalMs, 30_000);
-  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "45000" }).intervalMs, 45_000);
+test("本番（suumo.jp）は 60 秒未満にできない・偽サーバ相手だけ詰められる", () => {
+  assert.equal(CRAWL.floorIntervalMs, 60_000);
+  assert.equal(crawlSettings({}).intervalMs, 60_000);
+  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "0" }).intervalMs, 60_000);
+  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "45000" }).intervalMs, 60_000);
+  assert.equal(crawlSettings({ LISTINGS_MIN_INTERVAL_MS: "90000" }).intervalMs, 90_000);
   // localhost 以外の SUUMO_ORIGIN は無視（suumo.jp 扱い）
   const remote = crawlSettings({ SUUMO_ORIGIN: "https://evil.example.com", LISTINGS_MIN_INTERVAL_MS: "0" });
   assert.equal(remote.origin, undefined);
-  assert.equal(remote.intervalMs, 30_000);
+  assert.equal(remote.intervalMs, 60_000);
   const local = crawlSettings({ SUUMO_ORIGIN: "http://127.0.0.1:8790", LISTINGS_MIN_INTERVAL_MS: "0", LISTINGS_TODAY_OVERRIDE: "2026-01-02" });
   assert.equal(local.origin, "http://127.0.0.1:8790");
   assert.equal(local.intervalMs, 0);

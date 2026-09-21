@@ -16,7 +16,7 @@
   <key>WorkingDirectory</key> <string>__REPO__</string>
 
   <!-- 毎日 01:00（Mac のタイムゾーン = JST）。スリープしていた間に過ぎたら、起きたあと 1 回だけ走る。
-       電源が切れていた日は走らない（翌日カーソルの続きから）。1 回 ≒ 231 ページ × 31 秒 ≒ 2 時間。 -->
+       電源が切れていた日は走らない（翌日カーソルの続きから）。1 回 ≒ 231 ページ × 61 秒 ≒ 4 時間。 -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>   <integer>1</integer>

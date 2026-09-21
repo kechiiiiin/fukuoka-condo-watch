@@ -10,7 +10,7 @@
 //     Mac は「次にどのページを取るか」を毎回 Worker に聞き、1 ページ取るごとに結果を送る。落ちても翌日カーソルから続く
 //
 // 守ること:
-//   - ページ間隔は 30 秒以上（suumo.jp 相手は CRAWL.floorIntervalMs 未満にできない。偽サーバ相手だけ短縮可）
+//   - ページ間隔は 60 秒以上（suumo.jp 相手は CRAWL.floorIntervalMs 未満にできない。偽サーバ相手だけ短縮可）
 //   - 403 / 429 / 503 / captcha 等を受けたら即打ち切り → Worker が Mac 側の取得元を 72 時間クールダウンにする
 //   - 多重起動しない（ロックファイル）。1 回の実行は最大 CRAWL.localMaxPagesPerRun ページ・CRAWL.localMaxRunMs まで
 //

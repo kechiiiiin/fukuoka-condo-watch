@@ -12,12 +12,12 @@ import type { CrawlTarget, ListingRecord, PagedSource, ParsedListPage } from "./
 
 export const CRAWL = {
   /** 既定のページ間隔 */
-  minIntervalMs: 30_000,
+  minIntervalMs: 60_000,
   /**
    * 本番（suumo.jp）で許す最小間隔。LISTINGS_MIN_INTERVAL_MS でもこれより短くできない。
-   * 2026-09-14 に 6 秒間隔で 43 ページ目に 503 を返されたため 30 秒（2026-09-22 に 20 秒から引き上げ）
+   * 2026-09-14 に 6 秒間隔で 43 ページ目に 503 を返されたため 60 秒（2026-09-22 に 20 → 30 → 60 秒へ。時間より相手への負担の小ささを優先）
    */
-  floorIntervalMs: 30_000,
+  floorIntervalMs: 60_000,
   /** Worker cron 1 起動の持ち時間（Cron の実行時間上限 15 分に対し余裕 5 分） */
   runBudgetMs: 10 * 60_000,
   fetchTimeoutMs: 30_000,
@@ -33,7 +33,7 @@ export const CRAWL = {
   maxPagesPerInvocation: 100,
   /** Mac 側 1 回の実行の上限（1 日 ≒ 231 ページ。それを大きく超えたら何かおかしい） */
   localMaxPagesPerRun: 500,
-  /** Mac 側 1 回の実行の上限時間（231 ページ × 31 秒 ≒ 2 時間） */
+  /** Mac 側 1 回の実行の上限時間（231 ページ × 61 秒 ≒ 4 時間） */
   localMaxRunMs: 6 * 3600_000,
   /** 取り切った回でも、見えた件数がヒット件数合計のこの割合未満なら掲載終了を付けない（取りこぼしの疑い） */
   minSeenRatio: 0.85,

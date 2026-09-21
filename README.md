@@ -144,7 +144,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
   送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
 - 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ
-- 1 回の上限: 500 ページ・6 時間（通常は ≒ 231 ページ × 31 秒 ≒ 2 時間）
+- 1 回の上限: 500 ページ・6 時間（通常は ≒ 231 ページ × 61 秒 ≒ 4 時間）
 - 置き場所:
 
 | もの | 場所 | 備考 |
@@ -162,8 +162,8 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
   - 近郊: `chikushino` `kasuga` `onojo` `dazaifu` `nakagawa` `itoshima` `munakata` `koga` `fukutsu` / 粕屋郡は `kasuyagun` + `umi` `sasaguri` `shime` `sue` `shingu` `hisayama` `kasuya`
   - 久山町は掲載 0 件のため一覧のリンクに出ないが、URL は有効（「条件にあう物件がありません」）
 - 件数（2026-09-14）: 福岡市 3,583 件 ≒ 180 ページ + 近郊 851 件 ≒ 51 ページ = **1 日 ≒ 231 ページ**
-- 1 ページごとに **30 秒**（本番の suumo.jp 相手は 30 秒未満にできない。2026-09-22 に下限を 20 → 30 秒に上げた。偽サーバ相手だけ短縮可）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
-  - 2026-09-14 の初回は 6 秒間隔で 43 ページ目に Cloudflare から 503 を返されたため、時間をかけてでも間隔を広げた（231 ページ ≒ 2 時間）
+- 1 ページごとに **60 秒**（本番の suumo.jp 相手は 60 秒未満にできない。2026-09-22 に下限を 20 → 30 → 60 秒に上げた。偽サーバ相手だけ短縮可）。User-Agent は正直に名乗る（`src/suumo-source.ts`）
+  - 2026-09-14 の初回は 6 秒間隔で 43 ページ目に Cloudflare から 503 を返されたため、時間をかけてでも間隔を広げた（231 ページ ≒ 4 時間）
 - （`on` のとき）cron `*/15 16-20 * * *`（01:00〜05:45 JST・20 起動）。1 起動 10 分で切り上げ（≒ 19 ページ）→ 13 起動ほどで終わり、残りは再開の余裕
 - 進み具合は D1 `listing_crawl_cursor` に 1 ページごとに保存（ページの反映とカーソル前進は同じトランザクション）。落ちても次の起動が続きから
 - **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い / 別ホストやボット確認らしき先への 3xx** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
@@ -202,10 +202,10 @@ npx wrangler deploy                       # LISTINGS_ENABLED=external と取り�
 bash ops/setup-ingest-token.sh https://fukuoka-condo-watch.<sub>.workers.dev
                                           # トークン生成 → wrangler secret put（stdin）→ ~/.config/fukuoka-condo-watch/env（600）
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://fukuoka-condo-watch.<sub>.workers.dev/api/listings/ingest   # 401（認証なしは拒否）
-npm run crawl:local -- --dry-run          # 設定の確認だけ（取得先 https://suumo.jp・間隔 30000ms と出る）
+npm run crawl:local -- --dry-run          # 設定の確認だけ（取得先 https://suumo.jp・間隔 60000ms と出る）
 bash ops/launchd/install.sh               # launchd に登録（毎日 01:00。入れた瞬間には走らない）
-npm run crawl:local -- --max-pages 2      # 試し走り: 2 ページ（≒ 30 秒）で切り上げ。続きはカーソルから
-launchctl kickstart gui/$(id -u)/com.kechiiiiin.fukuoka-condo-watch.suumo   # 通しの初回を今すぐ（≒ 2 時間）
+npm run crawl:local -- --max-pages 2      # 試し走り: 2 ページ（≒ 1 分）で切り上げ。続きはカーソルから
+launchctl kickstart gui/$(id -u)/com.kechiiiiin.fukuoka-condo-watch.suumo   # 通しの初回を今すぐ（≒ 4 時間）
 tail -f ~/Library/Logs/fukuoka-condo-watch/suumo-crawl.out.log
 ```
 
