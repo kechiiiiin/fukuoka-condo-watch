@@ -1,6 +1,6 @@
 // 掲載情報（SUUMO）の日次クロールの D1 側。取得する場所は LISTINGS_ENABLED で 2 通り:
 //   - "external"（2026-09-22〜 本番）… Mac（launchd・scripts/suumo-crawl-local.ts）が取ってきた 1 ページぶんの結果を
-//     POST /api/listings/ingest（handleListingIngest）で受け、下の applyOutcome で反映する。cron は取りに行かない
+//     POST /api/ingest/listings（handleListingIngest）で受け、下の applyOutcome で反映する。cron は取りに行かない
 //   - "on" … Worker の cron（runListingCrawl）が自分で取る。2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で 503
 //     （Cloudflare Workers の送信元が弾かれている様子。同じ URL を自宅回線から curl すると 200）ため external に移した
 //   - "off"（既定）… どちらも動かない。cron は D1 にも触らず即 return、取り込みは 409
@@ -355,7 +355,7 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
 }
 
 // ---------------------------------------------------------------------------
-// Mac（launchd）からの取り込み: POST /api/listings/ingest（LISTINGS_ENABLED=external のときだけ）
+// Mac（launchd）からの取り込み: POST /api/ingest/listings（LISTINGS_ENABLED=external のときだけ）
 //   Authorization: Bearer <LISTINGS_INGEST_TOKEN>（src/ingest-auth.ts・未設定なら全員 401）
 //   {op:"begin"} → 今日の回を開き、次に取るページを返す
 //   {op:"page", runId, areaCode, page, url, fetchedAt, outcome} → 1 ページ反映して次を返す
@@ -365,7 +365,7 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
 // ---------------------------------------------------------------------------
 
 /** Mac 側クローラの取り込み口（POST・Bearer 認証）。src/index.ts が Access の判定より先に振り分ける */
-export const INGEST_PATH = "/api/listings/ingest";
+export const INGEST_PATH = "/api/ingest/listings";
 
 const MAX_INGEST_BODY = 512 * 1024;
 

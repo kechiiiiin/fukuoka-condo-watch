@@ -1,4 +1,4 @@
-// POST /api/listings/ingest の認証（Mac 側クローラ → Worker）。Workers と Node の両方で動く（テスト用）。
+// POST /api/ingest/listings の認証（Mac 側クローラ → Worker）。Workers と Node の両方で動く（テスト用）。
 //
 //   Authorization: Bearer <LISTINGS_INGEST_TOKEN>
 //

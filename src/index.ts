@@ -39,7 +39,7 @@ export default {
   async fetch(req, env): Promise<Response> {
     const url = new URL(req.url);
     // Mac（launchd）からの掲載取り込み。Access ではなく共有シークレット（Bearer）で守る → Access の前段が無い
-    // workers.dev で使う（カスタムドメイン側は /api/listings/* に Access が立っているので届かない）
+    // Access の保護パス（/listings*・/api/listings*）の外に置いてあるので、カスタムドメインのまま届く
     if (url.pathname === INGEST_PATH) {
       try {
         return await handleListingIngest(req, env);
@@ -98,7 +98,7 @@ export default {
 
   async scheduled(controller, env, ctx): Promise<void> {
     if (controller.cron === LISTINGS_CRON) {
-      // on（Worker が取る）以外は D1 にも触らず終わる。external では Mac が取って /api/listings/ingest に送る
+      // on（Worker が取る）以外は D1 にも触らず終わる。external では Mac が取って /api/ingest/listings に送る
       if (!listingsEnabled(env)) return;
       const startedAt = new Date().toISOString();
       ctx.waitUntil(

@@ -62,7 +62,7 @@ case "$NODE" in */shims/*) die "node が shim（$NODE）です。nodenv which no
 
 if [ ! -f "$ENV_FILE" ]; then
   if [ "$DRY" = 1 ]; then echo "⚠️ $ENV_FILE がまだ無い（本番の登録前に ops/setup-ingest-token.sh を実行）" >&2
-  else die "$ENV_FILE が無い。先に: bash ops/setup-ingest-token.sh https://fukuoka-condo-watch.<sub>.workers.dev"; fi
+  else die "$ENV_FILE が無い。先に: bash ops/setup-ingest-token.sh https://condo.kechiiiiin.com"; fi
 else
   perm="$(stat -f '%Lp' "$ENV_FILE")"
   [ "$perm" = "600" ] || die "$ENV_FILE の権限が $perm です。chmod 600 $ENV_FILE"

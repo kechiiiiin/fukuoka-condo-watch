@@ -4,7 +4,7 @@
 //   - LISTINGS_ENABLED の解釈（off / on / external）
 //   - ページ間隔などの設定（偽サーバ相手のときだけ詰められる）
 //   - 1 ページ取って「止まる／失敗／ページ消滅／解析済み」に振り分ける（PageOutcome）
-//   - Mac → Worker 取り込み（POST /api/listings/ingest）の要求の形と検証
+//   - Mac → Worker 取り込み（POST /api/ingest/listings）の要求の形と検証
 //
 // D1 への反映（カーソル・掲載終了の判定）は src/listing-crawl.ts に 1 つだけある。
 
@@ -75,7 +75,7 @@ export const CRAWL = {
  * LISTINGS_ENABLED:
  *   - "off"（既定・未設定・不明な値）… 何もしない。cron は D1 にも触らず即 return、取り込みも拒否
  *   - "on" / "1" / "true" … Worker の cron が SUUMO を取りに行く（2026-09-14〜09-22 の方式。Cloudflare の送信元が 503 で弾かれた）
- *   - "external" … cron は取りに行かない。Mac（launchd）が取ってきたページを POST /api/listings/ingest で受けるだけ
+ *   - "external" … cron は取りに行かない。Mac（launchd）が取ってきたページを POST /api/ingest/listings で受けるだけ
  */
 export type ListingsMode = "off" | "on" | "external";
 
@@ -213,7 +213,7 @@ export function outcomeMessage(o: PageOutcome<unknown>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Mac → Worker の取り込み（POST /api/listings/ingest）
+// Mac → Worker の取り込み（POST /api/ingest/listings）
 // ---------------------------------------------------------------------------
 
 /** 取り込み時の状態の置き場（listing_crawl_state.source）。Worker cron の状態（SUUMO_SOURCE_ID）とは別にする */

@@ -8,7 +8,7 @@
 //
 // 役割の分担（二重実装しない）:
 //   - 取得・ブロック判定・解析 … src/listing-crawl-core.ts の fetchAndClassify（Worker cron と同じ関数）
-//   - D1 への反映・カーソル・掲載終了の判定 … Worker 側（POST /api/listings/ingest → src/listing-crawl.ts の applyOutcome）
+//   - D1 への反映・カーソル・掲載終了の判定 … Worker 側（POST /api/ingest/listings → src/listing-crawl.ts の applyOutcome）
 //     Mac は「次にどのページを取るか」を毎回 Worker に聞き、1 ページ取るごとに結果を送る。落ちても翌日カーソルから続く
 //
 // 守ること:
@@ -19,7 +19,7 @@
 //   - 1 回の実行は最大 CRAWL_KINDS[kind].localMaxPagesPerRun ページ・localMaxRunMs まで
 //
 // 設定（~/.config/fukuoka-condo-watch/env・chmod 600。FCW_ENV_FILE で場所を変えられる。環境変数が優先）:
-//   LISTINGS_INGEST_URL=https://fukuoka-condo-watch.<sub>.workers.dev/api/listings/ingest
+//   LISTINGS_INGEST_URL=https://condo.kechiiiiin.com/api/ingest/listings
 //   LISTINGS_INGEST_TOKEN=<Worker secret と同じ値>
 //   # ↓ ローカル確認用（偽サーバ http://127.0.0.1:8790 のときだけ効く）
 //   # SUUMO_ORIGIN=http://127.0.0.1:8790

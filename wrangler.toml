@@ -5,7 +5,7 @@ compatibility_date = "2026-09-01"
 # 公開ダッシュボード（データは国交省の公開情報のみ。個人情報は載せない）
 # ⚠️ /listings・/api/listings は非公開。workers.dev 側は Access を掛けない（公開の / を残すため）ので、
 #    Worker 側の JWT 検証（src/access.ts）が fail-closed で止める。Access が前に立つのは下のカスタムドメイン側。
-workers_dev = true
+workers_dev = false
 
 # /listings を Cloudflare Access で守るためのカスタムドメイン（README「掲載情報（SUUMO）」）。
 # scripts/access-app.ts に渡す ACCESS_HOSTNAME と揃えること。2026-09-14 に有効化。

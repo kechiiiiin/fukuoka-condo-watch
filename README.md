@@ -17,7 +17,7 @@
 | `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` / `PagedListingSource` 差し込み口 |
 | `src/suumo.ts` / `src/suumo-source.ts` | SUUMO 検索結果 HTML のパーサ・正規化（価格→万円・㎡・築年月・駅/徒歩・市区町村コード）と `SuumoSource` |
 | `src/suumo-shinchiku.ts` | SUUMO 新築マンション検索結果のパーサ・正規化（価格の幅・未定・予定、面積の幅、引渡時期、販売状況、物件/住戸の別）と `ShinchikuSource` |
-| `src/listing-crawl.ts` | 掲載クロールの D1 側。Mac からの取り込み口 `POST /api/listings/ingest`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了。種類（中古 `listings` / 新築 `new_listings`）は `ListingStore` で差し替える |
+| `src/listing-crawl.ts` | 掲載クロールの D1 側。Mac からの取り込み口 `POST /api/ingest/listings`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了。種類（中古 `listings` / 新築 `new_listings`）は `ListingStore` で差し替える |
 | `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・種類 `CRAWL_KINDS`・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST |
@@ -79,7 +79,7 @@ npx wrangler dev --port 8787 --local-upstream 127.0.0.1:8787 \
   --var LISTINGS_ENABLED:external --var LISTINGS_INGEST_TOKEN:local-test-token-0123456789abcdef0123456789 \
   --var SUUMO_ORIGIN:http://127.0.0.1:8790 --var LISTINGS_TODAY_OVERRIDE:2026-09-22 --var DEV_BYPASS_ACCESS:1
 # Mac 側クローラ → 取り込み口 → ローカル D1（偽サーバ相手だけ間隔を 0 にできる）
-FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/listings/ingest \
+FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/ingest/listings \
   LISTINGS_INGEST_TOKEN=local-test-token-0123456789abcdef0123456789 \
   SUUMO_ORIGIN=http://127.0.0.1:8790 LISTINGS_MIN_INTERVAL_MS=0 npm run crawl:local
 # 新築は同じ環境変数で `npm run crawl:local -- --kind shinchiku`（24 ページ。2 日目は価格未定→決定・値下げ・完売・新着）
@@ -132,7 +132,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
 |---|---|---|
 | `off`（コードの既定・不明な値） | 誰も取らない | cron は D1 にも触らず即 return、取り込み口は 409 |
 | `on` | Worker の cron（`*/15 16-20 * * *`） | 2026-09-14〜09-22 の方式。下の経緯でやめた |
-| **`external`（本番・2026-09-22〜）** | **Keisuke の Mac（launchd・毎日 01:00 JST）** | cron は取らない。Mac が 1 ページ取るごとに `POST /api/listings/ingest` へ送る |
+| **`external`（本番・2026-09-22〜）** | **Keisuke の Mac（launchd・毎日 01:00 JST）** | cron は取らない。Mac が 1 ページ取るごとに `POST /api/ingest/listings` へ送る |
 
 **Mac へ移した経緯**: Worker の cron から取ると、2026-09-14 に 43 ページ目で 503、9/17・9/20 のクールダウン明けは 1 ページ目で即 503 だった。
 Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/ms/chuko/fukuoka/sc_fukuokashihigashi/`）を自宅回線から curl すると 200・29 件が取れた。
@@ -144,7 +144,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
   - 送ったページがカーソルの位置と違えば（通信の再送など）反映せず `stale` で今の位置を返す → 二重計上しない
   - Mac が途中で落ちても、翌日（または手動の再実行で）カーソルの続きから。lease は 10 分で解ける
 - 取り込み口の認証は **Bearer の共有シークレット**（Worker secret `LISTINGS_INGEST_TOKEN`・32 文字以上・定数時間比較・**未設定なら全員 401**）。Access の JWT 検証（`src/access.ts`）は変えていない
-  - カスタムドメイン（`condo.kechiiiiin.com`）は `/api/listings/*` の前に Access が立っているので届かない。Mac は **workers.dev** の URL に送る
+  - 取り込み口は Access の保護パス（`/listings*`・`/api/listings*`）の外の `/api/ingest/listings` に置き、Bearer で守る。Mac は **`https://condo.kechiiiiin.com`** に送る（2026-09-22 にドメインを一本化し workers.dev は無効化）
 - クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
   送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
 - 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ。**中古と新築で同じロック**なので同時に SUUMO を叩かない。
@@ -192,7 +192,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - D1（`migrations/0005_new_listings.sql`）: `new_listings`（価格・面積・㎡単価は幅、初めて価格が出たときの幅 `first_price_*`、価格変化の回数）と `new_listing_price_history`（初出と、幅が変わった回。未定 → 決定も 1 回）。
   クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:ms-shinchiku` で中古と同じ表を使う
 - 掲載終了（完売・掲載終了）は中古と同じ考え方: **全市区町村を取り切った回（complete）で 2 回続けて見えなかったら**付ける（週 1 回なので 2 週）。取りこぼし（見えた件数 < ヒット合計の 85%）の回は付けない
-- 取り込みは中古と同じ `POST /api/listings/ingest` に `kind: "shinchiku"` を付けて送る（`runId` の取得元と kind が食い違う要求は 400）。解析・ブロック判定は同じ `fetchAndClassify`、反映・カーソル・掲載終了は同じ `applyOutcome` / `finalizeRun`
+- 取り込みは中古と同じ `POST /api/ingest/listings` に `kind: "shinchiku"` を付けて送る（`runId` の取得元と kind が食い違う要求は 400）。解析・ブロック判定は同じ `fetchAndClassify`、反映・カーソル・掲載終了は同じ `applyOutcome` / `finalizeRun`
 - 取得元キー: 新築は `suumo:ms-shinchiku@mac`（中古 `suumo:ms-chuko@mac` と別に記録）。ただし送信元は同じ Mac なので、
   **どちらかのキーがクールダウン中なら両方とも取らない**・**ページ間隔の起点はどちらかで最後に取った時刻**（同じ相手に種類を変えて続けて取りに行かない）
 - launchd: `com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku`・**毎週日曜 06:00**（中古の 01:00〜≒05:00 と重ならない）。中古が長引いていたらロックで待つ
@@ -252,10 +252,10 @@ tail -f ~/Library/Logs/fukuoka-condo-watch/suumo-shinchiku-crawl.out.log
 【ヘスティア・コマンド】（Mac のターミナルで。トークンの値は画面に出ない）
 ```sh
 cd ~/work/fukuoka-condo-watch && npm ci
-npx wrangler deploy                       # LISTINGS_ENABLED=external と取り込み口。表示される workers.dev の URL を控える
-bash ops/setup-ingest-token.sh https://fukuoka-condo-watch.<sub>.workers.dev
+npx wrangler deploy                       # LISTINGS_ENABLED=external と取り込み口。（workers.dev は無効。`workers_dev = false`）
+bash ops/setup-ingest-token.sh https://condo.kechiiiiin.com
                                           # トークン生成 → wrangler secret put（stdin）→ ~/.config/fukuoka-condo-watch/env（600）
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://fukuoka-condo-watch.<sub>.workers.dev/api/listings/ingest   # 401（認証なしは拒否）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://condo.kechiiiiin.com/api/ingest/listings   # 401（認証なしは拒否）
 npm run crawl:local -- --dry-run          # 設定の確認だけ（取得先 https://suumo.jp・間隔 60000ms と出る）
 bash ops/launchd/install.sh               # launchd に登録（毎日 01:00。入れた瞬間には走らない）
 npm run crawl:local -- --max-pages 2      # 試し走り: 2 ページ（≒ 1 分）で切り上げ。続きはカーソルから
@@ -284,7 +284,7 @@ CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... ACCESS_HOSTNAME=condo.kechiii
 npx wrangler secret put ALLOWED_EMAILS      # /listings を見てよいメール
 npx wrangler d1 migrations apply fukuoka-condo-watch --remote && npx wrangler deploy   # 0003 → デプロイ（まだ off）
 curl -sI https://condo.kechiiiiin.com/listings | head -3                 # 302 → cloudflareaccess.com
-curl -s -o /dev/null -w '%{http_code}\n' https://fukuoka-condo-watch.<sub>.workers.dev/listings   # 401
+curl -s -o /dev/null -w '%{http_code}\n' https://condo.kechiiiiin.com/listings   # 302（Access）
 # wrangler.toml の LISTINGS_ENABLED を "on" にして push → 翌 01:00 JST から
 npx wrangler tail                            # 初日の様子を見る。/listings の「クロールの状態」でも
 ```

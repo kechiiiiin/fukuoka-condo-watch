@@ -5,7 +5,7 @@ export interface Env {
 
   // ---- 掲載情報（SUUMO）。README「掲載情報（SUUMO）」 ----
   /**
-   * "off"（既定）| "on"（Worker の cron が SUUMO を取る）| "external"（Mac が取って POST /api/listings/ingest に送る。cron は取らない）。
+   * "off"（既定）| "on"（Worker の cron が SUUMO を取る）| "external"（Mac が取って POST /api/ingest/listings に送る。cron は取らない）。
    * 解釈は src/listing-crawl-core.ts の listingsMode
    */
   LISTINGS_ENABLED?: string;

@@ -3,14 +3,14 @@
 # **値は画面にもシェル履歴にも出さない**（変数に持って、secret には stdin で、ファイルには printf 組み込みで渡す）。
 # 何度実行してもよい（その都度トークンを作り直す = ローテーション）。
 #
-#   bash ops/setup-ingest-token.sh https://fukuoka-condo-watch.<sub>.workers.dev
+#   bash ops/setup-ingest-token.sh https://condo.kechiiiiin.com
 #
-# ⚠️ カスタムドメイン（condo.kechiiiiin.com）は /api/listings/* の前に Cloudflare Access が立っているので使えない。workers.dev を渡す。
+# 取り込み口 /api/ingest/listings は Access の保護パスの外（Bearer で守る）。
 set -euo pipefail
 
 ORIGIN="${1:-}"
 ORIGIN="${ORIGIN%/}"
-[[ "$ORIGIN" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo "使い方: bash $0 https://fukuoka-condo-watch.<sub>.workers.dev" >&2; exit 1; }
+[[ "$ORIGIN" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo "使い方: bash $0 https://condo.kechiiiiin.com" >&2; exit 1; }
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF_DIR="$HOME/.config/fukuoka-condo-watch"
 ENV_FILE="$CONF_DIR/env"
@@ -27,7 +27,7 @@ echo "→ Worker secret LISTINGS_INGEST_TOKEN を登録"
 echo "→ $ENV_FILE に書く（chmod 600）"
 (
   umask 077
-  printf 'LISTINGS_INGEST_URL=%s/api/listings/ingest\nLISTINGS_INGEST_TOKEN=%s\n' "$ORIGIN" "$TOKEN" > "$ENV_FILE.tmp"
+  printf 'LISTINGS_INGEST_URL=%s/api/ingest/listings\nLISTINGS_INGEST_TOKEN=%s\n' "$ORIGIN" "$TOKEN" > "$ENV_FILE.tmp"
 )
 mv "$ENV_FILE.tmp" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
