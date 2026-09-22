@@ -1,4 +1,6 @@
-// SUUMO 掲載の日次クロール（Mac 側）。launchd（ops/launchd/）から毎日 01:00 に 1 回起動する。
+// SUUMO 掲載のクロール（Mac 側）。launchd（ops/launchd/）から起動する:
+//   - 中古（既定・--kind chuko）… 毎日 01:00（com.kechiiiiin.fukuoka-condo-watch.suumo）
+//   - 新築（--kind shinchiku）   … 毎週日曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ Mac か: Worker の cron から取ると 2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で即 503
@@ -12,7 +14,9 @@
 // 守ること:
 //   - ページ間隔は 60 秒以上（suumo.jp 相手は CRAWL.floorIntervalMs 未満にできない。偽サーバ相手だけ短縮可）
 //   - 403 / 429 / 503 / captcha 等を受けたら即打ち切り → Worker が Mac 側の取得元を 72 時間クールダウンにする
-//   - 多重起動しない（ロックファイル）。1 回の実行は最大 CRAWL.localMaxPagesPerRun ページ・CRAWL.localMaxRunMs まで
+//   - 多重起動しない（ロックファイル。中古と新築で**同じ**ロックを使う = 同時に SUUMO を叩かない）。
+//     別の実行が持っていたら、終わるまで最大 CRAWL.localLockWaitMs 待ってから取る（launchd が両方を同時に起こしても順番に走る）
+//   - 1 回の実行は最大 CRAWL_KINDS[kind].localMaxPagesPerRun ページ・localMaxRunMs まで
 //
 // 設定（~/.config/fukuoka-condo-watch/env・chmod 600。FCW_ENV_FILE で場所を変えられる。環境変数が優先）:
 //   LISTINGS_INGEST_URL=https://fukuoka-condo-watch.<sub>.workers.dev/api/listings/ingest
@@ -24,11 +28,25 @@
 //   npm run crawl:local                 # 普段は launchd から
 //   npm run crawl:local -- --dry-run    # 設定の確認だけ（SUUMO にも Worker にもアクセスしない）
 //   npm run crawl:local -- --max-pages 2  # 試し走り（2 ページで切り上げ。続きは次回カーソルから）
+//   npm run crawl:local -- --kind shinchiku   # 新築（週 1 回・23 ページ ≒ 25 分）
 
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { CRAWL, crawlSettings, fetchAndClassify, type IngestRequest, type IngestResponse, outcomeMessage } from "../src/listing-crawl-core";
+import {
+  type AnyListingRecord,
+  CRAWL,
+  CRAWL_KINDS,
+  type CrawlKind,
+  crawlSettings,
+  fetchAndClassify,
+  type IngestRequest,
+  type IngestResponse,
+  outcomeMessage,
+  type PageOutcome,
+} from "../src/listing-crawl-core";
+import type { CrawlTarget } from "../src/listing-types";
+import { ShinchikuSource } from "../src/suumo-shinchiku";
 import { SuumoSource } from "../src/suumo-source";
 
 const ENV_FILE = process.env.FCW_ENV_FILE || join(homedir(), ".config/fukuoka-condo-watch/env");
@@ -80,20 +98,43 @@ function loadConfig(): Config {
   return { ingestUrl: u.toString(), token, env };
 }
 
-/** 多重起動よけ。中身は PID。PID が生きていなければ前回の残骸として取り直す */
-function acquireLock(): () => void {
+/**
+ * 多重起動よけ（中古・新築で共通）。中身は PID。PID が生きていなければ前回の残骸として取り直す。
+ * 生きている別の実行が持っていたら、60 秒おきに見に行って最大 CRAWL.localLockWaitMs 待つ（待ちきれなければ何もせず終わる）
+ */
+async function acquireLock(): Promise<() => void> {
   mkdirSync(dirname(LOCK_FILE), { recursive: true });
+  const deadline = Date.now() + CRAWL.localLockWaitMs;
+  let announced = false;
+  for (;;) {
+    const r = tryLock();
+    if (r.release) return r.release;
+    if (Date.now() > deadline) {
+      log(`別のクロールが ${Math.round(CRAWL.localLockWaitMs / 3600_000)} 時間たっても終わらない（PID ${r.holder}・${LOCK_FILE}）。今回は何もしない`);
+      process.exit(0);
+    }
+    if (!announced) {
+      log(`別のクロールが実行中（PID ${r.holder}）。終わるまで待つ（同時に SUUMO を叩かない）`);
+      announced = true;
+    }
+    await sleep(60_000);
+  }
+}
+
+function tryLock(): { release?: () => void; holder?: number } {
   for (let i = 0; i < 2; i++) {
     try {
       const fd = openSync(LOCK_FILE, "wx", 0o600);
       writeSync(fd, String(process.pid));
       closeSync(fd);
-      return () => {
-        try {
-          unlinkSync(LOCK_FILE);
-        } catch {
-          /* 既に無い */
-        }
+      return {
+        release: () => {
+          try {
+            unlinkSync(LOCK_FILE);
+          } catch {
+            /* 既に無い */
+          }
+        },
       };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
@@ -107,10 +148,7 @@ function acquireLock(): () => void {
           alive = (err as NodeJS.ErrnoException).code === "EPERM";
         }
       }
-      if (alive) {
-        log(`別のクロールが実行中（PID ${pid}・${LOCK_FILE}）。今回は何もしない`);
-        process.exit(0);
-      }
+      if (alive) return { holder: pid };
       log(`前回のロックが残っていた（PID ${pid} は終了済み）。取り直す`);
       unlinkSync(LOCK_FILE);
     }
@@ -149,25 +187,55 @@ async function ingest(cfg: Config, body: IngestRequest): Promise<IngestResponse>
 
 class FatalIngestError extends Error {}
 
+/** 種類ごとの取得先（取得・ブロック判定・解析は src/ の同じ部品） */
+interface KindSource {
+  origin: string;
+  pageUrl(target: CrawlTarget, page: number): string;
+  fetch(target: CrawlTarget, page: number, url: string): Promise<PageOutcome<AnyListingRecord>>;
+}
+
+function sourceFor(kind: CrawlKind, s: ReturnType<typeof crawlSettings>): KindSource {
+  const f = (u: string, init: RequestInit) => fetch(u, init);
+  if (kind === "shinchiku") {
+    const src = new ShinchikuSource({ origin: s.origin, userAgent: s.userAgent });
+    return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
+  }
+  const src = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
+  return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
+}
+
+function parseKindArg(): CrawlKind | null {
+  const i = process.argv.indexOf("--kind");
+  if (i < 0) return "chuko";
+  const v = process.argv[i + 1];
+  return v === "chuko" || v === "shinchiku" ? v : null;
+}
+
 async function main(): Promise<number> {
   const dryRun = process.argv.includes("--dry-run");
+  const kind = parseKindArg();
+  if (!kind) {
+    console.error("--kind には chuko か shinchiku を");
+    return 1;
+  }
+  const limits = CRAWL_KINDS[kind];
   // --max-pages N: 試し走り用（N ページで切り上げ。続きは次回カーソルから）
   const maxIdx = process.argv.indexOf("--max-pages");
-  const maxPages = maxIdx >= 0 ? Number(process.argv[maxIdx + 1]) : CRAWL.localMaxPagesPerRun;
+  const maxPages = maxIdx >= 0 ? Number(process.argv[maxIdx + 1]) : limits.localMaxPagesPerRun;
   if (!Number.isInteger(maxPages) || maxPages < 1) {
     console.error("--max-pages には 1 以上の整数を");
     return 1;
   }
   const cfg = loadConfig();
   const s = crawlSettings(cfg.env);
-  const source = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
-  log(`取得先 ${source.origin}・間隔 ${s.intervalMs}ms・取り込み先 ${new URL(cfg.ingestUrl).origin}`);
+  const source = sourceFor(kind, s);
+  log(`${limits.label}（${kind}）・取得先 ${source.origin}・間隔 ${s.intervalMs}ms・取り込み先 ${new URL(cfg.ingestUrl).origin}`);
   if (dryRun) {
     log("--dry-run: 設定の確認だけで終わる");
     return 0;
   }
 
-  const release = acquireLock();
+  const release = await acquireLock();
   const started = Date.now();
   let runId: string | undefined;
   let pages = 0;
@@ -175,11 +243,11 @@ async function main(): Promise<number> {
   let detail: string | undefined;
   try {
     // 前回の実行が落ちて lease が残っていると locked。lease（10 分）が切れるまで待って取り直す
-    let b = await ingest(cfg, { op: "begin" });
+    let b = await ingest(cfg, { op: "begin", kind });
     for (let i = 0; b.status === "locked" && i < 12; i++) {
       log("他の実行が lease を持っている（前回が落ちた残りの可能性）。60 秒後に取り直す");
       await sleep(60_000);
-      b = await ingest(cfg, { op: "begin" });
+      b = await ingest(cfg, { op: "begin", kind });
     }
     runId = b.runId;
     status = b.status ?? "error";
@@ -193,7 +261,7 @@ async function main(): Promise<number> {
     let lastFetch = b.lastFetchAt ? Date.parse(b.lastFetchAt) : 0;
     let next = b.next ?? null;
     while (next) {
-      if (pages >= Math.min(maxPages, CRAWL.localMaxPagesPerRun) || Date.now() - started > CRAWL.localMaxRunMs) {
+      if (pages >= Math.min(maxPages, limits.localMaxPagesPerRun) || Date.now() - started > limits.localMaxRunMs) {
         detail = `上限（${pages} ページ・${Math.round((Date.now() - started) / 60_000)} 分）で切り上げ。続きは次回`;
         log(detail);
         break;
@@ -205,10 +273,20 @@ async function main(): Promise<number> {
       const url = source.pageUrl(target, next.page);
       lastFetch = Date.now();
       const fetchedAt = new Date(lastFetch).toISOString();
-      const outcome = await fetchAndClassify((u, init) => fetch(u, init), source, target, next.page, url);
+      const outcome = await source.fetch(target, next.page, url);
       pages++;
 
-      const r = await ingest(cfg, { op: "page", runId: runId!, areaCode: next.areaCode, page: next.page, url, fetchedAt, outcome });
+      const r = await ingest(cfg, {
+        op: "page",
+        kind,
+        runId: runId!,
+        areaCode: next.areaCode,
+        page: next.page,
+        url,
+        fetchedAt,
+        // 送る形は Worker 側（parseIngestRequest）が kind に合わせて検証する
+        outcome,
+      });
       log(`${next.slug} p${next.page}: ${outcome.kind} ${outcomeMessage(outcome)} → ${r.status}${r.stale ? "（反映済みだった）" : ""}`);
       status = r.status ?? "error";
       if (r.status === "blocked") {
@@ -232,7 +310,7 @@ async function main(): Promise<number> {
   } finally {
     if (runId) {
       try {
-        await ingest(cfg, { op: "end", runId, summary: { status, pages, detail } });
+        await ingest(cfg, { op: "end", kind, runId, summary: { status, pages, detail } });
       } catch (e) {
         console.error("終了の記録に失敗:", e instanceof Error ? e.message : String(e));
       }

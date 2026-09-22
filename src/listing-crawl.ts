@@ -5,8 +5,16 @@
 //     （Cloudflare Workers の送信元が弾かれている様子。同じ URL を自宅回線から curl すると 200）ため external に移した
 //   - "off"（既定）… どちらも動かない。cron は D1 にも触らず即 return、取り込みは 409
 // どちらの経路でも「ページの反映とカーソル前進を同じトランザクションで」「完走回だけ掲載終了」「85% ルール」は同じ関数を通る。
-// クールダウン・最終取得時刻（listing_crawl_state）は取得元ごとに持つ（Worker = SUUMO_SOURCE_ID、Mac = LOCAL_STATE_KEY）。
+// クールダウン・最終取得時刻（listing_crawl_state）は取得元ごとに持つ（Worker = SUUMO_SOURCE_ID、Mac = localStateKey(kind)）。
 // 送信元 IP が違うので、Worker の IP が受けたクールダウンで Mac を止めない（逆も同じ）。
+//
+// 種類（kind）: 中古（chuko・毎日・listings）と新築（shinchiku・週 1 回・new_listings。2026-09-22〜）。
+// クロールの状態の表（runs・cursor・state・events・snapshots）は取得元 ID（suumo:ms-chuko / suumo:ms-shinchiku）で分かれるので共用し、
+// 掲載を入れる表と 1 ページの反映文だけを ListingStore で差し替える（カーソル・止まり方・掲載終了の判定は 1 つの実装）。
+// Mac の取得元は中古・新築で別キー（suumo:ms-chuko@mac / suumo:ms-shinchiku@mac）だが、送信元 IP は同じ Mac なので
+//   - クールダウンは「Mac のどちらかのキーがクールダウン中なら、どちらも取らない」
+//   - ページ間隔の起点は「Mac のどちらかのキーで最後に取った時刻」
+// にしている（同じ相手に別の種類として続けて取りに行かない）。
 //
 // 以下は Worker cron 方式（on）の設計メモ（Workers Paid 前提。2026-09 確認: Cron の CPU 30s（1 時間未満間隔）/ 実行時間 15 分 / サブリクエスト 10,000）
 //   - 1 日ぶん ≒ 福岡市 180 ページ + 近郊 51 ページ ≒ 231 ページ（2026-09-14 の件数から）
@@ -31,20 +39,24 @@ import type { Env } from "./env";
 import { jstToday } from "./ingest";
 import { checkIngestToken } from "./ingest-auth";
 import {
+  type AnyListingRecord,
   CRAWL,
+  CRAWL_KINDS,
+  type CrawlKind,
   crawlSettings,
   fetchAndClassify,
   type IngestCursor,
   type IngestResponse,
   listingsMode,
-  LOCAL_FETCHER_SUFFIX,
   localOrigin,
+  localStateKey,
   outcomeMessage,
   type PageOutcome,
   parseIngestRequest,
 } from "./listing-crawl-core";
-import type { CrawlTarget, PagedSource, ParsedListPage } from "./listing-types";
+import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
+import { ShinchikuSource } from "./suumo-shinchiku";
 import { SuumoSource } from "./suumo-source";
 
 /** wrangler.toml の crons と一致させること（scheduled のディスパッチに使う） */
@@ -59,8 +71,10 @@ export function listingsEnabled(env: Pick<Env, "LISTINGS_ENABLED">): boolean {
   return listingsMode(env) === "on";
 }
 
-/** Mac 側の取得の状態（クールダウン・最終取得時刻）の置き場。Worker cron の状態（SUUMO_SOURCE_ID）とは別 */
-export const LOCAL_STATE_KEY = `${SUUMO_SOURCE_ID}${LOCAL_FETCHER_SUFFIX}`;
+/** Mac 側の取得の状態（クールダウン・最終取得時刻）の置き場（中古）。Worker cron の状態（SUUMO_SOURCE_ID）とは別 */
+export const LOCAL_STATE_KEY = localStateKey("chuko");
+/** Mac 側の全キー（中古・新築）。送信元が同じ Mac なので、クールダウンと間隔の起点はまとめて見る */
+const ALL_LOCAL_STATE_KEYS = (Object.keys(CRAWL_KINDS) as CrawlKind[]).map(localStateKey);
 
 export interface CrawlDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
@@ -125,24 +139,30 @@ interface OpenedRun {
  */
 async function openRun(
   db: D1Database,
-  source: PagedSource,
+  source: PagedSource<unknown>,
   stateKey: string,
   date: string,
   now: () => number,
   leaseMs: number,
+  /** クールダウンと最終取得時刻を一緒に見るキー（同じ送信元の別の種類。Mac なら ALL_LOCAL_STATE_KEYS） */
+  sharedKeys: readonly string[] = [stateKey],
 ): Promise<OpenedRun> {
   const iso = (ms = now()) => new Date(ms).toISOString();
   const startedMs = now();
   const runId = `${source.id}:${date}`;
+  const keys = [...new Set([stateKey, ...sharedKeys])];
 
   await db.prepare("INSERT OR IGNORE INTO listing_crawl_state (source) VALUES (?)").bind(stateKey).run();
   const state = await db
-    .prepare("SELECT last_fetch_at, cooldown_until FROM listing_crawl_state WHERE source = ?")
-    .bind(stateKey)
+    .prepare(
+      `SELECT MAX(last_fetch_at) AS last_fetch_at, MAX(cooldown_until) AS cooldown_until
+       FROM listing_crawl_state WHERE source IN (SELECT value FROM json_each(?))`,
+    )
+    .bind(JSON.stringify(keys))
     .first<{ last_fetch_at: string | null; cooldown_until: string | null }>();
   const lastFetchAt = state?.last_fetch_at ?? null;
   if (state?.cooldown_until && state.cooldown_until > iso()) {
-    console.log(`掲載クロール（${stateKey}）はクールダウン中（${state.cooldown_until} まで）`);
+    console.log(`掲載クロール（${stateKey}）はクールダウン中（${state.cooldown_until} まで・${keys.join(", ")} のいずれか）`);
     return { status: "cooldown", runId, lastFetchAt, detail: state.cooldown_until };
   }
 
@@ -216,14 +236,15 @@ async function releaseLease(db: D1Database, runId: string): Promise<void> {
  * 1 ページぶんの結果を D1 に反映する（Worker cron と Mac からの取り込みで共通）。
  * blocked なら stateKey の取得元を 72 時間クールダウンにして、その回を blocked で閉じる。
  */
-async function applyOutcome(
+async function applyOutcome<R>(
   db: D1Database,
-  source: PagedSource,
+  source: PagedSource<R>,
+  store: ListingStore<R>,
   stateKey: string,
   runId: string,
   date: string,
   cur: CursorRow,
-  outcome: PageOutcome,
+  outcome: PageOutcome<R>,
   url: string,
   now: () => number,
 ): Promise<{ blocked?: string }> {
@@ -238,7 +259,7 @@ async function applyOutcome(
       await cursorDone(db, runId, cur, cur.total_pages, cur.total_hits, 0, iso());
       return {};
     case "parsed":
-      await applyPage(db, source, runId, date, cur, outcome.page, url, iso());
+      await applyPage(db, source, store, runId, date, cur, outcome.page, url, iso());
       return {};
     case "blocked": {
       const { block, status, location, bodyHead } = outcome;
@@ -273,7 +294,7 @@ async function applyOutcome(
 /** 残りのページが無ければ回を締める（complete のときだけ掲載終了を付ける）。残っていれば running */
 async function closeIfDone(
   db: D1Database,
-  sourceId: string,
+  store: StoreInfo,
   runId: string,
   date: string,
   at: string,
@@ -283,7 +304,7 @@ async function closeIfDone(
     .bind(runId)
     .first<{ n: number }>();
   if ((pending?.n ?? 0) > 0) return { status: "running" };
-  const r = await finalizeRun(db, sourceId, runId, date, at);
+  const r = await finalizeRun(db, store, runId, date, at);
   return { status: r.status, detail: r.detail };
 }
 
@@ -323,10 +344,10 @@ export async function runListingCrawl(env: Env, deps: CrawlDeps = defaultDeps): 
       pages++;
 
       const outcome = await fetchAndClassify(deps.fetch, source, target, cur.next_page, url);
-      const r = await applyOutcome(db, source, source.id, runId, date, cur, outcome, url, deps.now);
+      const r = await applyOutcome(db, source, CHUKO_STORE, source.id, runId, date, cur, outcome, url, deps.now);
       if (r.blocked) return { status: "blocked", runId, pages, detail: r.blocked };
     }
-    return { ...(await closeIfDone(db, source.id, runId, date, iso())), runId, pages };
+    return { ...(await closeIfDone(db, CHUKO_STORE, runId, date, iso())), runId, pages };
   } finally {
     await releaseLease(db, runId);
     console.log(JSON.stringify({ listingCrawl: { runId, pages } }));
@@ -366,6 +387,7 @@ async function cursorView(db: D1Database, runId: string): Promise<IngestCursor |
  */
 async function afterIngestStep(
   db: D1Database,
+  store: StoreInfo,
   runId: string,
   date: string,
   now: () => number,
@@ -382,7 +404,7 @@ async function afterIngestStep(
     }
     return { ok: true, status: "running", runId, next };
   }
-  const done = await closeIfDone(db, SUUMO_SOURCE_ID, runId, date, iso());
+  const done = await closeIfDone(db, store, runId, date, iso());
   if (done.status !== "running") await releaseLease(db, runId);
   return { ok: true, status: done.status, runId, next: null, detail: done.detail };
 }
@@ -407,17 +429,30 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   }
 
   const db = env.DB;
-  const source = new SuumoSource();
+  // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
+  if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
+  return ingestKind(db, env, r, new SuumoSource(), CHUKO_STORE, now);
+}
+
+async function ingestKind<R extends AnyListingRecord>(
+  db: D1Database,
+  env: Env,
+  r: ReturnType<typeof parseIngestRequest>,
+  source: PagedSource<R>,
+  store: ListingStore<R>,
+  now: () => number,
+): Promise<Response> {
   const iso = (ms = now()) => new Date(ms).toISOString();
+  const stateKey = localStateKey(r.kind);
 
   if (r.op === "begin") {
     const date = crawlSettings(env).todayOverride ?? jstToday(new Date(now()));
-    const o = await openRun(db, source, LOCAL_STATE_KEY, date, now, CRAWL.ingestLeaseMs);
+    const o = await openRun(db, source, stateKey, date, now, CRAWL.ingestLeaseMs, ALL_LOCAL_STATE_KEYS);
     if (o.status !== "running") {
       return ingestJson({ ok: true, status: o.status, runId: o.runId, next: null, lastFetchAt: o.lastFetchAt, detail: o.detail });
     }
     // lease は openRun が取った
-    const step = await afterIngestStep(db, o.runId, date, now, false);
+    const step = await afterIngestStep(db, store, o.runId, date, now, false);
     return ingestJson({ ...step, lastFetchAt: o.lastFetchAt });
   }
 
@@ -444,15 +479,17 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
     .bind(r.runId, r.areaCode)
     .first<CursorRow & { status: string }>();
   if (!cur || cur.status !== "pending" || cur.next_page !== r.page) {
-    const step = await afterIngestStep(db, r.runId, run.crawl_date, now, false);
+    const step = await afterIngestStep(db, store, r.runId, run.crawl_date, now, false);
     return ingestJson({ ...step, stale: true });
   }
   // 取った時刻は Mac の申告（未来・15 分より昔は丸める）。次の間隔の起点になる
   const fetchedMs = Math.min(now(), Math.max(now() - 15 * 60_000, Date.parse(r.fetchedAt)));
-  await recordFetch(db, LOCAL_STATE_KEY, r.runId, iso(fetchedMs));
-  const res = await applyOutcome(db, source, LOCAL_STATE_KEY, r.runId, run.crawl_date, cur, r.outcome, r.url, now);
+  await recordFetch(db, stateKey, r.runId, iso(fetchedMs));
+  // parseIngestRequest が kind に合わせて records を検証済み（chuko = ListingRecord・shinchiku = NewListingRecord）
+  const outcome = r.outcome as PageOutcome<R>;
+  const res = await applyOutcome(db, source, store, stateKey, r.runId, run.crawl_date, cur, outcome, r.url, now);
   if (res.blocked) return ingestJson({ ok: true, status: "blocked", runId: r.runId, next: null, detail: res.blocked });
-  return ingestJson(await afterIngestStep(db, r.runId, run.crawl_date, now, true));
+  return ingestJson(await afterIngestStep(db, store, r.runId, run.crawl_date, now, true));
 }
 
 function event(
@@ -535,14 +572,181 @@ INSERT INTO listing_price_history (source, external_id, observed_on, price)
 SELECT ?1, json_extract(j.value, '$.id'), ?2, json_extract(j.value, '$.price') FROM json_each(?3) AS j WHERE true
 ON CONFLICT (source, external_id, observed_on) DO UPDATE SET price = excluded.price`;
 
+/** 掲載を入れる表の情報（掲載終了の判定・件数に使う）。表名は定数だけ（SQL に埋め込むため外からの値を入れない） */
+interface StoreInfo {
+  readonly sourceId: string;
+  readonly table: "listings" | "new_listings";
+}
+
+/** 種類ごとの掲載の表。1 ページぶんの反映文（履歴 → upsert）を作る。カーソル・回の更新は applyPage が足して同じ batch にする */
+interface ListingStore<R> extends StoreInfo {
+  pageStatements(
+    db: D1Database,
+    runId: string,
+    date: string,
+    areaCode: string,
+    records: R[],
+  ): Promise<{ stmts: D1PreparedStatement[]; newCount: number; changedCount: number; rows: number }>;
+}
+
+/** 中古（listings・0001/0003） */
+const CHUKO_STORE: ListingStore<ListingRecord> = {
+  sourceId: SUUMO_SOURCE_ID,
+  table: "listings",
+  async pageStatements(db, runId, date, areaCode, records) {
+    const byId = new Map(records.map((r) => [r.externalId, r]));
+    const ids = [...byId.keys()];
+    const prev = await db
+      .prepare(
+        "SELECT external_id, current_price FROM listings WHERE source = ?1 AND external_id IN (SELECT value FROM json_each(?2))",
+      )
+      .bind(this.sourceId, JSON.stringify(ids))
+      .all<{ external_id: string; current_price: number | null }>();
+    const prevPrice = new Map(prev.results.map((r) => [r.external_id, r.current_price]));
+    let newCount = 0;
+    let changedCount = 0;
+    const history: { id: string; price: number }[] = [];
+    for (const r of byId.values()) {
+      if (!prevPrice.has(r.externalId)) {
+        newCount++;
+        history.push({ id: r.externalId, price: r.price });
+      } else if (prevPrice.get(r.externalId) !== r.price) {
+        changedCount++;
+        history.push({ id: r.externalId, price: r.price });
+      }
+    }
+    const rows = [...byId.values()].map((r) => ({
+      id: r.externalId,
+      ward: r.wardCode ?? areaCode,
+      name: r.buildingName ?? null,
+      by: r.buildingYear ?? null,
+      bm: r.builtMonth ?? null,
+      area: r.areaSqm ?? null,
+      plan: r.floorPlan ?? null,
+      line: r.lineName ?? null,
+      st: r.stationName ?? null,
+      walk: r.walkMinutes ?? null,
+      bus: r.bus ? 1 : 0,
+      addr: r.address ?? null,
+      url: r.url ?? null,
+      price: r.price,
+    }));
+    const stmts: D1PreparedStatement[] = [];
+    // 履歴は listings を更新する前に（新規・価格変更の判定は上の prev で済ませてある）
+    if (history.length) stmts.push(db.prepare(INSERT_HISTORY).bind(this.sourceId, date, JSON.stringify(history)));
+    stmts.push(db.prepare(UPSERT_LISTINGS).bind(this.sourceId, date, runId, JSON.stringify(rows)));
+    return { stmts, newCount, changedCount, rows: rows.length };
+  },
+};
+
+// ---- 新築（new_listings・0005）。価格は幅（円）・未定は NULL。価格変化 = 下限か上限が変わった（未定→決定も含む）
+const UPSERT_NEW_LISTINGS = `
+INSERT INTO new_listings (source, external_id, listing_type, ward_code, building_name, address, line_name, station_name,
+  walk_minutes, bus, price_min, price_max, price_undecided, price_tentative, area_min, area_max, unit_price_min, unit_price_max,
+  floor_plans, sale_status, sale_label, delivery_text, delivery_ym, delivery_immediate, url,
+  first_seen, last_seen, first_price_min, first_price_max, price_change_count, relisted_count, missed_runs, delisted_on, last_seen_run)
+SELECT ?1, json_extract(j.value, '$.id'), json_extract(j.value, '$.type'), json_extract(j.value, '$.ward'),
+  json_extract(j.value, '$.name'), json_extract(j.value, '$.addr'), json_extract(j.value, '$.line'), json_extract(j.value, '$.st'),
+  json_extract(j.value, '$.walk'), json_extract(j.value, '$.bus'), json_extract(j.value, '$.pmin'), json_extract(j.value, '$.pmax'),
+  json_extract(j.value, '$.pund'), json_extract(j.value, '$.ptent'), json_extract(j.value, '$.amin'), json_extract(j.value, '$.amax'),
+  json_extract(j.value, '$.umin'), json_extract(j.value, '$.umax'), json_extract(j.value, '$.plans'), json_extract(j.value, '$.status'),
+  json_extract(j.value, '$.label'), json_extract(j.value, '$.dtext'), json_extract(j.value, '$.dym'), json_extract(j.value, '$.dimm'),
+  json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.pmin'), json_extract(j.value, '$.pmax'), 0, 0, 0, NULL, ?3
+FROM json_each(?4) AS j WHERE true
+ON CONFLICT (source, external_id) DO UPDATE SET
+  listing_type = excluded.listing_type, ward_code = excluded.ward_code, building_name = excluded.building_name,
+  address = excluded.address, line_name = excluded.line_name, station_name = excluded.station_name,
+  walk_minutes = excluded.walk_minutes, bus = excluded.bus,
+  price_change_count = new_listings.price_change_count +
+    (CASE WHEN excluded.price_min IS NOT new_listings.price_min OR excluded.price_max IS NOT new_listings.price_max THEN 1 ELSE 0 END),
+  price_min = excluded.price_min, price_max = excluded.price_max,
+  first_price_min = COALESCE(new_listings.first_price_min, excluded.price_min),
+  first_price_max = COALESCE(new_listings.first_price_max, excluded.price_max),
+  price_undecided = excluded.price_undecided, price_tentative = excluded.price_tentative,
+  area_min = excluded.area_min, area_max = excluded.area_max,
+  unit_price_min = excluded.unit_price_min, unit_price_max = excluded.unit_price_max, floor_plans = excluded.floor_plans,
+  sale_status = excluded.sale_status, sale_label = excluded.sale_label, delivery_text = excluded.delivery_text,
+  delivery_ym = excluded.delivery_ym, delivery_immediate = excluded.delivery_immediate, url = excluded.url,
+  last_seen = excluded.last_seen,
+  relisted_count = new_listings.relisted_count + (CASE WHEN new_listings.delisted_on IS NOT NULL THEN 1 ELSE 0 END),
+  delisted_on = NULL, missed_runs = 0, last_seen_run = excluded.last_seen_run`;
+
+const INSERT_NEW_HISTORY = `
+INSERT INTO new_listing_price_history (source, external_id, observed_on, price_min, price_max)
+SELECT ?1, json_extract(j.value, '$.id'), ?2, json_extract(j.value, '$.pmin'), json_extract(j.value, '$.pmax')
+FROM json_each(?3) AS j WHERE true
+ON CONFLICT (source, external_id, observed_on) DO UPDATE SET price_min = excluded.price_min, price_max = excluded.price_max`;
+
+const SHINCHIKU_STORE: ListingStore<NewListingRecord> = {
+  sourceId: CRAWL_KINDS.shinchiku.sourceId,
+  table: "new_listings",
+  async pageStatements(db, runId, date, areaCode, records) {
+    const byId = new Map(records.map((r) => [r.externalId, r]));
+    const prev = await db
+      .prepare(
+        "SELECT external_id, price_min, price_max FROM new_listings WHERE source = ?1 AND external_id IN (SELECT value FROM json_each(?2))",
+      )
+      .bind(this.sourceId, JSON.stringify([...byId.keys()]))
+      .all<{ external_id: string; price_min: number | null; price_max: number | null }>();
+    const prevPrice = new Map(prev.results.map((r) => [r.external_id, r]));
+    let newCount = 0;
+    let changedCount = 0;
+    const history: { id: string; pmin: number | null; pmax: number | null }[] = [];
+    for (const r of byId.values()) {
+      const pmin = r.priceMin ?? null;
+      const pmax = r.priceMax ?? null;
+      const p = prevPrice.get(r.externalId);
+      if (!p) {
+        newCount++;
+        history.push({ id: r.externalId, pmin, pmax });
+      } else if (p.price_min !== pmin || p.price_max !== pmax) {
+        changedCount++;
+        history.push({ id: r.externalId, pmin, pmax });
+      }
+    }
+    const b = (v: boolean | undefined) => (v ? 1 : 0);
+    const rows = [...byId.values()].map((r) => ({
+      id: r.externalId,
+      type: r.listingType,
+      ward: r.wardCode ?? areaCode,
+      name: r.buildingName ?? null,
+      addr: r.address ?? null,
+      line: r.lineName ?? null,
+      st: r.stationName ?? null,
+      walk: r.walkMinutes ?? null,
+      bus: b(r.bus),
+      pmin: r.priceMin ?? null,
+      pmax: r.priceMax ?? null,
+      pund: b(r.priceUndecided),
+      ptent: b(r.priceTentative),
+      amin: r.areaMin ?? null,
+      amax: r.areaMax ?? null,
+      umin: r.unitPriceMin ?? null,
+      umax: r.unitPriceMax ?? null,
+      plans: r.floorPlans ?? null,
+      status: r.saleStatus ?? null,
+      label: r.saleLabel ?? null,
+      dtext: r.deliveryText ?? null,
+      dym: r.deliveryYm ?? null,
+      dimm: b(r.deliveryImmediate),
+      url: r.url ?? null,
+    }));
+    const stmts: D1PreparedStatement[] = [];
+    if (history.length) stmts.push(db.prepare(INSERT_NEW_HISTORY).bind(this.sourceId, date, JSON.stringify(history)));
+    stmts.push(db.prepare(UPSERT_NEW_LISTINGS).bind(this.sourceId, date, runId, JSON.stringify(rows)));
+    return { stmts, newCount, changedCount, rows: rows.length };
+  },
+};
+
 /** 1 ページぶんを 1 回の D1 batch（= 1 トランザクション）で反映する。カーソルも同じ batch で進める（途中で落ちても二重計上しない） */
-async function applyPage(
+async function applyPage<R>(
   db: D1Database,
-  source: PagedSource,
+  source: PagedSource<R>,
+  store: ListingStore<R>,
   runId: string,
   date: string,
   cur: CursorRow,
-  page: ParsedListPage,
+  page: ParsedListPage<R>,
   url: string,
   at: string,
 ): Promise<void> {
@@ -570,57 +774,17 @@ async function applyPage(
     return;
   }
 
-  const byId = new Map(page.records.map((r) => [r.externalId, r]));
-  const ids = [...byId.keys()];
-  const prev = await db
-    .prepare(
-      "SELECT external_id, current_price FROM listings WHERE source = ?1 AND external_id IN (SELECT value FROM json_each(?2))",
-    )
-    .bind(source.id, JSON.stringify(ids))
-    .all<{ external_id: string; current_price: number | null }>();
-  const prevPrice = new Map(prev.results.map((r) => [r.external_id, r.current_price]));
-  let newCount = 0;
-  let changedCount = 0;
-  const history: { id: string; price: number }[] = [];
-  for (const r of byId.values()) {
-    if (!prevPrice.has(r.externalId)) {
-      newCount++;
-      history.push({ id: r.externalId, price: r.price });
-    } else if (prevPrice.get(r.externalId) !== r.price) {
-      changedCount++;
-      history.push({ id: r.externalId, price: r.price });
-    }
-  }
-  const rows = [...byId.values()].map((r) => ({
-    id: r.externalId,
-    ward: r.wardCode ?? cur.area_code,
-    name: r.buildingName ?? null,
-    by: r.buildingYear ?? null,
-    bm: r.builtMonth ?? null,
-    area: r.areaSqm ?? null,
-    plan: r.floorPlan ?? null,
-    line: r.lineName ?? null,
-    st: r.stationName ?? null,
-    walk: r.walkMinutes ?? null,
-    bus: r.bus ? 1 : 0,
-    addr: r.address ?? null,
-    url: r.url ?? null,
-    price: r.price,
-  }));
+  const { stmts, newCount, changedCount, rows } = await store.pageStatements(db, runId, date, cur.area_code, page.records);
 
   const next = p + 1;
   const done = next > totalPages;
-  const stmts: D1PreparedStatement[] = [];
-  // 履歴は listings を更新する前に（新規・価格変更の判定は上の prev で済ませてある）
-  if (history.length) stmts.push(db.prepare(INSERT_HISTORY).bind(source.id, date, JSON.stringify(history)));
-  stmts.push(db.prepare(UPSERT_LISTINGS).bind(source.id, date, runId, JSON.stringify(rows)));
   stmts.push(
     db
       .prepare(
         `UPDATE listing_crawl_cursor SET next_page = ?, total_pages = ?, total_hits = ?, seen = seen + ?, status = ?,
            attempts = 0, last_error = NULL, updated_at = ? WHERE run_id = ? AND area_code = ?`,
       )
-      .bind(next, totalPages, totalHits, rows.length, done ? "done" : "pending", at, runId, cur.area_code),
+      .bind(next, totalPages, totalHits, rows, done ? "done" : "pending", at, runId, cur.area_code),
   );
   stmts.push(
     db
@@ -636,11 +800,14 @@ async function applyPage(
 /** 全カーソルが終わった回を締める。complete のときだけ掲載終了を付ける */
 async function finalizeRun(
   db: D1Database,
-  source: string,
+  store: StoreInfo,
   runId: string,
   date: string,
   at: string,
 ): Promise<{ status: CrawlSummary["status"]; runId: string; detail?: string }> {
+  const source = store.sourceId;
+  // 表名は ListingStore の定数（"listings" | "new_listings"）だけ。外からの値は入らない
+  const table = store.table;
   const agg = await db
     .prepare(
       `SELECT SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors, SUM(COALESCE(total_hits, 0)) AS hits
@@ -649,7 +816,7 @@ async function finalizeRun(
     .bind(runId)
     .first<{ errors: number | null; hits: number | null }>();
   const seenRow = await db
-    .prepare("SELECT COUNT(*) AS n FROM listings WHERE source = ? AND last_seen_run = ?")
+    .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE source = ? AND last_seen_run = ?`)
     .bind(source, runId)
     .first<{ n: number }>();
   const seen = seenRow?.n ?? 0;
@@ -676,17 +843,17 @@ async function finalizeRun(
   await db.batch([
     db
       .prepare(
-        `UPDATE listings SET missed_runs = missed_runs + 1
+        `UPDATE ${table} SET missed_runs = missed_runs + 1
          WHERE source = ? AND delisted_on IS NULL AND (last_seen_run IS NULL OR last_seen_run <> ?)`,
       )
       .bind(source, runId),
     db
-      .prepare("UPDATE listings SET delisted_on = ? WHERE source = ? AND delisted_on IS NULL AND missed_runs >= ?")
+      .prepare(`UPDATE ${table} SET delisted_on = ? WHERE source = ? AND delisted_on IS NULL AND missed_runs >= ?`)
       .bind(date, source, CRAWL.delistAfterMissedCompleteRuns),
     db
       .prepare(
         `UPDATE listing_crawl_runs SET status = 'complete', finished_at = ?, lease_until = NULL, listings_seen = ?, total_hits = ?,
-           gone_count = (SELECT COUNT(*) FROM listings WHERE source = ? AND delisted_on = ?), updated_at = ?
+           gone_count = (SELECT COUNT(*) FROM ${table} WHERE source = ? AND delisted_on = ?), updated_at = ?
          WHERE run_id = ?`,
       )
       .bind(at, seen, hits, source, date, at, runId),

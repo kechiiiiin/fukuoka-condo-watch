@@ -64,7 +64,8 @@ test("応答の振り分け（止まる・ページ消滅・失敗・解析）",
 });
 
 test("取り込み要求の検証（不正な形は弾く）", () => {
-  assert.deepEqual(parseIngestRequest({ op: "begin" }), { op: "begin" });
+  assert.deepEqual(parseIngestRequest({ op: "begin" }), { op: "begin", kind: "chuko" });
+  assert.deepEqual(parseIngestRequest({ op: "begin", kind: "shinchiku" }), { op: "begin", kind: "shinchiku" });
   const base = {
     op: "page",
     runId: "suumo:ms-chuko:2026-09-22",
@@ -90,5 +91,8 @@ test("取り込み要求の検証（不正な形は弾く）", () => {
   assert.throws(() => parseIngestRequest(null));
   assert.throws(() => parseIngestRequest([]));
   const end = parseIngestRequest({ op: "end", runId: base.runId, summary: { status: "complete", pages: 231 } });
-  assert.deepEqual(end, { op: "end", runId: base.runId, summary: { status: "complete", pages: 231, detail: undefined } });
+  assert.deepEqual(end, { op: "end", kind: "chuko", runId: base.runId, summary: { status: "complete", pages: 231, detail: undefined } });
+  // kind と runId の取得元が食い違う要求は受けない
+  bad({ kind: "shinchiku" });
+  bad({ kind: "tochi" });
 });

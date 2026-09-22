@@ -15,6 +15,8 @@ import { buildListingMetrics } from "./listing-metrics";
 import { buildListingPicks } from "./listing-picks";
 import { renderListingsDashboard } from "./listings-dashboard";
 import { renderListingsPicksDashboard } from "./listings-picks-dashboard";
+import { buildNewListings } from "./new-listings";
+import { renderNewListingsDashboard } from "./new-listings-dashboard";
 import { buildMetrics, buildStatus, parseFilters } from "./metrics";
 
 const json = (body: unknown, status = 200) =>
@@ -67,6 +69,11 @@ export default {
             return json(await buildListingStatus(env));
           case "/api/listings/picks":
             return json(await buildListingPicks(env, url));
+          case "/listings/shinchiku":
+          case "/listings/shinchiku/":
+            return new Response(renderNewListingsDashboard(), { headers: { "content-type": "text/html; charset=utf-8", ...priv } });
+          case "/api/listings/shinchiku":
+            return json(await buildNewListings(env, url));
           default:
             return new Response("Not Found", { status: 404, headers: priv });
         }

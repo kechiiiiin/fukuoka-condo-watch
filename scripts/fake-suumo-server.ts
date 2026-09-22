@@ -5,6 +5,10 @@
 //   curl -X POST http://127.0.0.1:8790/__day/2      # 2 日目: 一部が消える・値下げ・新着
 //   curl -X POST http://127.0.0.1:8790/__mode/429   # 以後 429 を返す（ok / 403 / 429 / captcha / broken）
 //   curl http://127.0.0.1:8790/__stats              # 受けたリクエスト数
+//
+// 新築（/ms/shinchiku/fukuoka/sc_<slug>/）も返す。骨格は 2026-09-22 に実ページで確かめた構造（src/suumo-shinchiku.ts 冒頭）。
+//   - 博多区は 35 件（2 ページ）・3 つに 1 つの市区町村は 0 件（0 件ページには実物と同じく「近い物件」として他の市区町村の物件が並ぶ）
+//   - 2 日目（__day/2）: 一部が消える・値下げ・価格未定だった物件に価格が付く・新着 1 件
 
 import { createServer } from "node:http";
 
@@ -102,6 +106,143 @@ ${items.map((l) => unit(slug, l)).join("\n")}
   };
 }
 
+// ---------------------------------------------------------------- 新築（/ms/shinchiku/）
+
+export interface FakeNewListing {
+  id: string;
+  kbn: "4" | "8";
+  name: string;
+  /** 万円。null = 価格未定 */
+  priceMin: number | null;
+  priceMax: number | null;
+  tentative: boolean;
+  label: string | null;
+  areaMin: number;
+  areaMax: number;
+  delivery: string;
+  walk: number;
+}
+
+/** slug・日ごとの架空の新築。3 つに 1 つの市区町村（と久山町）は 0 件、博多区は 35 件 */
+export function fakeNewListings(slug: string, day: number): FakeNewListing[] {
+  const idx = SLUGS.indexOf(slug);
+  if (idx < 0 || slug === "kasuyagunhisayama" || idx % 3 === 2) return [];
+  const count = slug === "fukuokashihakata" ? 35 : (idx % 5) + 1;
+  const out: FakeNewListing[] = [];
+  for (let i = 0; i < count; i++) {
+    if (day >= 2 && i % 6 === 5) continue; // 完売・掲載終了
+    const unit = i % 4 === 3;
+    const undecided = !unit && i % 5 === 2 && day < 2; // 2 日目に価格が決まる
+    const base = 3500 + i * 250 + idx * 20 - (day >= 2 && i % 4 === 1 ? 100 : 0);
+    const areaMin = 60.5 + (i % 4) * 5;
+    out.push({
+      id: String((unit ? 21000000 : 67000000) + idx * 1000 + i),
+      kbn: unit ? "8" : "4",
+      name: `架空レジデンス${idx}-${i}`,
+      priceMin: undecided ? null : base,
+      priceMax: undecided ? null : unit ? base : base + 800,
+      tentative: !unit && i % 7 === 4,
+      label: unit ? null : ["先着順", "第1期", "最終期", "第2期2次"][i % 4] ?? null,
+      areaMin,
+      areaMax: unit ? areaMin : areaMin + 15,
+      delivery: unit ? "相談" : i % 3 === 0 ? "即引渡可" : `${2027 + (i % 2)}年${1 + (i % 12)}月下旬予定`,
+      walk: 2 + ((i * 3) % 15),
+    });
+  }
+  if (day >= 2 && count > 0) {
+    out.push({
+      id: String(67900000 + idx), kbn: "4", name: `新着レジデンス${idx}`, priceMin: 4200, priceMax: 5100, tentative: false,
+      label: "第1期", areaMin: 70.1, areaMax: 85.2, delivery: "2028年3月下旬予定", walk: 5,
+    });
+  }
+  return out;
+}
+
+function manText(v: number): string {
+  return v >= 10000 ? `${Math.floor(v / 10000)}億${v % 10000 || ""}万円` : `${v}万円`;
+}
+
+function newUnit(slug: string, l: FakeNewListing): string {
+  const addr = ADDR[slug] ?? "";
+  const price =
+    l.priceMin === null ? "価格未定" : l.priceMin === l.priceMax ? manText(l.priceMin) : `${manText(l.priceMin)}～${manText(l.priceMax!)}${l.tentative ? "／予定" : ""}`;
+  const area = l.areaMin === l.areaMax ? `${l.areaMin}m<sup>2</sup>（壁芯）` : `${l.areaMin}m<sup>2</sup>～${l.areaMax}m<sup>2</sup>`;
+  const plan =
+    l.kbn === "4" && l.priceMin !== null
+      ? `<ul class="cassette_plantable-list js-noCassetteLink"><li class="cassette_plantable-list_item js-madoriType js-taplog" data-madoritype="001">
+<a href="/ms/shinchiku/fukuoka/sc_${slug}/nc_${l.id}/rooms/" class="cassette_plantable-link"><div class="cassette_plantable-left">
+<p class="cassette_plantable-price">${manText(l.priceMin)}</p>
+<p class="cassette_plantable-layout">3LDK&nbsp;/&nbsp;${l.areaMin}m<sup>2</sup></p>
+</div><p class="cassette_plantable-type">タイプ：A</p></a></li></ul>`
+      : "";
+  return `<li class="cassette_list-item"><div class="cassette property_unit">
+<div class="cassette-check"><input class="js-keisaiKbn" type="hidden" value="${l.kbn}" /></div>
+<div class="cassette-content js-normalLink js-cassetLink js-cassette_content">
+<div class="cassette_header"><h2>
+<a href="/ms/shinchiku/fukuoka/sc_${slug}/nc_${l.id}/" class="cassette_header-title js-cassetLinkHref js-cassette_title">${l.name}</a></h2></div>
+<div class="cassette-result_detail"><div class="cassette_basic"><ul class="cassette_basic-list">
+<li class="cassette_basic-list_item"><div class="cassette_basic-item"><p class="cassette_basic-title">所在地</p><p class="cassette_basic-value">${l.kbn === "8" ? "福岡県" : ""}${addr}テスト２</p></div></li>
+<li class="cassette_basic-list_item"><div class="cassette_basic-item"><p class="cassette_basic-title">交通</p><p class="cassette_basic-value">ＪＲ鹿児島本線/テスト 徒歩${l.walk}分</p></div></li>
+<li class="cassette_basic-list_item"><div class="cassette_basic-item"><p class="cassette_basic-title">引渡時期</p><p class="cassette_basic-value">${l.delivery}</p></div></li>
+</ul></div>
+<div class="cassette_price cassette_price--layout"><ul class="cassette_price-list">
+<li class="cassette_price-list_item"><div class="cassette_price-value"><span class="cassette_price-accent">
+${price}</span>${l.label ? `&nbsp;（${l.label}）` : ""}
+</div><p class="cassette_price-description">
+3LDK
+/
+${area}</p></li></ul></div></div>
+<div class="cassette-result_detail_table"><div class="cassette_plantable">${plan}</div></div>
+</div></div></li>`;
+}
+
+export function renderFakeShinchikuPage(slug: string, page: number, day: number): { status: number; html: string } {
+  if (!SLUGS.includes(slug)) return { status: 404, html: "<html><body>not found</body></html>" };
+  const all = fakeNewListings(slug, day);
+  if (all.length === 0) {
+    // 実物どおり、0 件でも「近い物件」として他の市区町村の物件が property_unit で並ぶ（パーサはここを読まないこと）
+    const other = "fukuokashihakata";
+    return {
+      status: 200,
+      html: `<!doctype html><html><head><meta charset="utf-8"></head><body><form><input type="hidden" name="sc" value="00000" /></form>
+<div class="error_pop"><div class="error_pop-txt">条件にあう物件がありません。条件を変更して再度検索してください。</div></div>
+<div class="ui-section--h2 item3"><div class="ui-section-header"><h2>近くの新築分譲マンション</h2></div></div>
+<div class="ui-section--h2"><div class="ui-section-header"><h2>ここに近い新築分譲マンション</h2></div></div>
+<div id="js-bukkenList"><ul class="cassette_list">${fakeNewListings(other, day).slice(0, 3).map((l) => newUnit(other, l)).join("\n")}</ul></div>
+</body></html>`,
+    };
+  }
+  const pageSize = 30;
+  const pages = Math.ceil(all.length / pageSize);
+  if (page > pages) return { status: 404, html: "<html><body>not found</body></html>" };
+  const items = all.slice((page - 1) * pageSize, page * pageSize);
+  const pager = Array.from({ length: pages }, (_, i) => i + 1)
+    .map((p) =>
+      p === page
+        ? `<li class="sortbox_pagination-list sortbox_pagination--current">${p}</li>`
+        : `<li class="sortbox_pagination-list"><a class="sortbox_pagination-link" href="/ms/shinchiku/fukuoka/sc_${slug}/${p > 1 ? `?page=${p}` : ""}">${p}</a></li>`,
+    )
+    .join("");
+  return {
+    status: 200,
+    html: `<!doctype html><html><head><meta charset="utf-8"></head><body>
+<a href="/jj/bukken/ichiran/JJ011FC001/?ar=090&amp;bs=010&amp;pc=30&page=1" id="pcLink" class="dn"></a>
+<form><div class="hitbox"><div class="hitbox-number">
+  ${all.length}<span class="hitbox-item">件</span>
+</div></div>
+<!-- MsBukkenPager02 Start -->
+<div class="sortbox_pagination">
+<ol class="sortbox_pagination-parts">${pager}</ol>
+</div>
+<!-- MsBukkenPager02 End -->
+<div id="js-bukkenList"><ul class="cassette_list cassette_list--layout">
+${items.map((l) => newUnit(slug, l)).join("\n")}
+</ul></div></form>
+<ul><li><a href="/ms/shinchiku/fukuoka/sc_fukuokashichuo/?page=1&pc=30" rel="nofollow">福岡市中央区(9)</a></li></ul>
+</body></html>`,
+  };
+}
+
 function main(): void {
   const port = Number(process.env.FAKE_SUUMO_PORT ?? 8790);
   let day = 1;
@@ -122,14 +263,15 @@ function main(): void {
       return send(200, JSON.stringify({ mode }), "application/json");
     }
     if (u.pathname === "/__stats") return send(200, JSON.stringify({ day, mode, hits }), "application/json");
-    const m = /^\/ms\/chuko\/fukuoka\/sc_([a-z]+)\/$/.exec(u.pathname);
-    if (!m || !m[1]) return send(404, "not found");
+    const m = /^\/ms\/(chuko|shinchiku)\/fukuoka\/sc_([a-z]+)\/$/.exec(u.pathname);
+    if (!m || !m[1] || !m[2]) return send(404, "not found");
     hits++;
     if (mode === "403") return send(403, "forbidden");
     if (mode === "429") return send(429, "too many requests");
     if (mode === "captcha") return send(200, "<html><body><div class='g-recaptcha'></div>アクセスが集中しています</body></html>");
     if (mode === "broken") return send(200, "<html><body>maintenance</body></html>");
-    const r = renderFakePage(m[1], Number(u.searchParams.get("page") ?? 1), day);
+    const pageNo = Number(u.searchParams.get("page") ?? 1);
+    const r = m[1] === "shinchiku" ? renderFakeShinchikuPage(m[2], pageNo, day) : renderFakePage(m[2], pageNo, day);
     return send(r.status, r.html);
   });
   server.listen(port, "127.0.0.1", () => console.log(`fake SUUMO on http://127.0.0.1:${port} (day=${day})`));

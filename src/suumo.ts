@@ -242,8 +242,9 @@ export function parseSuumoListPage(html: string, fallbackCode: string | null = n
   return { totalHits, listings, maxPageLinked, zeroHits, looksLikeListPage };
 }
 
+/** 一覧の構造があるか。中古は pagination_set-hit、新築（/ms/shinchiku/・src/suumo-shinchiku.ts）は hitbox-number が件数表示 */
 function hasListStructure(html: string): boolean {
-  return html.includes('id="js-bukkenList"') || /pagination_set-hit/.test(html) || ZERO_HITS.test(html);
+  return html.includes('id="js-bukkenList"') || /pagination_set-hit|hitbox-number/.test(html) || ZERO_HITS.test(html);
 }
 
 export type BlockKind =
@@ -268,7 +269,7 @@ const CHALLENGE_PATH_RE =
  * 2026-09-14 のレビュー指摘: 3xx を止めないと、ボット確認へ飛ばされ始めたときに 1 ページ目を
  * 市区町村ごとに 3 回ずつ取り直してしまう（最大 ≒ 69 リクエスト/日）。
  */
-export function detectRedirectBlock(requestUrl: string, location: string | null): BlockKind | null {
+export function detectRedirectBlock(requestUrl: string, location: string | null, pathPrefix = "/ms/chuko/"): BlockKind | null {
   if (!location) return null;
   let from: URL;
   let to: URL;
@@ -280,7 +281,7 @@ export function detectRedirectBlock(requestUrl: string, location: string | null)
   }
   if (to.host !== from.host) return "redirect_offsite";
   if (CHALLENGE_PATH_RE.test(to.pathname + to.search)) return "redirect_challenge";
-  if (!to.pathname.startsWith("/ms/chuko/")) return "redirect_challenge";
+  if (!to.pathname.startsWith(pathPrefix)) return "redirect_challenge";
   return null;
 }
 
@@ -295,11 +296,13 @@ export function detectBlock(
   status: number,
   html: string,
   redirect?: { url: string; location: string | null },
+  /** 検索結果として許すリダイレクト先のパス（中古 /ms/chuko/・新築 /ms/shinchiku/） */
+  pathPrefix = "/ms/chuko/",
 ): BlockKind | null {
   if (status === 403) return "http_403";
   if (status === 429) return "http_429";
   if (status === 503) return "http_503";
-  if (status >= 300 && status < 400) return redirect ? detectRedirectBlock(redirect.url, redirect.location) : null;
+  if (status >= 300 && status < 400) return redirect ? detectRedirectBlock(redirect.url, redirect.location, pathPrefix) : null;
   if (status !== 200) return null;
   if (/captcha|recaptcha|hcaptcha|cf-challenge|challenge-platform|アクセスが集中|不正なアクセス|アクセスを制限/i.test(html)) {
     // 通常ページにも "recaptcha" の文字列が紛れる可能性があるので、一覧の構造が無いときだけ captcha とみなす

@@ -3,7 +3,7 @@
 福岡市 7 区と福岡都市圏の近郊 16 市町の中古マンション市場を毎日追いかけて、「どこが売りやすいか（流動性・価格維持）」と「どこが貸しやすいか（賃貸需要）」を市区町村・地区ごとに見る Cloudflare Worker。ダッシュボードは「福岡市のみ／近郊のみ／すべて」を切り替え、ランキングは選んだ範囲の中で付ける。
 
 - 公開ダッシュボード（`/`）のデータは公的な公開情報だけ（国土交通省 不動産情報ライブラリ API・e-Stat）
-- 掲載情報（SUUMO・私的利用）の日次取得を同梱（コードの既定は無効。本番は `LISTINGS_ENABLED=external` = **Keisuke の Mac（launchd）が取って Worker に送る**）。見る画面 `/listings` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
+- 掲載情報（SUUMO・私的利用）の取得を同梱（中古は毎日・新築は週 1 回。コードの既定は無効。本番は `LISTINGS_ENABLED=external` = **Keisuke の Mac（launchd）が取って Worker に送る**）。見る画面 `/listings`・`/listings/shinchiku` は Cloudflare Access で非公開。下の「掲載情報（SUUMO）」
 - Cloudflare Workers（TypeScript）+ D1 + Cron Trigger。デプロイは手元の `wrangler`（GitHub Actions は型チェックとテストだけ）
 
 ## 仕組み
@@ -16,15 +16,17 @@
 | `src/metrics.ts` | 件数・㎡単価中央値・築年帯・価格帯・売りやすさ/貸しやすさスコア（式は画面にも表示）。`scope=city|suburb|all` で範囲を切り替え |
 | `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` / `PagedListingSource` 差し込み口 |
 | `src/suumo.ts` / `src/suumo-source.ts` | SUUMO 検索結果 HTML のパーサ・正規化（価格→万円・㎡・築年月・駅/徒歩・市区町村コード）と `SuumoSource` |
-| `src/listing-crawl.ts` | 掲載の日次クロールの D1 側。Mac からの取り込み口 `POST /api/listings/ingest`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了 |
-| `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
+| `src/suumo-shinchiku.ts` | SUUMO 新築マンション検索結果のパーサ・正規化（価格の幅・未定・予定、面積の幅、引渡時期、販売状況、物件/住戸の別）と `ShinchikuSource` |
+| `src/listing-crawl.ts` | 掲載クロールの D1 側。Mac からの取り込み口 `POST /api/listings/ingest`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了。種類（中古 `listings` / 新築 `new_listings`）は `ListingStore` で差し替える |
+| `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・種類 `CRAWL_KINDS`・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
-| `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から毎日 01:00 JST |
+| `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
 | `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順 |
+| `src/new-listings.ts` / `src/new-listing-view.ts` / `src/new-listings-dashboard.ts` | `/listings/shinchiku`・`/api/listings/shinchiku`（非公開）。新築の価格幅・㎡単価幅・面積幅・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化と**新築プレミアム**（下の「新築」） |
 | `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
 | `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
-| `scripts/fake-suumo-server.ts` | ローカル確認用の偽 SUUMO（架空データ） |
+| `scripts/fake-suumo-server.ts` | ローカル確認用の偽 SUUMO（架空データ。中古 `/ms/chuko/` と新築 `/ms/shinchiku/`） |
 | `scripts/backfill.ts` | 過去数年分の一括投入（ローカル実行 → `wrangler d1 execute`） |
 | `scripts/load-geo.ts` | 将来推計人口（XKT013・市区町村別に合算）と駅別乗降客数（XKT015） |
 | `scripts/estat.ts` | e-Stat の表探し（search / meta）と取り込み（load。定義は `scripts/estat-indicators.json`） |
@@ -80,6 +82,8 @@ npx wrangler dev --port 8787 --local-upstream 127.0.0.1:8787 \
 FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/listings/ingest \
   LISTINGS_INGEST_TOKEN=local-test-token-0123456789abcdef0123456789 \
   SUUMO_ORIGIN=http://127.0.0.1:8790 LISTINGS_MIN_INTERVAL_MS=0 npm run crawl:local
+# 新築は同じ環境変数で `npm run crawl:local -- --kind shinchiku`（24 ページ。2 日目は価格未定→決定・値下げ・完売・新着）
+open http://localhost:8787/listings/shinchiku
 curl -X POST http://127.0.0.1:8790/__day/2      # 翌日: 消える・値下げ・新着（wrangler dev の LISTINGS_TODAY_OVERRIDE も翌日にして起動し直す）
 curl -X POST http://127.0.0.1:8790/__mode/429   # 止まる動作の確認（Mac 側が 72 時間クールダウンになる）
 open http://localhost:8787/listings
@@ -120,7 +124,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
 ## 掲載情報（SUUMO）— 私的利用・Mac から取る
 
 **私的・非商用の個人利用に限る**（SUUMO ご利用規約 第2条1項「私的利用の範囲」・第3条7号 商業目的の禁止）。許諾契約ではない。
-データは非公開の `/listings` でだけ見せ、公開ダッシュボードや API には出さない。robots.txt（2026-09-14）は `/ms/chuko/` を Disallow していない。
+データは非公開の `/listings`（新築は `/listings/shinchiku`）でだけ見せ、公開ダッシュボード（`/`・`/api/metrics`）には出さない。robots.txt（2026-09-14）は `/ms/chuko/` を、（2026-09-22）は `/ms/shinchiku/<都道府県>/sc_*/` を Disallow していない（Disallow は `brand_list`・`ek_*/null`・`tokushu`・`?*sort=` など。並べ替えのパラメータは付けない）。
 
 ### 取る場所（`LISTINGS_ENABLED`）
 
@@ -143,15 +147,16 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
   - カスタムドメイン（`condo.kechiiiiin.com`）は `/api/listings/*` の前に Access が立っているので届かない。Mac は **workers.dev** の URL に送る
 - クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
   送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
-- 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ
+- 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ。**中古と新築で同じロック**なので同時に SUUMO を叩かない。
+  別の実行が持っていたら、終わるまで最大 6.5 時間待ってから取る（2026-09-22〜。以前はすぐ諦めていた）
 - 1 回の上限: 500 ページ・6 時間（通常は ≒ 231 ページ × 61 秒 ≒ 4 時間）
 - 置き場所:
 
 | もの | 場所 | 備考 |
 |---|---|---|
 | トークンと送り先 | `~/.config/fukuoka-condo-watch/env`（chmod 600） | `LISTINGS_INGEST_URL=` と `LISTINGS_INGEST_TOKEN=` の 2 行。plist・リポジトリには書かない |
-| launchd | `~/Library/LaunchAgents/com.kechiiiiin.fukuoka-condo-watch.suumo.plist` | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋める |
-| ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log` | 1 ページ 1 行 |
+| launchd | `~/Library/LaunchAgents/com.kechiiiiin.fukuoka-condo-watch.suumo.plist`（中古）・`….suumo-shinchiku.plist`（新築） | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋めて 2 本とも入れる（`--only chuko|shinchiku` で 1 本） |
+| ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log`・`suumo-shinchiku-crawl.{out,err}.log` | 1 ページ 1 行 |
 | 最後の実行結果 | `/api/listings/status` の `lastLocalRun`（`/listings` の「クロールの状態」にも） | D1 `listing_crawl_events` の kind=`local` |
 
 ### 取り方
@@ -169,6 +174,44 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - **403 / 429 / 503 / captcha らしき応答 / 一覧の構造が無い / 別ホストやボット確認らしき先への 3xx** → その日は打ち切り、72 時間クールダウン。`listing_crawl_events` と `/listings` の「クロールの状態」に残る
 - cron が実際に起動した最後の時刻と結果は `/api/listings/status` の `lastCronRun`（`listing_crawl_events` の kind=`cron`。on のときだけ記録）。Mac の実行は `lastLocalRun`
 - 掲載終了は**全市区町村を取り切った回（complete）でだけ**付ける。取れなかった市区町村がある回・見えた件数がヒット件数合計の 85% 未満の回は付けない
+
+### 新築（/ms/shinchiku/・週 1 回・2026-09-22〜）
+
+- 検索 URL: `https://suumo.jp/ms/shinchiku/fukuoka/sc_<slug>/?page=N`（1 ページ 30 件・サーバ描画）。スラッグは中古と同じ `SUUMO_SLUGS`（2026-09-22 に `/ms/shinchiku/fukuoka/city/` のリンクと、中央区・春日市・宗像市のページの hidden `sc=<5桁コード>` で一致を確認）
+- 件数（2026-09-22）: 福岡市 70 件（中央区 26・博多区 11・南区 9・早良区 9・東区 6・西区 6・城南区 3）+ 近郊 23 件（春日 6・大野城 6・新宮 4・筑紫野 3・太宰府/福津/糸島/那珂川 各 1）= **93 件**。
+  どの市区町村も 30 件以下なので **1 回 = 23 ページ ≒ 25 分**（60 秒間隔）。宗像・古賀・粕屋郡の多くは 0 件
+- 調べるのに使った本物へのリクエスト: robots.txt・市区町村一覧・中央区・宗像市・中央区 10 件表示の 2 ページ目・春日市の **6 回**（60 秒以上あけた）。保存 HTML は `~/work/_experiments/listing-probe/shinchiku/`（**リポジトリには入れない**。テストは有れば使う）
+- 一覧から取れるもの（`src/suumo-shinchiku.ts` 冒頭に構造）:
+  - 物件名・所在地・交通（「路線/駅 徒歩N分」。中古の「路線「駅」」とは形が違う）・引渡時期（「2028年7月下旬予定」「即引渡可」「相談」→ `delivery_ym`）
+  - 価格は販売期ごとに 1 行（「6590万円～1億2190万円（先着順）」「価格未定（東街区 第7期）」「3800万円台・5500万円台／予定（第2期）」）。全行の最小〜最大を幅にし、**未定は NULL**・予定/「台」は `price_tentative`
+  - 間取り・面積の幅（「2LDK・3LDK / 45.59m²～111.59m²」）と、間取りタイプ最大 3 つ（価格と面積の組）→ ㎡単価の幅はタイプの組から、無ければ 価格下限÷面積下限〜価格上限÷面積上限（目安）
+  - 販売状況 `sale_status`: 先着順 `first_come`・第N期 `phase`・最終期 `final`・価格未定だけ `upcoming`・表記なしで価格あり `selling`・住戸の掲載 `unit`（表記そのものは `sale_label`）
+  - 物件（分譲・`js-keisaiKbn` 3/4）と**住戸単位の掲載**（同じ新築の 1 住戸・`js-keisaiKbn` 8。住所に「福岡県」が付き、引渡は「相談」が多い）が同じ一覧に混ざる → `listing_type` で分ける（中央区は 26 件中 10 件が住戸）
+  - ⚠️ 0 件の市区町村のページにも「◯◯に近い新築分譲マンション」として**他の市区町村の物件**が同じ形で並ぶ。件数表示が無く 0 件文言のあるページは物件を読まない
+- **一覧に無いもの**: 販売戸数・完成時期（詳細ページにだけある）。取っていない（下の「決めていないこと」）
+- D1（`migrations/0005_new_listings.sql`）: `new_listings`（価格・面積・㎡単価は幅、初めて価格が出たときの幅 `first_price_*`、価格変化の回数）と `new_listing_price_history`（初出と、幅が変わった回。未定 → 決定も 1 回）。
+  クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:ms-shinchiku` で中古と同じ表を使う
+- 掲載終了（完売・掲載終了）は中古と同じ考え方: **全市区町村を取り切った回（complete）で 2 回続けて見えなかったら**付ける（週 1 回なので 2 週）。取りこぼし（見えた件数 < ヒット合計の 85%）の回は付けない
+- 取り込みは中古と同じ `POST /api/listings/ingest` に `kind: "shinchiku"` を付けて送る（`runId` の取得元と kind が食い違う要求は 400）。解析・ブロック判定は同じ `fetchAndClassify`、反映・カーソル・掲載終了は同じ `applyOutcome` / `finalizeRun`
+- 取得元キー: 新築は `suumo:ms-shinchiku@mac`（中古 `suumo:ms-chuko@mac` と別に記録）。ただし送信元は同じ Mac なので、
+  **どちらかのキーがクールダウン中なら両方とも取らない**・**ページ間隔の起点はどちらかで最後に取った時刻**（同じ相手に種類を変えて続けて取りに行かない）
+- launchd: `com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku`・**毎週日曜 06:00**（中古の 01:00〜≒05:00 と重ならない）。中古が長引いていたらロックで待つ
+
+#### 見る画面（`/listings/shinchiku`・`/api/listings/shinchiku`。Access 保護）
+
+- 物件ごとに価格幅・㎡単価幅・面積幅・間取り・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化（最初の幅 → 今の幅）
+- 既定の条件: **価格の下限が 4,800 万円以下・面積の上限が 70㎡以上**（新築は幅があるので「条件に合う住戸がありうる」もの）。価格未定は既定で含める（`undecided=0` で除く）。`all=1` で全件、`type=project|unit`、`muni=`、`ended=1`（掲載終了も）、`sort=newest|premium|price|delivery`
+- **新築プレミアム** = 新築の㎡単価（幅の中央。上限が無ければ下限）÷ 同じ地区の**築10年以内の中古の成約㎡単価の中央値（直近 2 年 = 8 四半期）**− 1
+  - 分母は国交省 XIT001 の成約価格（`cat=contract`）で、取引年 − 建築年が 0〜10 年の取引。直近の四半期は `pickLatestQuarter` と同じ決め方
+  - 地区 = 住所から起こした町名（`districtNameFromAddress`）。地区が 8 件（`MIN_DISTRICT_RECENT_SALES`）未満なら市区町村（20 件 = `MIN_RECENT_SALES`）、それも足りなければ出さない
+  - 価格未定の物件には出ない。㎡単価が「価格幅 ÷ 面積幅」の目安のときは分子も目安
+
+#### 決めていないこと（新築）
+
+- **販売戸数・完成時期**: 一覧に無い。取るなら詳細ページ（`nc_<id>/`）を物件ごとに 1 回（今は ≒ 90 回/週 = +90 分）。いまは取らず、画面にも「取っていない」と出している。選択肢: 取らない（現状）／新着の物件だけ詳細を 1 回取る／全件を月 1 回
+- **物件と住戸の掲載の重複**: 同じ建物が「物件」と「住戸」の両方で出る（パークホームズ大濠公園ミッド等）。いまはまとめず、種別バッジで区別して並べるだけ
+- **プレミアムの分母の件数**: 築10年以内に絞ると近郊の市町は 20 件に届かないことが多い（届かなければ出さない）。閾値を下げるかは実データを見てから
+- **クールダウンの共有**: 中古と新築のどちらかが止められたら両方止める（送信元が同じため）。依頼は「取得元キーを別に」だったので、キーは別に記録したうえでこうしている。分けて運用したくなったら `src/listing-crawl.ts` の `ALL_LOCAL_STATE_KEYS` を外す
 
 ### Workers Paid が前提（Free で何が壊れるか）
 
@@ -194,6 +237,17 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 ### Mac 方式のセットアップ（2026-09-22〜）
 
 【Keisuke・ブラウザ】**なし**（Access・Workers Paid・カスタムドメインは 2026-09-14 に済んでいる。トークンは CLI で生成して secret に入れる）
+
+新築（週 1 回）を足すとき（2026-09-22〜。トークン・env は中古と共用なので新しい設定は要らない）:
+```sh
+git push                                                   # main を push
+npx wrangler d1 migrations apply fukuoka-condo-watch --remote   # 0005_new_listings
+npx wrangler deploy
+bash ops/launchd/install.sh                                # 2 本とも入れ直し（中古も node のパスを埋め直すだけ。--only shinchiku で新築だけ）
+npm run crawl:local -- --kind shinchiku --dry-run          # 取得先 https://suumo.jp・間隔 60000ms
+launchctl kickstart gui/$(id -u)/com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku   # 初回を今すぐ（≒ 25 分。中古の実行中なら終わるまで待つ）
+tail -f ~/Library/Logs/fukuoka-condo-watch/suumo-shinchiku-crawl.out.log
+```
 
 【ヘスティア・コマンド】（Mac のターミナルで。トークンの値は画面に出ない）
 ```sh

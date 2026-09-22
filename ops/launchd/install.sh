@@ -1,23 +1,39 @@
 #!/bin/bash
-# SUUMO 日次クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。
+# SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。2 本:
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo           … 中古・毎日 01:00
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku … 新築・毎週日曜 06:00（2026-09-22〜）
+# 2 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
 #
-#   bash ops/launchd/install.sh             # 登録（~/Library/LaunchAgents に置いて bootstrap）
-#   bash ops/launchd/install.sh --dry-run   # 埋めた plist を表示して lint するだけ（登録しない）
+#   bash ops/launchd/install.sh                    # 2 本とも登録（~/Library/LaunchAgents に置いて bootstrap）
+#   bash ops/launchd/install.sh --only shinchiku   # 1 本だけ（chuko / shinchiku）
+#   bash ops/launchd/install.sh --dry-run          # 埋めた plist を表示して lint するだけ（登録しない）
 #
 # 前提: ~/.config/fukuoka-condo-watch/env（ops/setup-ingest-token.sh が作る）と npm ci 済みの node_modules
 set -euo pipefail
 
-LABEL="com.kechiiiiin.fukuoka-condo-watch.suumo"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-TEMPLATE="$HERE/$LABEL.plist"
-DEST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/fukuoka-condo-watch"
 ENV_FILE="$HOME/.config/fukuoka-condo-watch/env"
 DRY=0
-[ "${1:-}" = "--dry-run" ] && DRY=1
+ONLY=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1 ;;
+    --only) ONLY="${2:-}"; shift ;;
+    *) echo "不明な引数: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
 
 die() { echo "✗ $*" >&2; exit 1; }
+
+case "$ONLY" in
+  "") LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo" "com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku") ;;
+  chuko) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo") ;;
+  shinchiku) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku") ;;
+  *) die "--only には chuko か shinchiku を" ;;
+esac
 
 # node の実体を探す。
 #   - Homebrew（/opt/homebrew/bin/node 等）はそのパスのまま使う（brew upgrade で Cellar の版が変わっても追従する）
@@ -56,27 +72,42 @@ PATH_VALUE="$(dirname "$NODE"):/usr/bin:/bin:/usr/sbin:/sbin"
 esc() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
 RENDERED="$(mktemp -t fcw-plist)"
 trap 'rm -f "$RENDERED"' EXIT
-sed -e "s|__REPO__|$(esc "$REPO")|g" \
-    -e "s|__NODE_BIN__|$(esc "$NODE")|g" \
-    -e "s|__HOME__|$(esc "$HOME")|g" \
-    -e "s|__PATH__|$(esc "$PATH_VALUE")|g" \
-    "$TEMPLATE" > "$RENDERED"
-grep -q '__[A-Z_]*__' "$RENDERED" && die "テンプレートの置き換え漏れ"
-plutil -lint "$RENDERED" >/dev/null || die "plist が不正"
 
 echo "node: $NODE"
 echo "repo: $REPO"
+[ "$DRY" = 1 ] || mkdir -p "$LOG_DIR" "$HOME/Library/LaunchAgents"
+
+for LABEL in "${LABELS[@]}"; do
+  TEMPLATE="$HERE/$LABEL.plist"
+  DEST="$HOME/Library/LaunchAgents/$LABEL.plist"
+  [ -f "$TEMPLATE" ] || die "テンプレートが無い: $TEMPLATE"
+  sed -e "s|__REPO__|$(esc "$REPO")|g" \
+      -e "s|__NODE_BIN__|$(esc "$NODE")|g" \
+      -e "s|__HOME__|$(esc "$HOME")|g" \
+      -e "s|__PATH__|$(esc "$PATH_VALUE")|g" \
+      "$TEMPLATE" > "$RENDERED"
+  grep -q '__[A-Z_]*__' "$RENDERED" && die "テンプレートの置き換え漏れ（$LABEL）"
+  plutil -lint "$RENDERED" >/dev/null || die "plist が不正（$LABEL）"
+
+  if [ "$DRY" = 1 ]; then
+    echo "----- $LABEL -----"
+    cat "$RENDERED"
+    continue
+  fi
+  install -m 644 "$RENDERED" "$DEST"
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$DEST"
+  case "$LABEL" in
+    *.suumo-shinchiku) WHEN="毎週日曜 06:00"; LOG="suumo-shinchiku-crawl.out.log" ;;
+    *) WHEN="毎日 01:00"; LOG="suumo-crawl.out.log" ;;
+  esac
+  echo "✓ 登録しました: $DEST（$WHEN）"
+  echo "  今すぐ 1 回走らせる: launchctl kickstart gui/$(id -u)/$LABEL"
+  echo "  ログ:               tail -f $LOG_DIR/$LOG"
+done
+
 if [ "$DRY" = 1 ]; then
-  cat "$RENDERED"
   echo "（--dry-run: 登録していない）"
   exit 0
 fi
-
-mkdir -p "$LOG_DIR" "$HOME/Library/LaunchAgents"
-install -m 644 "$RENDERED" "$DEST"
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$DEST"
-echo "✓ 登録しました: $DEST（毎日 01:00）"
-echo "  今すぐ 1 回走らせる: launchctl kickstart gui/$(id -u)/$LABEL"
-echo "  ログ:               tail -f $LOG_DIR/suumo-crawl.out.log"
-echo "  止める:             bash ops/launchd/uninstall.sh"
+echo "  止める:             bash ops/launchd/uninstall.sh（--only chuko|shinchiku で 1 本だけ）"
