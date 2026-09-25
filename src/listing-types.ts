@@ -20,6 +20,18 @@ export interface ListingRecord {
   url?: string;
   /** 売買は総額（円）、賃貸は月額賃料（円） */
   price: number;
+
+  // ---- 賃貸（kind = "rent"）だけの項目。売買では入れない ----
+  /** 管理費・共益費（円/月）。「-」「なし」は 0 */
+  adminFee?: number;
+  /** 敷金（円）。「◯ヶ月」表記は 賃料 × 月数で円に直したもの。「-」「なし」は 0 */
+  deposit?: number;
+  /** 礼金（円）。敷金と同じ扱い */
+  keyMoney?: number;
+  /** ペット相談可（一覧の文言から。判定できなければ false） */
+  petsAllowed?: boolean;
+  /** 情報公開日・掲載日 "YYYY-MM-DD"（一覧から読めたときだけ。first_seen とは別） */
+  listedOn?: string;
 }
 
 export interface CrawlTarget {

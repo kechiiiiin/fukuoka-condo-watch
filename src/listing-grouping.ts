@@ -31,6 +31,13 @@ export interface ListingPickRow {
   first_price: number | null;
   price_cut_count: number;
   relisted_count: number;
+  // ---- 賃貸（kind = 'rent'）だけ。売買の行では NULL / 0（0006 で足した列） ----
+  admin_fee?: number | null;
+  deposit?: number | null;
+  key_money?: number | null;
+  /** 1 = ペット相談可 */
+  pets_allowed?: number | null;
+  listed_on?: string | null;
 }
 
 /**
@@ -71,10 +78,12 @@ export interface PickFilters {
   includeDK: boolean;
   /** 築年数の上限（年）。building_year >= 今年 - ageMax */
   ageMax: number;
-  /** 駅からの徒歩分の上限 */
-  walkMax: number;
-  /** true ならバス便の物件も許す。既定は除外 */
+  /** 駅からの徒歩分の上限。null = 指定なし（駅情報が無い物件も落とさない） */
+  walkMax: number | null;
+  /** true ならバス便の物件も許す。既定は除外（賃貸は既定で含める） */
   includeBus: boolean;
+  /** true ならペット相談可の物件だけ（賃貸のみ。既定 false = 絞らない） */
+  petsOnly: boolean;
   /** 対象の市区町村コード（null = すべて） */
   municipalities: string[] | null;
   /** true なら新着（first_seen が直近 freshDays 日以内）だけ */
@@ -83,6 +92,14 @@ export interface PickFilters {
   freshDays: number;
 }
 
+/** 画面の種類。sale = 中古の売り物件（既定）/ rent = 賃貸 */
+export type PickKind = "sale" | "rent";
+
+export function parsePickKind(v: string | null | undefined): PickKind {
+  return v === "rent" ? "rent" : "sale";
+}
+
+/** 売買（中古）の既定条件 */
 export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
   priceMaxMan: 4800,
   areaMin: 70,
@@ -91,10 +108,33 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
   ageMax: 25,
   walkMax: 10,
   includeBus: false,
+  petsOnly: false,
   municipalities: null,
   freshOnly: false,
   freshDays: 7,
 };
+
+/**
+ * 賃貸の既定条件（2026-09-26 の依頼）: 家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内。
+ * 徒歩分は指定なし（依頼に無い条件で勝手に狭めない）・バス便も含める。ペット相談可は絞らない（トグルで絞る）。
+ */
+export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
+  priceMaxMan: 15,
+  areaMin: 70,
+  planRoomsMin: 3,
+  includeDK: false,
+  ageMax: 25,
+  walkMax: null,
+  includeBus: true,
+  petsOnly: false,
+  municipalities: null,
+  freshOnly: false,
+  freshDays: 7,
+};
+
+export function defaultPickFilters(kind: PickKind) {
+  return kind === "rent" ? DEFAULT_RENT_PICK_FILTERS : DEFAULT_PICK_FILTERS;
+}
 
 /** 数値クエリパラメータを読む。空・不正なら null */
 function num(params: URLSearchParams, key: string): number | null {
@@ -121,18 +161,21 @@ export function parseMunicipalities(params: URLSearchParams, isAreaCode: (v: str
   return codes.length > 0 ? codes : null;
 }
 
-export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string) => boolean): PickFilters {
+/** kind を省略すると売買（従来どおり）。賃貸は既定条件が違う（DEFAULT_RENT_PICK_FILTERS） */
+export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string) => boolean, kind: PickKind = "sale"): PickFilters {
+  const d = defaultPickFilters(kind);
   return {
-    priceMaxMan: num(params, "pmax") ?? DEFAULT_PICK_FILTERS.priceMaxMan,
-    areaMin: num(params, "amin") ?? DEFAULT_PICK_FILTERS.areaMin,
-    planRoomsMin: num(params, "plan") ?? DEFAULT_PICK_FILTERS.planRoomsMin,
-    includeDK: bool(params, "dk", DEFAULT_PICK_FILTERS.includeDK),
-    ageMax: num(params, "age") ?? DEFAULT_PICK_FILTERS.ageMax,
-    walkMax: num(params, "walk") ?? DEFAULT_PICK_FILTERS.walkMax,
-    includeBus: bool(params, "bus", DEFAULT_PICK_FILTERS.includeBus),
+    priceMaxMan: num(params, "pmax") ?? d.priceMaxMan,
+    areaMin: num(params, "amin") ?? d.areaMin,
+    planRoomsMin: num(params, "plan") ?? d.planRoomsMin,
+    includeDK: bool(params, "dk", d.includeDK),
+    ageMax: num(params, "age") ?? d.ageMax,
+    walkMax: num(params, "walk") ?? d.walkMax,
+    includeBus: bool(params, "bus", d.includeBus),
+    petsOnly: kind === "rent" ? bool(params, "pets", d.petsOnly) : false,
     municipalities: parseMunicipalities(params, isAreaCode),
-    freshOnly: bool(params, "fresh", DEFAULT_PICK_FILTERS.freshOnly),
-    freshDays: DEFAULT_PICK_FILTERS.freshDays,
+    freshOnly: bool(params, "fresh", d.freshOnly),
+    freshDays: d.freshDays,
   };
 }
 
@@ -156,9 +199,12 @@ export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: 
 
   if (row.bus) {
     if (!f.includeBus) return false;
-  } else if (row.walk_minutes === null || row.walk_minutes > f.walkMax) {
+  } else if (f.walkMax !== null && (row.walk_minutes === null || row.walk_minutes > f.walkMax)) {
     return false;
   }
+
+  // ペット相談可（賃貸のみ。sale の行は pets_allowed が 0 / undefined なので、トグル ON なら残らない）
+  if (f.petsOnly && !row.pets_allowed) return false;
 
   if (f.municipalities && (!row.ward_code || !f.municipalities.includes(row.ward_code))) return false;
 
@@ -197,6 +243,15 @@ export interface ListingGroup {
   maxPrice: number;
   priceCutCountMax: number;
   relistedCountMax: number;
+  // ---- 賃貸だけ（売買のグループでは null / false）----
+  adminFeeMin: number | null;
+  adminFeeMax: number | null;
+  depositMin: number | null;
+  keyMoneyMin: number | null;
+  /** グループの中に 1 件でもペット相談可があれば true */
+  petsAllowed: boolean;
+  /** 一番新しい情報公開日（読めたときだけ） */
+  latestListedOn: string | null;
   /** 一番早い first_seen（この部屋が最初に見えた日） */
   earliestFirstSeen: string;
   /** 一番遅い first_seen（新着順ソートに使う） */
@@ -265,6 +320,15 @@ function mostCommon(values: (string | null)[]): string | null {
   return best;
 }
 
+function minOf(values: (number | null)[]): number | null {
+  const v = values.filter((x): x is number => x !== null && x !== undefined);
+  return v.length ? Math.min(...v) : null;
+}
+function maxOf(values: (number | null)[]): number | null {
+  const v = values.filter((x): x is number => x !== null && x !== undefined);
+  return v.length ? Math.max(...v) : null;
+}
+
 function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
   const first = items[0]!;
   const prices = items.map((r) => r.current_price);
@@ -296,6 +360,12 @@ function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
     maxPrice: Math.max(...prices),
     priceCutCountMax: Math.max(...items.map((r) => r.price_cut_count)),
     relistedCountMax: Math.max(...items.map((r) => r.relisted_count)),
+    adminFeeMin: minOf(items.map((r) => r.admin_fee ?? null)),
+    adminFeeMax: maxOf(items.map((r) => r.admin_fee ?? null)),
+    depositMin: minOf(items.map((r) => r.deposit ?? null)),
+    keyMoneyMin: minOf(items.map((r) => r.key_money ?? null)),
+    petsAllowed: items.some((r) => !!r.pets_allowed),
+    latestListedOn: items.map((r) => r.listed_on ?? null).filter((v): v is string => !!v).sort().slice(-1)[0] ?? null,
     earliestFirstSeen: items.map((r) => r.first_seen).sort()[0]!,
     latestFirstSeen: items.map((r) => r.first_seen).sort().slice(-1)[0]!,
     latestLastSeen: items.map((r) => r.last_seen).sort().slice(-1)[0]!,

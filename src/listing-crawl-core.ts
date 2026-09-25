@@ -10,29 +10,48 @@
 
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
+import { CHINTAI_SOURCE_ID } from "./suumo-chintai";
 import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
 
 /**
- * 取る種類。中古（/ms/chuko/・毎日）と新築（/ms/shinchiku/・週 1 回）。
+ * 取る種類。中古（/ms/chuko/・毎日）・新築（/ms/shinchiku/・週 1 回）・賃貸（/chintai/・週 1 回。2026-09-26〜）。
  * D1 のクロール状態（runs・cursor・state・events）は取得元 ID で分かれるので同じ表を使い、掲載の表だけ分ける
- * （中古 = listings・新築 = new_listings）。
+ * （中古・賃貸 = listings（listings.kind で分かれる）・新築 = new_listings）。
  */
-export type CrawlKind = "chuko" | "shinchiku";
+export type CrawlKind = "chuko" | "shinchiku" | "chintai";
 
-export const CRAWL_KINDS: Record<
-  CrawlKind,
-  { sourceId: string; label: string; localMaxPagesPerRun: number; localMaxRunMs: number }
-> = {
+/**
+ * 種類ごとの取得元。
+ * listingKind = listings 表に入れる kind（'sale' | 'rent'）。new_listings 表に入れる新築は持たない（null）。
+ * ⚠️ 取り込み要求の検証（parseRecord）も listingKind で決まる。**取得元ごとに許す kind はここが正**。
+ */
+export interface CrawlKindInfo {
+  sourceId: string;
+  label: string;
+  /** listings 表の kind。新築（new_listings）は null */
+  listingKind: "sale" | "rent" | null;
+  localMaxPagesPerRun: number;
+  localMaxRunMs: number;
+}
+
+export const CRAWL_KINDS: Record<CrawlKind, CrawlKindInfo> = {
   // 1 日 ≒ 231 ページ × 61 秒 ≒ 4 時間
-  chuko: { sourceId: SUUMO_SOURCE_ID, label: "中古", localMaxPagesPerRun: 500, localMaxRunMs: 6 * 3600_000 },
+  chuko: { sourceId: SUUMO_SOURCE_ID, label: "中古", listingKind: "sale", localMaxPagesPerRun: 500, localMaxRunMs: 6 * 3600_000 },
   // 2026-09-22: 対象 23 市区町村で 93 件・どこも 30 件以下 → 1 回 ≒ 23 ページ × 61 秒 ≒ 25 分
-  shinchiku: { sourceId: SHINCHIKU_SOURCE_ID, label: "新築", localMaxPagesPerRun: 80, localMaxRunMs: 2 * 3600_000 },
+  shinchiku: { sourceId: SHINCHIKU_SOURCE_ID, label: "新築", listingKind: null, localMaxPagesPerRun: 80, localMaxRunMs: 2 * 3600_000 },
+  // 賃貸は母数が大きいので取得時に絞り込む（src/suumo-chintai.ts の CHINTAI_QUERY）。1 回 ≒ 数十〜200 ページ
+  chintai: { sourceId: CHINTAI_SOURCE_ID, label: "賃貸", listingKind: "rent", localMaxPagesPerRun: 200, localMaxRunMs: 5 * 3600_000 },
 };
 
 export function parseCrawlKind(v: unknown): CrawlKind {
   if (v === undefined || v === null || v === "chuko") return "chuko";
-  if (v === "shinchiku") return "shinchiku";
+  if (v === "shinchiku" || v === "chintai") return v;
   throw new Error("kind が不正");
+}
+
+/** その種類で listings 表に入れてよい kind（新築は listings を使わないので null） */
+export function listingKindOf(kind: CrawlKind): "sale" | "rent" | null {
+  return CRAWL_KINDS[kind].listingKind;
 }
 
 export const CRAWL = {
@@ -285,15 +304,16 @@ function int(v: unknown, min: number, max: number): number {
   return v;
 }
 
-function parseRecord(v: unknown): ListingRecord {
+/** 取得元ごとに許す kind は listingKind（CRAWL_KINDS）で決まる。中古は sale・賃貸は rent しか通さない */
+function parseRecord(v: unknown, expectedKind: "sale" | "rent"): ListingRecord {
   if (!isObj(v)) throw new Error("物件が不正");
   const externalId = v.externalId;
   if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
-  if (v.kind !== "sale") throw new Error("kind が不正");
+  if (v.kind !== expectedKind) throw new Error("kind が不正");
   const price = v.price;
   if (typeof price !== "number" || !Number.isFinite(price) || price <= 0 || price > 1e11) throw new Error("price が不正");
   if (v.bus !== undefined && typeof v.bus !== "boolean") throw new Error("bus が不正");
-  const r: ListingRecord = { externalId, kind: "sale", price };
+  const r: ListingRecord = { externalId, kind: expectedKind, price };
   const wardCode = optStr(v.wardCode, 5);
   if (wardCode !== undefined && !/^\d{5}$/.test(wardCode)) throw new Error("wardCode が不正");
   if (wardCode !== undefined) r.wardCode = wardCode;
@@ -317,6 +337,27 @@ function parseRecord(v: unknown): ListingRecord {
   n("areaSqm");
   n("walkMinutes");
   if (v.bus !== undefined) r.bus = v.bus as boolean;
+
+  // ---- 賃貸だけの項目（売買の要求に混ざっていたら弾く）----
+  const rentOnly = ["adminFee", "deposit", "keyMoney", "petsAllowed", "listedOn"] as const;
+  if (expectedKind !== "rent") {
+    for (const k of rentOnly) if (v[k] !== undefined) throw new Error(`${k} は賃貸だけの項目`);
+    return r;
+  }
+  for (const k of ["adminFee", "deposit", "keyMoney"] as const) {
+    const x = optNum(v[k]);
+    if (x !== undefined && (x < 0 || x > 1e11)) throw new Error(`${k} が不正`);
+    if (x !== undefined) r[k] = x;
+  }
+  if (v.petsAllowed !== undefined) {
+    if (typeof v.petsAllowed !== "boolean") throw new Error("petsAllowed が不正");
+    r.petsAllowed = v.petsAllowed;
+  }
+  const listedOn = optStr(v.listedOn, 10);
+  if (listedOn !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(listedOn)) throw new Error("listedOn が不正");
+    r.listedOn = listedOn;
+  }
   return r;
 }
 
@@ -368,7 +409,11 @@ function parsePage(v: unknown, kind: CrawlKind): ParsedListPage<AnyListingRecord
     totalHits: v.totalHits === null ? null : int(v.totalHits, 0, 1_000_000),
     zeroHits: v.zeroHits,
     maxPageLinked: v.maxPageLinked === null ? null : int(v.maxPageLinked, 0, 100_000),
-    records: kind === "shinchiku" ? v.records.map(parseNewRecord) : v.records.map(parseRecord),
+    records: (() => {
+      const lk = listingKindOf(kind);
+      // 新築（listingKind = null）は new_listings 用の形、それ以外は listings 用の形を取得元ごとの kind で検証する
+      return lk === null ? v.records.map(parseNewRecord) : v.records.map((x) => parseRecord(x, lk));
+    })(),
     skipped: int(v.skipped, 0, 10_000),
   };
 }

@@ -8,7 +8,8 @@
 // クールダウン・最終取得時刻（listing_crawl_state）は取得元ごとに持つ（Worker = SUUMO_SOURCE_ID、Mac = localStateKey(kind)）。
 // 送信元 IP が違うので、Worker の IP が受けたクールダウンで Mac を止めない（逆も同じ）。
 //
-// 種類（kind）: 中古（chuko・毎日・listings）と新築（shinchiku・週 1 回・new_listings。2026-09-22〜）。
+// 種類（kind）: 中古（chuko・毎日・listings.kind='sale'）・新築（shinchiku・週 1 回・new_listings。2026-09-22〜）・
+// 賃貸（chintai・週 1 回・listings.kind='rent'。2026-09-26〜）。取得元ごとに許す kind は CRAWL_KINDS.listingKind が正。
 // クロールの状態の表（runs・cursor・state・events・snapshots）は取得元 ID（suumo:ms-chuko / suumo:ms-shinchiku）で分かれるので共用し、
 // 掲載を入れる表と 1 ページの反映文だけを ListingStore で差し替える（カーソル・止まり方・掲載終了の判定は 1 つの実装）。
 // Mac の取得元は中古・新築で別キー（suumo:ms-chuko@mac / suumo:ms-shinchiku@mac）だが、送信元 IP は同じ Mac なので
@@ -56,6 +57,7 @@ import {
 } from "./listing-crawl-core";
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
+import { ChintaiSource } from "./suumo-chintai";
 import { ShinchikuSource } from "./suumo-shinchiku";
 import { SuumoSource } from "./suumo-source";
 
@@ -431,6 +433,7 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   const db = env.DB;
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
   if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
+  if (r.kind === "chintai") return ingestKind(db, env, r, new ChintaiSource(), CHINTAI_STORE, now);
   return ingestKind(db, env, r, new SuumoSource(), CHUKO_STORE, now);
 }
 
@@ -546,21 +549,32 @@ async function cursorDone(
     .run();
 }
 
+/**
+ * listings への 1 ページぶんの upsert。中古（kind='sale'）と賃貸（kind='rent'）で共通。
+ * ?5 = listings.kind（取得元ごとに CRAWL_KINDS.listingKind で決まる。外からの値は入らない）。
+ * 賃貸だけの列（admin_fee・deposit・key_money・pets_allowed・listed_on）は sale では常に NULL / 0 になる
+ * （JSON に鍵が無ければ json_extract は NULL。pets は 0 を入れて渡す）。
+ */
 const UPSERT_LISTINGS = `
 INSERT INTO listings (source, external_id, kind, ward_code, building_name, building_year, built_month, area_sqm, floor_plan,
   line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
-  price_cut_count, relisted_count, missed_runs, delisted_on, last_seen_run)
-SELECT ?1, json_extract(j.value, '$.id'), 'sale', json_extract(j.value, '$.ward'), json_extract(j.value, '$.name'),
+  price_cut_count, relisted_count, missed_runs, delisted_on, last_seen_run,
+  admin_fee, deposit, key_money, pets_allowed, listed_on)
+SELECT ?1, json_extract(j.value, '$.id'), ?5, json_extract(j.value, '$.ward'), json_extract(j.value, '$.name'),
   json_extract(j.value, '$.by'), json_extract(j.value, '$.bm'), json_extract(j.value, '$.area'), json_extract(j.value, '$.plan'),
   json_extract(j.value, '$.line'), json_extract(j.value, '$.st'), json_extract(j.value, '$.walk'), json_extract(j.value, '$.bus'),
   json_extract(j.value, '$.addr'), json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.price'),
-  json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3
+  json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3,
+  json_extract(j.value, '$.fee'), json_extract(j.value, '$.dep'), json_extract(j.value, '$.key'),
+  COALESCE(json_extract(j.value, '$.pets'), 0), json_extract(j.value, '$.listed')
 FROM json_each(?4) AS j WHERE true
 ON CONFLICT (source, external_id) DO UPDATE SET
   ward_code = excluded.ward_code, building_name = excluded.building_name, building_year = excluded.building_year,
   built_month = excluded.built_month, area_sqm = excluded.area_sqm, floor_plan = excluded.floor_plan,
   line_name = excluded.line_name, station_name = excluded.station_name, walk_minutes = excluded.walk_minutes,
   bus = excluded.bus, address = excluded.address, url = excluded.url,
+  admin_fee = excluded.admin_fee, deposit = excluded.deposit, key_money = excluded.key_money,
+  pets_allowed = excluded.pets_allowed, listed_on = COALESCE(excluded.listed_on, listings.listed_on),
   last_seen = excluded.last_seen,
   price_cut_count = listings.price_cut_count + (CASE WHEN excluded.current_price < listings.current_price THEN 1 ELSE 0 END),
   current_price = excluded.current_price,
@@ -589,9 +603,13 @@ interface ListingStore<R> extends StoreInfo {
   ): Promise<{ stmts: D1PreparedStatement[]; newCount: number; changedCount: number; rows: number }>;
 }
 
-/** 中古（listings・0001/0003） */
-const CHUKO_STORE: ListingStore<ListingRecord> = {
-  sourceId: SUUMO_SOURCE_ID,
+/**
+ * listings 表を使う取得元（中古 = sale・賃貸 = rent）のストアを作る。
+ * listingKind は CRAWL_KINDS の定数だけ（外からの値は入れない）。反映の仕方は中古・賃貸で同じ。
+ */
+function listingsStore(sourceId: string, listingKind: "sale" | "rent"): ListingStore<ListingRecord> {
+  return {
+  sourceId,
   table: "listings",
   async pageStatements(db, runId, date, areaCode, records) {
     const byId = new Map(records.map((r) => [r.externalId, r]));
@@ -630,14 +648,26 @@ const CHUKO_STORE: ListingStore<ListingRecord> = {
       addr: r.address ?? null,
       url: r.url ?? null,
       price: r.price,
+      // 賃貸だけの項目（売買では undefined → JSON に入らない → json_extract は NULL）
+      fee: r.adminFee ?? null,
+      dep: r.deposit ?? null,
+      key: r.keyMoney ?? null,
+      pets: r.petsAllowed ? 1 : 0,
+      listed: r.listedOn ?? null,
     }));
     const stmts: D1PreparedStatement[] = [];
     // 履歴は listings を更新する前に（新規・価格変更の判定は上の prev で済ませてある）
     if (history.length) stmts.push(db.prepare(INSERT_HISTORY).bind(this.sourceId, date, JSON.stringify(history)));
-    stmts.push(db.prepare(UPSERT_LISTINGS).bind(this.sourceId, date, runId, JSON.stringify(rows)));
+    stmts.push(db.prepare(UPSERT_LISTINGS).bind(this.sourceId, date, runId, JSON.stringify(rows), listingKind));
     return { stmts, newCount, changedCount, rows: rows.length };
   },
-};
+  };
+}
+
+/** 中古（listings.kind = 'sale'・0001/0003） */
+const CHUKO_STORE = listingsStore(SUUMO_SOURCE_ID, "sale");
+/** 賃貸（listings.kind = 'rent'・0006） */
+const CHINTAI_STORE = listingsStore(CRAWL_KINDS.chintai.sourceId, "rent");
 
 // ---- 新築（new_listings・0005）。価格は幅（円）・未定は NULL。価格変化 = 下限か上限が変わった（未定→決定も含む）
 const UPSERT_NEW_LISTINGS = `

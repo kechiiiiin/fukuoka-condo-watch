@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_PICK_FILTERS,
+  DEFAULT_RENT_PICK_FILTERS,
   districtNameFromAddress,
   groupListings,
   indexDistrictWindows,
@@ -302,4 +303,90 @@ test("汎用ソート: ListingGroup もカードも同じ関数で並べられ�
   // ListingGroup には retention が無い → 全部「値なし」扱いで新着順
   assert.deepEqual(sortGroupsByRetention(groups).map((g) => g.buildingName), ["ビルB", "ビルA"]);
   assert.deepEqual(sortGroupsNewestFirst(groups).map((g) => g.buildingName), ["ビルB", "ビルA"]);
+});
+
+// ---------------------------------------------------------------- 賃貸（kind=rent・2026-09-26）
+
+function rentRow(over: Partial<ListingPickRow> = {}): ListingPickRow {
+  return row({
+    source: "suumo:chintai",
+    external_id: "jnc_000012345678",
+    current_price: 125000,
+    first_price: 125000,
+    price_cut_count: 0,
+    url: "https://suumo.jp/chintai/jnc_000012345678/",
+    admin_fee: 5000,
+    deposit: 125000,
+    key_money: 0,
+    pets_allowed: 0,
+    listed_on: "2026-09-20",
+    ...over,
+  });
+}
+
+test("賃貸の既定条件: 家賃15万円以下・70㎡以上・3LDK以上・築25年以内（徒歩は指定なし・バス便も含む）", () => {
+  const today = "2026-09-26";
+  const f = parsePickFilters(new URLSearchParams(""), () => true, "rent");
+  assert.deepEqual(f, { ...DEFAULT_RENT_PICK_FILTERS });
+  assert.equal(f.priceMaxMan, 15);
+  assert.equal(f.walkMax, null);
+  assert.equal(f.includeBus, true);
+
+  assert.equal(matchesConditions(rentRow(), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ current_price: 150000 }), f, 2026, today), true, "15万円ちょうどはyes");
+  assert.equal(matchesConditions(rentRow({ current_price: 150001 }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ area_sqm: 69.9 }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ floor_plan: "2LDK" }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ floor_plan: "3DK" }), f, 2026, today), false, "3DKは既定でno（dk=1 で含む）");
+  assert.equal(matchesConditions(rentRow({ building_year: 2000 }), f, 2026, today), false, "築26年はno");
+  // 徒歩の指定が無いので、駅が遠い・駅情報が無い・バス便でも落とさない
+  assert.equal(matchesConditions(rentRow({ walk_minutes: 25 }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ walk_minutes: null }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ bus: 1, walk_minutes: null }), f, 2026, today), true);
+  // 売買の既定は変わっていない（回帰）
+  assert.equal(DEFAULT_PICK_FILTERS.priceMaxMan, 4800);
+  assert.equal(DEFAULT_PICK_FILTERS.walkMax, 10);
+  assert.equal(DEFAULT_PICK_FILTERS.includeBus, false);
+  assert.equal(DEFAULT_PICK_FILTERS.petsOnly, false);
+});
+
+test("ペット相談可トグル: 既定は絞らない・pets=1 で相談可だけ（sale では常に無効）", () => {
+  const today = "2026-09-26";
+  const off = parsePickFilters(new URLSearchParams(""), () => true, "rent");
+  assert.equal(off.petsOnly, false);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 0 }), off, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), off, 2026, today), true);
+
+  const on = parsePickFilters(new URLSearchParams("pets=1"), () => true, "rent");
+  assert.equal(on.petsOnly, true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), on, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 0 }), on, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: null }), on, 2026, today), false, "表記が無いものは絞り込みで残さない");
+
+  // 売買では pets を送っても効かない（sale の行に pets_allowed は無い）
+  assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true, "sale").petsOnly, false);
+  assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true).petsOnly, false, "kind 省略は従来どおり売買");
+});
+
+test("賃貸のグルーピング: 敷礼・管理費・ペット・掲載日をまとめる", () => {
+  const groups = groupListings([
+    rentRow({ external_id: "jnc_1", current_price: 125000, admin_fee: 5000, deposit: 125000, key_money: 0, pets_allowed: 0, listed_on: "2026-09-20" }),
+    rentRow({ external_id: "jnc_2", current_price: 128000, admin_fee: 8000, deposit: 0, key_money: 128000, pets_allowed: 1, listed_on: "2026-09-22" }),
+  ]);
+  assert.equal(groups.length, 1, "同じ建物・間取り・築年・面積は 1 枚のカードにまとめる（売買と同じロジック）");
+  const g = groups[0]!;
+  assert.equal(g.count, 2);
+  assert.equal(g.minPrice, 125000);
+  assert.equal(g.maxPrice, 128000);
+  assert.equal(g.adminFeeMin, 5000);
+  assert.equal(g.adminFeeMax, 8000);
+  assert.equal(g.depositMin, 0);
+  assert.equal(g.keyMoneyMin, 0);
+  assert.equal(g.petsAllowed, true, "1 件でも相談可ならカードに出す");
+  assert.equal(g.latestListedOn, "2026-09-22");
+  // 売買のグループでは賃貸の項目は空（回帰）
+  const sale = groupListings([row()])[0]!;
+  assert.equal(sale.adminFeeMin, null);
+  assert.equal(sale.petsAllowed, false);
+  assert.equal(sale.latestListedOn, null);
 });

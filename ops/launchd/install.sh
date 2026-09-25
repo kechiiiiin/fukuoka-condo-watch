@@ -1,11 +1,12 @@
 #!/bin/bash
-# SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。2 本:
+# SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。3 本:
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo           … 中古・毎日 01:00
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku … 新築・毎週日曜 06:00（2026-09-22〜）
-# 2 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai   … 賃貸・毎週土曜 06:00（2026-09-26〜）
+# 3 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
 #
-#   bash ops/launchd/install.sh                    # 2 本とも登録（~/Library/LaunchAgents に置いて bootstrap）
-#   bash ops/launchd/install.sh --only shinchiku   # 1 本だけ（chuko / shinchiku）
+#   bash ops/launchd/install.sh                    # 3 本とも登録（~/Library/LaunchAgents に置いて bootstrap）
+#   bash ops/launchd/install.sh --only chintai     # 1 本だけ（chuko / shinchiku / chintai）
 #   bash ops/launchd/install.sh --dry-run          # 埋めた plist を表示して lint するだけ（登録しない）
 #
 # 前提: ~/.config/fukuoka-condo-watch/env（ops/setup-ingest-token.sh が作る）と npm ci 済みの node_modules
@@ -29,10 +30,11 @@ done
 die() { echo "✗ $*" >&2; exit 1; }
 
 case "$ONLY" in
-  "") LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo" "com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku") ;;
+  "") LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo" "com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai") ;;
   chuko) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo") ;;
   shinchiku) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku") ;;
-  *) die "--only には chuko か shinchiku を" ;;
+  chintai) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-chintai") ;;
+  *) die "--only には chuko / shinchiku / chintai のいずれかを" ;;
 esac
 
 # node の実体を探す。
@@ -99,6 +101,7 @@ for LABEL in "${LABELS[@]}"; do
   launchctl bootstrap "gui/$(id -u)" "$DEST"
   case "$LABEL" in
     *.suumo-shinchiku) WHEN="毎週日曜 06:00"; LOG="suumo-shinchiku-crawl.out.log" ;;
+    *.suumo-chintai)   WHEN="毎週土曜 06:00"; LOG="suumo-chintai-crawl.out.log" ;;
     *) WHEN="毎日 01:00"; LOG="suumo-crawl.out.log" ;;
   esac
   echo "✓ 登録しました: $DEST（$WHEN）"
@@ -110,4 +113,4 @@ if [ "$DRY" = 1 ]; then
   echo "（--dry-run: 登録していない）"
   exit 0
 fi
-echo "  止める:             bash ops/launchd/uninstall.sh（--only chuko|shinchiku で 1 本だけ）"
+echo "  止める:             bash ops/launchd/uninstall.sh（--only chuko|shinchiku|chintai で 1 本だけ）"

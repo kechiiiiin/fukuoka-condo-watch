@@ -296,8 +296,10 @@ export function detectBlock(
   status: number,
   html: string,
   redirect?: { url: string; location: string | null },
-  /** 検索結果として許すリダイレクト先のパス（中古 /ms/chuko/・新築 /ms/shinchiku/） */
+  /** 検索結果として許すリダイレクト先のパス（中古 /ms/chuko/・新築 /ms/shinchiku/・賃貸 /chintai/） */
   pathPrefix = "/ms/chuko/",
+  /** 「一覧らしい構造があるか」の判定（賃貸は別のマークアップなので src/suumo-chintai.ts が差し替える） */
+  hasList: (html: string) => boolean = hasListStructure,
 ): BlockKind | null {
   if (status === 403) return "http_403";
   if (status === 429) return "http_429";
@@ -306,8 +308,8 @@ export function detectBlock(
   if (status !== 200) return null;
   if (/captcha|recaptcha|hcaptcha|cf-challenge|challenge-platform|アクセスが集中|不正なアクセス|アクセスを制限/i.test(html)) {
     // 通常ページにも "recaptcha" の文字列が紛れる可能性があるので、一覧の構造が無いときだけ captcha とみなす
-    if (!hasListStructure(html)) return "captcha";
+    if (!hasList(html)) return "captcha";
   }
-  if (!hasListStructure(html)) return "unexpected_structure";
+  if (!hasList(html)) return "unexpected_structure";
   return null;
 }

@@ -12,22 +12,31 @@
 import type { Env } from "./env";
 import { jstToday } from "./ingest";
 import {
+  defaultPickFilters,
   districtNameFromAddress,
   groupListings,
   indexDistrictWindows,
   matchesConditions,
   parsePickFilters,
+  parsePickKind,
   parsePickSort,
   pickRetention,
   sortPicks,
   type ListingPickRow,
   type PickFilters,
+  type PickKind,
 } from "./listing-grouping";
 import { buildListingMetrics } from "./listing-metrics";
 import { buildMetricsWithWindows, DEFAULT_CAT } from "./metrics";
 import { windowBounds } from "./scoring";
 import { SUUMO_SOURCE_ID } from "./suumo";
+import { CHINTAI_QUERY_LABEL, CHINTAI_SOURCE_ID } from "./suumo-chintai";
 import { AREAS, AREA_NAME, isAreaCode } from "./wards";
+
+/** 画面の種類ごとの取得元（listings.source / listings.kind） */
+function sourceIdFor(kind: PickKind): string {
+  return kind === "rent" ? CHINTAI_SOURCE_ID : SUUMO_SOURCE_ID;
+}
 
 interface RunRow {
   run_id: string;
@@ -42,18 +51,18 @@ interface CursorRow {
 }
 
 /** 直近の完走・未完走回のカバレッジ（どの市区町村までデータが揃っているか） */
-async function buildCoverage(env: Env) {
+async function buildCoverage(env: Env, sourceId: string) {
   const latest = await env.DB.prepare(
     `SELECT run_id, crawl_date, status, started_at, finished_at FROM listing_crawl_runs
      WHERE source = ? ORDER BY crawl_date DESC, started_at DESC LIMIT 1`,
   )
-    .bind(SUUMO_SOURCE_ID)
+    .bind(sourceId)
     .first<RunRow>();
   const lastComplete = await env.DB.prepare(
     `SELECT run_id, crawl_date, status, started_at, finished_at FROM listing_crawl_runs
      WHERE source = ? AND status = 'complete' ORDER BY crawl_date DESC LIMIT 1`,
   )
-    .bind(SUUMO_SOURCE_ID)
+    .bind(sourceId)
     .first<RunRow>();
   if (!latest) {
     return { latestRun: null, lastCompleteAt: null, areas: [] as { code: string; name: string; status: string }[] };
@@ -100,19 +109,22 @@ async function buildAreaScores(env: Env) {
 export async function buildListingPicks(env: Env, url: URL) {
   const today = jstToday();
   const nowYear = Number(today.slice(0, 4));
-  const filters: PickFilters = parsePickFilters(url.searchParams, isAreaCode);
+  // kind = sale（既定・中古の売り物件）| rent（賃貸。2026-09-26〜）
+  const kind: PickKind = parsePickKind(url.searchParams.get("kind"));
+  const sourceId = sourceIdFor(kind);
+  const filters: PickFilters = parsePickFilters(url.searchParams, isAreaCode, kind);
   const sort = parsePickSort(url.searchParams);
 
   const [rowsRes, coverage, scores] = await Promise.all([
     env.DB.prepare(
       `SELECT source, external_id, ward_code, district_name, building_name, building_year, built_month, area_sqm, floor_plan,
               line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
-              price_cut_count, relisted_count
-       FROM listings WHERE source = ? AND kind = 'sale' AND delisted_on IS NULL`,
+              price_cut_count, relisted_count, admin_fee, deposit, key_money, pets_allowed, listed_on
+       FROM listings WHERE source = ? AND kind = ? AND delisted_on IS NULL`,
     )
-      .bind(SUUMO_SOURCE_ID)
+      .bind(sourceId, kind)
       .all<ListingPickRow>(),
-    buildCoverage(env),
+    buildCoverage(env, sourceId),
     buildAreaScores(env),
   ]);
 
@@ -150,6 +162,13 @@ export async function buildListingPicks(env: Env, url: URL) {
       unitPriceMax,
       priceCutCountMax: g.priceCutCountMax,
       relistedCountMax: g.relistedCountMax,
+      // 賃貸だけ（売買では null / false）
+      adminFeeMin: g.adminFeeMin,
+      adminFeeMax: g.adminFeeMax,
+      depositMin: g.depositMin,
+      keyMoneyMin: g.keyMoneyMin,
+      petsAllowed: g.petsAllowed,
+      listedOn: g.latestListedOn,
       earliestFirstSeen: g.earliestFirstSeen,
       latestFirstSeen: g.latestFirstSeen,
       isFresh: g.latestFirstSeen >= addDays(today, -filters.freshDays),
@@ -169,6 +188,9 @@ export async function buildListingPicks(env: Env, url: URL) {
 
   return {
     today,
+    kind,
+    source: sourceId,
+    defaults: defaultPickFilters(kind),
     filters: {
       pmax: filters.priceMaxMan,
       amin: filters.areaMin,
@@ -177,6 +199,7 @@ export async function buildListingPicks(env: Env, url: URL) {
       age: filters.ageMax,
       walk: filters.walkMax,
       bus: filters.includeBus,
+      pets: filters.petsOnly,
       muni: filters.municipalities,
       fresh: filters.freshOnly,
       freshDays: filters.freshDays,
@@ -194,14 +217,24 @@ export async function buildListingPicks(env: Env, url: URL) {
     matchedListings: active.length,
     groups: cards.length,
     coverage,
-    notes: [
-      "ペット可かどうかは取得項目に無いので、リンク先で確認してください。",
-      "データは SUUMO の掲載情報（私的利用）。同じ部屋が複数の仲介業者から重複掲載されることがあるため、建物名・面積・間取り・築年でまとめて1枚のカードにしています。",
-      "価格維持 = 直近2年（8四半期）の成約㎡単価の中央値 ÷ その前2年の中央値（国交省 不動産情報ライブラリ）。1.00 より大きいほど値上がり。住所から町名を起こして地区の値を出し、地区の件数が足りない（直近8件・前期5件未満）ときは市区町村の値を出します。",
-    ],
+    notes: kind === "rent" ? RENT_NOTES : SALE_NOTES,
     items: cards,
   };
 }
+
+const SALE_NOTES = [
+  "ペット可かどうかは取得項目に無いので、リンク先で確認してください。",
+  "データは SUUMO の掲載情報（私的利用）。同じ部屋が複数の仲介業者から重複掲載されることがあるため、建物名・面積・間取り・築年でまとめて1枚のカードにしています。",
+  "価格維持 = 直近2年（8四半期）の成約㎡単価の中央値 ÷ その前2年の中央値（国交省 不動産情報ライブラリ）。1.00 より大きいほど値上がり。住所から町名を起こして地区の値を出し、地区の件数が足りない（直近8件・前期5件未満）ときは市区町村の値を出します。",
+];
+
+const RENT_NOTES = [
+  "データは SUUMO の賃貸掲載（私的利用・週1回）。母数が大きいため、取得の時点で " + CHINTAI_QUERY_LABEL + " に絞っています。この範囲の外は画面の条件を広げても出てきません。",
+  "ペット相談可は一覧の表記から拾ったものです。条件（頭金・種類・頭数）はリンク先で必ず確認してください。表記が無い物件は「不明」として扱っています（トグル ON で相談可だけに絞れます）。",
+  "同じ建物・同じ間取り・同じ築年で専有面積が近い部屋は 1 枚のカードにまとめています（複数業者の重複掲載をまとめる売買と同じ仕組み）。別の部屋がまとまることもあるので、部屋の特定はリンク先で。",
+  "敷金・礼金が「◯ヶ月」表記のものは 賃料 × 月数 で円に直しています。管理費・共益費は月額です。",
+  "価格維持・売出/成約比は売買の指標なので賃貸では出していません（貸しやすさは市区町村単位の目安です）。",
+];
 
 /** 四半期の通し番号（year*4 + quarter - 1）→ "2026Q2" */
 function qiLabel(qi: number): string {
