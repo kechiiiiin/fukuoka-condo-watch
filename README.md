@@ -23,7 +23,7 @@
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
-| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**`?kind=rent` で賃貸のタブ**（既定 家賃15万円以下・70㎡以上・3LDK以上・築25年以内、ペット相談可は絞り込みトグル） |
+| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**`?kind=rent` で賃貸のタブ**（既定 家賃15万円以下・70㎡以上・3LDK以上・築25年以内、ペット相談可は絞り込みトグル。ペット可否は 2 周目で取る） |
 | `src/new-listings.ts` / `src/new-listing-view.ts` / `src/new-listings-dashboard.ts` | `/listings/shinchiku`・`/api/listings/shinchiku`（非公開）。新築の価格幅・㎡単価幅・面積幅・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化と**新築プレミアム**（下の「新築」） |
 | `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
 | `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
@@ -85,6 +85,8 @@ FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/ingest/l
   SUUMO_ORIGIN=http://127.0.0.1:8790 LISTINGS_MIN_INTERVAL_MS=0 npm run crawl:local
 # 新築は同じ環境変数で `npm run crawl:local -- --kind shinchiku`（24 ページ。2 日目は価格未定→決定・値下げ・完売・新着）
 # 賃貸は `npm run crawl:local -- --kind chintai`（偽サーバは /chintai/fukuoka/sc_<slug>/ も返す。2 日目は値下げ・募集終了・新着）
+# ペット相談可の 2 周目は `npm run crawl:local -- --kind chintai_pets`（chintai の後に流すこと）
+open http://localhost:8787/listings/picks?kind=rent
 open http://localhost:8787/listings/shinchiku
 curl -X POST http://127.0.0.1:8790/__day/2      # 翌日: 消える・値下げ・新着（wrangler dev の LISTINGS_TODAY_OVERRIDE も翌日にして起動し直す）
 curl -X POST http://127.0.0.1:8790/__mode/429   # 止まる動作の確認（Mac 側が 72 時間クールダウンになる）
@@ -149,7 +151,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
   - 取り込み口は Access の保護パス（`/listings*`・`/api/listings*`）の外の `/api/ingest/listings` に置き、Bearer で守る。Mac は **`https://condo.kechiiiiin.com`** に送る（2026-09-22 にドメインを一本化し workers.dev は無効化）
 - クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
   送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
-- 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ。**中古・新築・賃貸で同じロック**なので同時に SUUMO を叩かない。
+- 多重起動はロックファイル（`~/.local/state/fukuoka-condo-watch/suumo-crawl.lock`・中身は PID）で防ぐ。**中古・新築・賃貸（2 周目も）で同じロック**なので同時に SUUMO を叩かない。
   別の実行が持っていたら、終わるまで最大 6.5 時間待ってから取る（2026-09-22〜。以前はすぐ諦めていた）
 - 1 回の上限: 500 ページ・6 時間（通常は ≒ 231 ページ × 61 秒 ≒ 4 時間）
 - 置き場所:
@@ -157,7 +159,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 | もの | 場所 | 備考 |
 |---|---|---|
 | トークンと送り先 | `~/.config/fukuoka-condo-watch/env`（chmod 600） | `LISTINGS_INGEST_URL=` と `LISTINGS_INGEST_TOKEN=` の 2 行。plist・リポジトリには書かない |
-| launchd | `~/Library/LaunchAgents/com.kechiiiiin.fukuoka-condo-watch.suumo.plist`（中古）・`….suumo-shinchiku.plist`（新築）・`….suumo-chintai.plist`（賃貸） | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋めて 3 本とも入れる（`--only chuko\|shinchiku\|chintai` で 1 本） |
+| launchd | `….suumo.plist`（中古）・`….suumo-shinchiku.plist`（新築）・`….suumo-chintai.plist`（賃貸）・`….suumo-chintai-pets.plist`（賃貸ペット 2 周目） | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋めて 4 本とも入れる（`--only chuko\|shinchiku\|chintai\|chintai_pets` で 1 本） |
 | ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log`・`suumo-shinchiku-crawl.{out,err}.log`・`suumo-chintai-crawl.{out,err}.log` | 1 ページ 1 行 |
 | 最後の実行結果 | `/api/listings/status` の `lastLocalRun`（`/listings` の「クロールの状態」にも） | D1 `listing_crawl_events` の kind=`local` |
 
@@ -217,45 +219,69 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 
 ### 賃貸（/chintai/・週 1 回・2026-09-26〜）
 
-⚠️ **実ページ未検証**: 追加にあたって本番 SUUMO には一度もアクセスしていない（テストはローカルの偽サーバと固定 HTML）。
-下のうち「未検証」と書いたものは、初回のクロール前に 1 リクエストずつ確かめること（60 秒以上あける）。
+構造は **2026-09-26 に実ページ 6 リクエスト（60 秒以上あけて・すべて HTTP 200）で確認**した。
+保存 HTML は `~/work/_experiments/listing-probe/chintai/`（**リポジトリには入れない**。テストは有れば使う）:
+中央区 1 ページ目・同（ペット絞り込み）・同 2 ページ目・春日市・久山町・0 件ページ。
 
-- 検索 URL: `https://suumo.jp/chintai/fukuoka/sc_<slug>/?<絞り込み>&page=N`。物件 ID は `jnc_<数字>`（一覧の「詳細を見る」リンク）
-  - スラッグは中古・新築と同じ `SUUMO_SLUGS`（**未検証**。`/chintai/fukuoka/city/` のリンクと hidden `sc=<5桁コード>` で突き合わせること）
+- 検索 URL: `https://suumo.jp/chintai/fukuoka/sc_<slug>/?<絞り込み>&page=N`。スラッグは中古・新築と同じ `SUUMO_SLUGS`
   - robots.txt（2026-09-14 取得の保存分）の `User-agent: *` は `/chintai/<都道府県>/sc_*/` を Disallow していない
     （Disallow は `/chintai/bc_*/printout/`・`/chintai/*/__JJ_*`・`/chintai/*/city/?sc[]=`・`/*?*sort=` など）。**並べ替えのパラメータは付けない**
-- **取得時に絞り込む**（`src/suumo-chintai.ts` の `CHINTAI_QUERY`）: 賃料 20 万円以下（`ct`）・専有面積 60㎡ 以上（`mb`）・間取り 3K〜5K以上（`md`）。
-  福岡都市圏の賃貸は全部で数万件あり、60 秒間隔では 1 週間かかっても終わらないため。画面の既定条件（家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内）より少し広く取り、
-  画面側の絞り込みはこの範囲の中で効く。**この範囲の外は画面の条件を広げても出てこない**（画面の注記にも出している）。パラメータ名と値は **未検証**
-- 1 行 = 1 部屋（`listings` に `kind = 'rent'` で入れる。`current_price` = 月額賃料・円）。1 つの建物（`cassetteitem`）に複数の部屋が並ぶ
-- 一覧から取るもの: 月額賃料・管理費/共益費・敷金・礼金・専有面積・間取り・築年数（→ 建築年）・住所・沿線/駅・徒歩分・**ペット相談可**・情報公開日
-  - 敷金・礼金が「◯ヶ月」表記のものは 賃料 × 月数 で円に直す（賃料が読めないときは NULL。推測で埋めない）。「-」「なし」は 0
-  - ペット相談可は一覧の文言（「ペット相談」「ペット可」「ペット飼育可」）から。「ペット不可」「ペット相談不可」は false。**どこに出るかは未検証**なので、建物・部屋どちらのブロックに出ても拾えるよう文言で探している
-  - 件数表示のクラス名（`paginate_set-hit` / `pagination_set-hit`）も **未検証**。両方を見ている
-- ページ数は「件数表示 ÷ 30」。件数表示が部屋数で 1 ページが建物 30 件なら**多めに見積もる**側に倒れる（足りないより安全。余ったページは空ページで `done` になる）
-- D1（`migrations/0006_listings_rent.sql`）: `listings` に `admin_fee`・`deposit`・`key_money`・`pets_allowed`・`listed_on` を足しただけ（**追加のみ**）。
-  クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:chintai` で中古と同じ表を使う
-- 取り込みは中古・新築と同じ `POST /api/ingest/listings` に `kind: "chintai"` を付けて送る。
+- **取得時に絞り込む**（`src/suumo-chintai.ts` の `CHINTAI_QUERY`）: 賃料 20 万円以下（`ct`）・専有面積 60㎡ 以上（`mb`）・間取り 3K〜5K以上（`md` を 7 つ）。
+  福岡都市圏の賃貸は全部で数万件あるため。画面の既定条件（家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内）より少し広く取り、画面側の絞り込みはこの範囲の中で効く。
+  **この範囲の外は画面の条件を広げても出てこない**（画面の注記にも出している）。2026-09-26 に中央区 734 件・春日市 663 件・久山町 17 件で意図どおり効くことを確認
+- 1 行 = 1 部屋（`listings` に `kind = 'rent'`・`current_price` = 月額賃料・円）。一覧は**建物ごと**（`div.cassetteitem`・1 ページ 20 建物）で、その中に部屋の行（`tr.js-cassette_link`）が 1〜3 行
+  - **部屋の ID は `input.js-clipkey`（= `name="bc"`）の 12 桁**。リンクの `jnc_<数字>` は掲載の ID なので URL にだけ使う（`/chintai/jnc_…/?bc=<部屋 ID>`）
+  - 所在地は `cassetteitem_detail-col1`、交通は `col2`、築年・階建は `col3`。⚠️ **col2・col3 は直下にテキストが無く子要素の中**にある
+  - 賃料・管理費・敷金・礼金は `cassetteitem_price--{rent,administration,deposit,gratuity}`、間取り・面積は `cassetteitem_madori` / `cassetteitem_menseki`（`77m<sup>2</sup>`）
+- **件数表示（`pagination_set-hit`）は掲載の数で、一覧に出る行数とは一致しない**。SUUMO 自身がページ内で「まとめて表示しているため、掲載物件総数と物件一覧に表示されている件数が異なる場合があります」と断っている。
+  中央区は 734 件に対し 8 ページ × 26〜36 行。そのため:
+  - ページ数は**ページャ（`ol.pagination-parts`）の最後の番号**を正とする（`PagedSource.pageCountFromLinks`。中古・新築は従来どおり 件数 ÷ 1ページ件数）
+  - 「見えた件数がヒット件数合計の 85% 未満なら掲載終了を付けない」ルールは賃貸では使わない（`ListingStore.minSeenRatio = 0`）。比べる意味が無いため
+- 1 回 ≒ **140 ページ × 61 秒 ≒ 2.4 時間**（中央区 8・春日市 7・久山町 1 ページからの見積り）
+
+#### ペット相談可（2 周目・`suumo:chintai-pets`）
+
+**ペット可否は物件カードに出ない**（一覧に出るのは絞り込みリンクとチェックボックスだけ）。推測で埋めないので、**絞り込み付きでもう一周する**:
+
+- 同じ URL に `tc=0401102`（ペット可・相談 OK の絞り込み）を足した 2 周目を、別の取得元 ID（`suumo:chintai-pets`）の回として回す
+- 2 周目は**行を入れない**。1 周目が入れた行のうち**見えた部屋にだけ** `pets_allowed = 1` を立てる（`UPDATE` だけ）
+- **`pets_allowed` の NULL は「不明」であって「ペット不可」ではない**。0 は入れない。1 周目の upsert が毎回 NULL に戻すので、週ごとに付け直しになる
+  → **2 周目は必ず 1 周目の後に走らせる**（launchd は 06:00 / 12:00）
+- 2 周目で見えた部屋だけに付くので、**`pets_allowed = 1` は下限**（1 周目・2 周目で表示される部屋の組み合わせが違うため、ペット可なのに不明のままの部屋がありうる）
+- リクエストの増え方: 中央区は 734 件 → 177 件・8 ページ → **2 ページ**。全体で 1 周目 ≒ 140 ページに対し 2 周目 ≒ 40 ページ（**+3 割ほど**）。60 秒間隔・ページ上限・ロックは 1 周目と同じ
+
+#### 一覧から取れないもの（賃貸）
+
+- **掲載日・情報公開日**: 表記が無い。`listings.listed_on` は**賃貸では常に NULL**。画面に出しているのは「このウォッチが最初に見た日（`first_seen`）」で、SUUMO の掲載日ではない。
+  **掲載日数・値下げ追跡は売買だけ**（新着の部屋に `cassetteitem_other-checkbox--newarrival` は付くが、日付ではないので取っていない）
+- **管理費・敷金・礼金の "-"**: 一覧では「0 円」なのか「表記なし」なのか決められないので **NULL（不明）** にする（「なし」と書いてあるときだけ 0）。画面には「不明」「—」と出す
+
+#### D1・取り込み
+
+- `migrations/0006_listings_rent.sql`: `listings` に `admin_fee`・`deposit`・`key_money`・`pets_allowed`・`listed_on` を足しただけ（**追加のみ**）。
+  クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:chintai` / `suumo:chintai-pets` で中古と同じ表を使う
+- 取り込みは中古・新築と同じ `POST /api/ingest/listings` に `kind: "chintai"` / `"chintai_pets"` を付けて送る。
   **取得元ごとに許す `listings.kind`** は `src/listing-crawl-core.ts` の `CRAWL_KINDS[kind].listingKind`（中古 = `sale`・賃貸 = `rent`・新築 = `null`）。食い違う要求は 400
-- 取得元キー: `suumo:chintai@mac`（中古・新築と別に記録）。ただし送信元は同じ Mac なので、**どれかがクールダウン中なら全部取らない**・**間隔の起点はどれかで最後に取った時刻**
-- launchd: `com.kechiiiiin.fukuoka-condo-watch.suumo-chintai`・**毎週土曜 06:00**（中古の 01:00〜≒05:00 とも新築の日曜 06:00 とも重ならない）。3 本とも同じロックファイル
-- 1 回の上限: 200 ページ・5 時間
+- 取得元キー: `suumo:chintai@mac` / `suumo:chintai-pets@mac`。送信元は同じ Mac なので、**どれかがクールダウン中なら全部取らない**・**間隔の起点はどれかで最後に取った時刻**
+- launchd: `….suumo-chintai`（**毎週土曜 06:00**）と `….suumo-chintai-pets`（**毎週土曜 12:00**）。中古の 01:00〜≒05:00 とも新築の日曜 06:00 とも重ならない。4 本とも同じロックファイル
+- 1 回の上限: 1 周目 250 ページ・5 時間 / 2 周目 120 ページ・3 時間
 
 #### 見る画面（`/listings/picks?kind=rent`。Access 保護）
 
 売買（中古）と同じ `/listings/picks` にタブを足した（既定は従来どおり売買。`?kind=rent` で賃貸）。
 
 - 既定の条件: **家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内**。徒歩分は指定なし・バス便も含む（依頼に無い条件で勝手に狭めない）
-- **ペット相談可は絞り込みトグル**（既定 OFF = 絞らない。`pets=1` で相談可だけ）。カードには常に「ペット相談可」バッジを出す
-- カード: 賃料（幅）・管理費・敷金・礼金・間取り・面積・築年・沿線/駅・徒歩分・掲載開始・情報公開日・貸しやすさ（市区町村）
+- **ペット相談可は絞り込みトグル**（既定 OFF = 絞らない。`pets=1` で相談可だけ。**不明は残らない**）。カードには「ペット相談可」か「ペット 不明」を常に出す
+- カード: 賃料（幅）・管理費・敷金・礼金・間取り・面積・築年・沿線/駅・徒歩分・初めて見た日・貸しやすさ（市区町村）
 - 重複のまとめ方は売買と同じ（建物名 + 間取り + 築年 + 面積 ±0.5㎡）。⚠️ 賃貸は同じ建物の**別の部屋**がまとまることがある（画面に注記あり）
 - 価格維持・売出/成約比は売買の指標なので賃貸では出さない
 
 #### 決めていないこと（賃貸）
 
-- **実ページの構造の確認**: 上の「未検証」5 点。初回クロールの前に確かめる（確かめるまでは本番で走らせない）
-- **取得時の絞り込みの幅**: いまは賃料 20 万円・60㎡・3K 以上。広げるとページ数（＝時間）がそのまま増える。実件数を見てから決める
-- **重複のまとめ方**: 売買のロジックを使い回している。別の部屋が 1 枚になる問題を直すなら、部屋の階を取って鍵に足す
+- **管理費・敷金・礼金の "-"**: いまは不明（NULL）。実際には「なし（0 円）」の意味かもしれない。詳細ページを見れば分かるが 1 物件 1 リクエスト増える。実データを見てから決める
+- **ペット可の取りこぼし**: 2 周目で見えた部屋にしか付かない（下限）。全部に付けるには詳細ページか、絞り込みを細かく分けて回す必要がある
+- **取得時の絞り込みの幅**: いまは賃料 20 万円・60㎡・3K 以上。広げるとページ数（＝時間）がそのまま増える
+- **重複のまとめ方**: 売買のロジックを使い回している。別の部屋が 1 枚になる問題を直すなら、部屋の階（一覧に出ている）を鍵に足す
 - **募集終了の判定**: 中古・新築と同じ（完走回で 2 回続けて見えなかったら）。賃貸は入れ替わりが速いので、週 1 回では 2 週かかる
 
 ### Workers Paid が前提（Free で何が壊れるか）

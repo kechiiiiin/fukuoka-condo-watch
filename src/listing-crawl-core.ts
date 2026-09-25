@@ -10,7 +10,7 @@
 
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
-import { CHINTAI_SOURCE_ID } from "./suumo-chintai";
+import { CHINTAI_PETS_SOURCE_ID, CHINTAI_SOURCE_ID } from "./suumo-chintai";
 import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
 
 /**
@@ -18,7 +18,7 @@ import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
  * D1 のクロール状態（runs・cursor・state・events）は取得元 ID で分かれるので同じ表を使い、掲載の表だけ分ける
  * （中古・賃貸 = listings（listings.kind で分かれる）・新築 = new_listings）。
  */
-export type CrawlKind = "chuko" | "shinchiku" | "chintai";
+export type CrawlKind = "chuko" | "shinchiku" | "chintai" | "chintai_pets";
 
 /**
  * 種類ごとの取得元。
@@ -39,13 +39,21 @@ export const CRAWL_KINDS: Record<CrawlKind, CrawlKindInfo> = {
   chuko: { sourceId: SUUMO_SOURCE_ID, label: "中古", listingKind: "sale", localMaxPagesPerRun: 500, localMaxRunMs: 6 * 3600_000 },
   // 2026-09-22: 対象 23 市区町村で 93 件・どこも 30 件以下 → 1 回 ≒ 23 ページ × 61 秒 ≒ 25 分
   shinchiku: { sourceId: SHINCHIKU_SOURCE_ID, label: "新築", listingKind: null, localMaxPagesPerRun: 80, localMaxRunMs: 2 * 3600_000 },
-  // 賃貸は母数が大きいので取得時に絞り込む（src/suumo-chintai.ts の CHINTAI_QUERY）。1 回 ≒ 数十〜200 ページ
-  chintai: { sourceId: CHINTAI_SOURCE_ID, label: "賃貸", listingKind: "rent", localMaxPagesPerRun: 200, localMaxRunMs: 5 * 3600_000 },
+  // 2026-09-26 の実ページ: 中央区 8 ページ・春日市 7 ページ・久山町 1 ページ → 1 回 ≒ 140 ページ × 61 秒 ≒ 2.4 時間
+  chintai: { sourceId: CHINTAI_SOURCE_ID, label: "賃貸", listingKind: "rent", localMaxPagesPerRun: 250, localMaxRunMs: 5 * 3600_000 },
+  // ペット相談可の 2 周目（tc=0401102）。中央区 2 ページ（1 周目の 1/4）→ 1 回 ≒ 40 ページ ≒ 40 分
+  chintai_pets: {
+    sourceId: CHINTAI_PETS_SOURCE_ID,
+    label: "賃貸（ペット相談可）",
+    listingKind: "rent",
+    localMaxPagesPerRun: 120,
+    localMaxRunMs: 3 * 3600_000,
+  },
 };
 
 export function parseCrawlKind(v: unknown): CrawlKind {
   if (v === undefined || v === null || v === "chuko") return "chuko";
-  if (v === "shinchiku" || v === "chintai") return v;
+  if (v === "shinchiku" || v === "chintai" || v === "chintai_pets") return v;
   throw new Error("kind が不正");
 }
 

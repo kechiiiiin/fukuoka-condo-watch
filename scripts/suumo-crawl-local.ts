@@ -2,6 +2,7 @@
 //   - 中古（既定・--kind chuko）… 毎日 01:00（com.kechiiiiin.fukuoka-condo-watch.suumo）
 //   - 新築（--kind shinchiku）   … 毎週日曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
 //   - 賃貸（--kind chintai）     … 毎週土曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai）
+//   - 賃貸のペット相談可（--kind chintai_pets）… 毎週土曜 12:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ Mac か: Worker の cron から取ると 2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で即 503
@@ -30,7 +31,8 @@
 //   npm run crawl:local -- --dry-run    # 設定の確認だけ（SUUMO にも Worker にもアクセスしない）
 //   npm run crawl:local -- --max-pages 2  # 試し走り（2 ページで切り上げ。続きは次回カーソルから）
 //   npm run crawl:local -- --kind shinchiku   # 新築（週 1 回・23 ページ ≒ 25 分）
-//   npm run crawl:local -- --kind chintai     # 賃貸（週 1 回。取得時に絞り込むので数十〜200 ページ）
+//   npm run crawl:local -- --kind chintai     # 賃貸（週 1 回・≒140 ページ。取得時に絞り込む）
+//   npm run crawl:local -- --kind chintai_pets # 賃貸のペット相談可（≒40 ページ。chintai の後に流すこと）
 
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
@@ -203,8 +205,8 @@ function sourceFor(kind: CrawlKind, s: ReturnType<typeof crawlSettings>): KindSo
     const src = new ShinchikuSource({ origin: s.origin, userAgent: s.userAgent });
     return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
   }
-  if (kind === "chintai") {
-    const src = new ChintaiSource({ origin: s.origin, userAgent: s.userAgent });
+  if (kind === "chintai" || kind === "chintai_pets") {
+    const src = new ChintaiSource({ origin: s.origin, userAgent: s.userAgent, pets: kind === "chintai_pets" });
     return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
   }
   const src = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
@@ -215,14 +217,14 @@ function parseKindArg(): CrawlKind | null {
   const i = process.argv.indexOf("--kind");
   if (i < 0) return "chuko";
   const v = process.argv[i + 1];
-  return v === "chuko" || v === "shinchiku" || v === "chintai" ? v : null;
+  return v === "chuko" || v === "shinchiku" || v === "chintai" || v === "chintai_pets" ? v : null;
 }
 
 async function main(): Promise<number> {
   const dryRun = process.argv.includes("--dry-run");
   const kind = parseKindArg();
   if (!kind) {
-    console.error("--kind には chuko / shinchiku / chintai のいずれかを");
+    console.error("--kind には chuko / shinchiku / chintai / chintai_pets のいずれかを");
     return 1;
   }
   const limits = CRAWL_KINDS[kind];

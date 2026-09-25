@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  賃貸のペット相談可（2 周目・週 1 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
+  ~/Library/LaunchAgents/ に置き、launchctl bootstrap する。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/ops/launchd/run-suumo-crawl.sh</string>
+    <string>--kind</string>
+    <string>chintai_pets</string>
+  </array>
+  <key>WorkingDirectory</key> <string>__REPO__</string>
+
+  <!-- ペット相談可の 2 周目（tc=0401102）を毎週土曜 12:00。**1 周目（06:00・≒2.4 時間）の後**に走らせること
+       （1 周目の upsert が pets_allowed を NULL に戻すので、順番が逆だと不明のままになる）。
+       1 回 ≒ 40 ページ × 61 秒 ≒ 40 分。中古・新築・賃貸と同じロックファイルなので、重なったら終わるまで待つ。 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key> <integer>6</integer>
+    <key>Hour</key>    <integer>12</integer>
+    <key>Minute</key>  <integer>0</integer>
+  </dict>
+  <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->
+  <key>RunAtLoad</key>        <false/>
+
+  <!-- launchd は PATH を継承しないので、install.sh が解決した node を渡す -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_BIN</key>       <string>__NODE_BIN__</string>
+    <key>PATH</key>           <string>__PATH__</string>
+  </dict>
+
+  <key>StandardOutPath</key>  <string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-chintai-pets-crawl.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-chintai-pets-crawl.err.log</string>
+
+  <!-- ⚠️ トークンは絶対にここへ書かない（launchctl print / ps から丸見えになる）。
+       ~/.config/fukuoka-condo-watch/env（chmod 600）からクローラ自身がファイルとして読む。 -->
+</dict>
+</plist>

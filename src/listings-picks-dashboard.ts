@@ -98,7 +98,7 @@ const HTML = `<!doctype html>
       <div class="toggles">
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
-        <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1"> ペット相談可のみ</label>
+        <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1"> ペット相談可のみ（不明は除く）</label>
         <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
@@ -246,6 +246,7 @@ const HTML = `<!doctype html>
       : (it.bus ? "バス便" : "—");
     var age = it.buildingYear ? (new Date().getFullYear() - it.buildingYear) + "年（" + it.buildingYear + "年）" : "—";
     var rent = it.minPrice === it.maxPrice ? yen(it.minPrice) : (yen(it.minPrice) + "〜" + yen(it.maxPrice));
+    // 管理費・敷金・礼金は SUUMO の表記が "-" のことがあり、0 円か表記なしか決められないので「不明」と出す
     var fee = it.adminFeeMin === null || it.adminFeeMin === undefined ? "管理費 不明"
       : (it.adminFeeMin === it.adminFeeMax ? "管理費 " + yen(it.adminFeeMin) : "管理費 " + yen(it.adminFeeMin) + "〜" + yen(it.adminFeeMax));
     var urls = it.urls.map(function (u, i) { return '<li><a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">SUUMO で見る' + (it.urls.length > 1 ? "（" + (i + 1) + "）" : "") + "</a></li>"; }).join("");
@@ -253,13 +254,14 @@ const HTML = `<!doctype html>
       '<div class="card">' +
       '<h3>' + esc(it.buildingName) + (it.count > 1 ? '<span class="badge">同条件の部屋 ' + it.count + '件</span>' : '') +
       (it.isFresh ? '<span class="badge fresh">新着</span>' : '') +
-      (it.petsAllowed ? '<span class="badge pets">ペット相談可</span>' : '') + '</h3>' +
+      (it.petsAllowed ? '<span class="badge pets">ペット相談可</span>' : '<span class="badge">ペット 不明</span>') + '</h3>' +
       '<div class="meta">' + esc(addr) + '</div>' +
       '<div class="row">' + station + '</div>' +
       '<div class="row">' + esc(it.floorPlan || "—") + ' ・ ' + n(it.areaSqm, 1) + '㎡ ・ 築' + age + '</div>' +
       '<div class="price">' + rent + '<span class="unit">/月 ・ ' + fee + '</span></div>' +
       '<div class="row">敷金 ' + yen(it.depositMin) + ' ・ 礼金 ' + yen(it.keyMoneyMin) + '</div>' +
-      '<div class="row">掲載開始 ' + esc(it.earliestFirstSeen) + (it.listedOn ? ' ・ 情報公開日 ' + esc(it.listedOn) : '') + '</div>' +
+      // SUUMO の賃貸一覧には掲載日が無いので、出せるのは「このウォッチが最初に見た日」だけ
+      '<div class="row">初めて見た日 ' + esc(it.earliestFirstSeen) + '</div>' +
       '<div class="scoreline">' +
       '<span>貸しやすさ（市区町村） <b>' + scoreLabel(it.rentScore, it.rentStatusLabel) + '</b></span>' +
       '</div>' +

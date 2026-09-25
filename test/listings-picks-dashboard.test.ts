@@ -132,7 +132,7 @@ const CARD = {
   depositMin: 125000,
   keyMoneyMin: 0,
   petsAllowed: true,
-  listedOn: "2026-09-22",
+  listedOn: null,
 };
 
 const PAYLOAD = (kind: string) => ({
@@ -187,7 +187,8 @@ test("画面（賃貸）: ?kind=rent でタブ・既定条件・賃料/管理費
   assert.ok(cards.includes("敷金 125,000円"));
   assert.ok(cards.includes("礼金 0円"));
   assert.ok(cards.includes("ペット相談可"));
-  assert.ok(cards.includes("情報公開日 2026-09-22"));
+  assert.ok(cards.includes("初めて見た日 2026-09-20"), "SUUMO の掲載日は取れないので「初めて見た日」と出す");
+  assert.ok(!cards.includes("情報公開日"));
   assert.ok(cards.includes("貸しやすさ"));
   assert.ok(!cards.includes("価格維持"), "価格維持は売買の指標なので出さない");
   assert.ok(!cards.includes("㎡単価"));

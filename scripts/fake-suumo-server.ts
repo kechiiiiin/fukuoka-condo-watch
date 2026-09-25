@@ -6,7 +6,7 @@
 //   curl -X POST http://127.0.0.1:8790/__mode/429   # 以後 429 を返す（ok / 403 / 429 / captcha / broken）
 //   curl http://127.0.0.1:8790/__stats              # 受けたリクエスト数
 //
-// 賃貸（/chintai/fukuoka/sc_<slug>/）も返す。骨格は src/suumo-chintai.ts 冒頭の構造（**実ページ未検証**）。
+// 賃貸（/chintai/fukuoka/sc_<slug>/）も返す。骨格は 2026-09-26 に実ページで確かめた構造（tc=0401102 のペット絞り込みも）。
 // 新築（/ms/shinchiku/fukuoka/sc_<slug>/）も返す。骨格は 2026-09-22 に実ページで確かめた構造（src/suumo-shinchiku.ts 冒頭）。
 //   - 博多区は 35 件（2 ページ）・3 つに 1 つの市区町村は 0 件（0 件ページには実物と同じく「近い物件」として他の市区町村の物件が並ぶ）
 //   - 2 日目（__day/2）: 一部が消える・値下げ・価格未定だった物件に価格が付く・新着 1 件
@@ -245,18 +245,28 @@ ${items.map((l) => newUnit(slug, l)).join("\n")}
 }
 
 // ---------------------------------------------------------------- 賃貸（/chintai/）
+// 骨格は 2026-09-26 に実ページで確かめた構造（src/suumo-chintai.ts 冒頭・~/work/_experiments/listing-probe/chintai/）:
+//   件数は pagination_set-hit（掲載の数）、ページャは ol.pagination-parts（最後の番号が最終ページ）、
+//   建物は div.cassetteitem（1 ページ 20 件）、部屋は tr.js-cassette_link（建物あたり 1〜3 行）。
+//   部屋の ID は input.js-clipkey（= name="bc"）の 12 桁で、リンクは /chintai/jnc_<数字>/?bc=<部屋 ID>。
+//   管理費・敷金・礼金は "-" のことがある。面積は m<sup>2</sup>。ペット可否と掲載日は**一覧に出ない**。
+// ペット絞り込み（tc=0401102）付きのときは、部屋の一部だけを返す（実ページと同じく件数もページ数も減る）。
 
 export interface FakeChintaiRoom {
+  /** 12 桁の部屋 ID */
   id: string;
-  floor: number;
+  floor: string;
   rentMan: number;
-  /** 管理費（円）。null = 「-」 */
-  adminYen: number | null;
-  /** 敷金の表記（"7.3万円" / "1ヶ月" / "-"） */
+  /** 管理費の表記（"9000円" / "-"） */
+  admin: string;
+  /** 敷金・礼金の表記（"16万円" / "-" / "1ヶ月"） */
   deposit: string;
   gratuity: string;
   madori: string;
   area: number;
+  /** ペット相談可（一覧には出ない。絞り込み付きのページに出すかどうかの判定にだけ使う） */
+  pets: boolean;
+  newArrival: boolean;
 }
 
 export interface FakeChintaiBuilding {
@@ -264,15 +274,16 @@ export interface FakeChintaiBuilding {
   age: number;
   floors: number;
   walk: number;
-  pets: boolean;
-  listedOn: string;
   rooms: FakeChintaiRoom[];
 }
 
-/** slug・日ごとの架空の賃貸。1 日目は (slug 番号 % 4) + 1 棟（久山町は 0 件）。2 日目は 1 棟消えて 1 棟増え、1 部屋が値下げ */
+/**
+ * slug・日ごとの架空の賃貸。1 日目は (slug 番号 % 4) + 1 棟。2 日目は 1 棟消えて 1 棟増え、1 部屋が値下げ。
+ * 久山町はペット相談可の部屋が無い（ペット絞り込みで 0 件ページになる）。
+ */
 export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuilding[] {
   const idx = SLUGS.indexOf(slug);
-  if (idx < 0 || slug === "kasuyagunhisayama") return [];
+  if (idx < 0) return [];
   const count = (idx % 4) + 1;
   const out: FakeChintaiBuilding[] = [];
   for (let i = 0; i < count; i++) {
@@ -281,31 +292,27 @@ export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuil
     const nRooms = (i % 3) + 1;
     for (let j = 0; j < nRooms; j++) {
       const rent = 9 + ((i * 3 + j) % 8) + (day >= 2 && j === 0 ? -0.5 : 0);
+      const man = Math.round(rent * 10) / 10;
       rooms.push({
-        id: String(100000000000 + idx * 100000 + i * 100 + j).slice(-12),
-        floor: 2 + j,
-        rentMan: Math.round(rent * 10) / 10,
-        adminYen: j % 3 === 2 ? null : 3000 + j * 1000,
-        deposit: j % 3 === 0 ? "1ヶ月" : j % 3 === 1 ? `${Math.round(rent * 10) / 10}万円` : "-",
-        gratuity: j % 2 === 0 ? "なし" : "1ヶ月",
+        id: String(100000000000 + idx * 100000 + i * 100 + j),
+        floor: j % 4 === 3 ? "-" : `${2 + j}階`,
+        rentMan: man,
+        admin: j % 3 === 2 ? "-" : `${3000 + j * 1000}円`,
+        deposit: j % 3 === 0 ? "-" : j % 3 === 1 ? `${man}万円` : "1ヶ月",
+        gratuity: j % 2 === 0 ? "-" : `${man}万円`,
         madori: ["3LDK", "4LDK", "3DK"][(i + j) % 3] ?? "3LDK",
         area: 70.5 + ((i * 5 + j * 3) % 30),
+        // 久山町はペット相談可なし（ペット絞り込みの 0 件ページを試せるように）
+        pets: slug !== "kasuyagunhisayama" && (i + j) % 3 === 0,
+        newArrival: j === 0 && i % 2 === 0,
       });
     }
-    out.push({
-      name: `架空ハイツ${idx}-${i}`,
-      age: (i * 7 + idx) % 40,
-      floors: 5 + (i % 6),
-      walk: 3 + ((i * 4) % 12),
-      pets: i % 3 === 0,
-      listedOn: `2026/9/${1 + ((idx + i) % 25)}`,
-      rooms,
-    });
+    out.push({ name: `架空ハイツ${idx}-${i}`, age: (i * 7 + idx) % 40, floors: 5 + (i % 6), walk: 3 + ((i * 4) % 12), rooms });
   }
   if (day >= 2) {
     out.push({
-      name: `新着ハイツ${idx}`, age: 3, floors: 10, walk: 4, pets: true, listedOn: "2026/10/1",
-      rooms: [{ id: String(199000000000 + idx), floor: 7, rentMan: 12.5, adminYen: 6000, deposit: "12.5万円", gratuity: "1ヶ月", madori: "3LDK", area: 75.2 }],
+      name: `新着ハイツ${idx}`, age: 3, floors: 10, walk: 4,
+      rooms: [{ id: String(199000000000 + idx), floor: "7階", rentMan: 12.5, admin: "6000円", deposit: "12.5万円", gratuity: "1ヶ月", madori: "3LDK", area: 75.2, pets: true, newArrival: true }],
     });
   }
   return out;
@@ -313,48 +320,69 @@ export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuil
 
 function chintaiRoomRow(r: FakeChintaiRoom): string {
   return `<tr class="js-cassette_link">
-<td><div class="cassetteitem_other-checkbox"><input type="checkbox" /></div></td>
-<td>${r.floor}階</td>
+<td class="cassetteitem_other-checkbox${r.newArrival ? " cassetteitem_other-checkbox--newarrival" : ""} js-cassetteitem_checkbox">
+<input type="checkbox" name="bc" id="bukken_0" class="js-ikkatsuCB js-single_checkbox" value="${r.id}"><label for="bc">&nbsp;</label>
+</td>
+<td><div class="casssetteitem_other-thumbnail js-view_gallery_images"><img src="" alt=""></div></td>
+<td>
+	${r.floor}</td>
 <td><ul>
-  <li><span class="cassetteitem_other-emphasis cassetteitem_price cassetteitem_price--rent">${r.rentMan}万円</span></li>
-  <li><span class="cassetteitem_price cassetteitem_price--administration">${r.adminYen === null ? "-" : `${r.adminYen}円`}</span></li>
+<li><span class="cassetteitem_price cassetteitem_price--rent"><span class="cassetteitem_other-emphasis ui-text--bold">${r.rentMan}万円</span></span></li>
+<li><span class="cassetteitem_price cassetteitem_price--administration">${r.admin}</span></li>
 </ul></td>
 <td><ul>
-  <li><span class="cassetteitem_price cassetteitem_price--deposit">${r.deposit}</span></li>
-  <li><span class="cassetteitem_price cassetteitem_price--gratuity">${r.gratuity}</span></li>
+<li><span class="cassetteitem_price cassetteitem_price--deposit">${r.deposit}</span></li>
+<li><span class="cassetteitem_price cassetteitem_price--gratuity">${r.gratuity}</span></li>
 </ul></td>
 <td><ul>
-  <li><span class="cassetteitem_madori">${r.madori}</span></li>
-  <li><span class="cassetteitem_menseki">${r.area}m<sup>2</sup></span></li>
+<li><span class="cassetteitem_madori">${r.madori}</span></li>
+<li><span class="cassetteitem_menseki">${r.area}m<sup>2</sup></span></li>
 </ul></td>
-<td><a class="js-cassette_link_href cassetteitem_other-linktext" href="/chintai/jnc_${r.id}/?bc=1234567890">詳細を見る</a></td>
+<td><ul class="cassetteitem-taglist"></ul></td>
+<td class="js-property"><input class="js-clipkey" type="hidden" value="${r.id}" /></td>
+<td class="ui-text--midium ui-text--bold">
+<a href="/chintai/jnc_000${r.id.slice(-9)}/?bc=${r.id}" target="_blank" class="js-cassette_link_href cassetteitem_other-linktext">詳細を見る</a>
+</td>
 </tr>`;
 }
 
 function chintaiBuilding(slug: string, b: FakeChintaiBuilding): string {
   return `<div class="cassetteitem">
-<div class="cassetteitem_content">
-  <div class="cassetteitem_content-label"><span class="ui-pct ui-pct--util1">賃貸マンション</span></div>
-  <div class="cassetteitem_content-title">${b.name}</div>
-  <div class="cassetteitem_content-body"><ul class="cassetteitem_detail">
-    <li class="cassetteitem_detail-col1">福岡県${ADDR[slug] ?? ""}テスト３</li>
-    <li class="cassetteitem_detail-col2">
-      <div class="cassetteitem_detail-text">ＪＲ鹿児島本線/テスト駅 歩${b.walk}分</div>
-      <div class="cassetteitem_detail-text">西鉄バス/テスト前 バス8分 停歩2分</div>
-    </li>
-    <li class="cassetteitem_detail-col3"><div>${b.age === 0 ? "新築" : `築${b.age}年`}</div><div>${b.floors}階建</div></li>
-  </ul></div>
-  <div class="cassetteitem_note">情報公開日：${b.listedOn}${b.pets ? " ／ ペット相談" : ""}</div>
-</div>
-<div class="cassetteitem-item"><table class="cassetteitem_other"><tbody>
-${b.rooms.map(chintaiRoomRow).join("\n")}
-</tbody></table></div>
+<div class="cassetteitem-detail"><div class="cassetteitem-detail-body"><div class="cassetteitem_content">
+<div class="cassetteitem_content-label"><span class="ui-pct ui-pct--util1">賃貸マンション</span></div>
+<div class="cassetteitem_content-title">${b.name}</div>
+<div class="cassetteitem_content-body"><ul class="cassetteitem_detail">
+<li class="cassetteitem_detail-col1">福岡県${ADDR[slug] ?? ""}テスト３</li>
+<li class="cassetteitem_detail-col2">
+<div class="cassetteitem_detail-text">ＪＲ鹿児島本線/テスト駅 歩${b.walk}分</div>
+<div class="cassetteitem_detail-text">西鉄バス/テスト前 バス8分 停歩2分</div>
+</li>
+<li class="cassetteitem_detail-col3">
+<div>${b.age === 0 ? "新築" : `築${b.age}年`}</div>
+<div>${b.floors}階建</div>
+</li>
+</ul></div>
+</div></div></div>
+<div class="cassetteitem-item"><table class="cassetteitem_other">
+<thead><tr><th class="cassetteitem_other-col03">階</th><th class="cassetteitem_other-col04">賃料/管理費</th></tr></thead>
+${b.rooms.map((r) => `<tbody>${chintaiRoomRow(r)}</tbody>`).join("\n")}
+</table></div>
 </div>`;
 }
 
-export function renderFakeChintaiPage(slug: string, page: number, day: number): { status: number; html: string } {
+/**
+ * pets = true はペット絞り込み（tc=0401102）付き。実ページと同じく、ペット相談可の部屋だけが並び、件数もページ数も減る。
+ * ⚠️ 件数表示（掲載の数）は一覧に出る行数と一致しない（実ページでは中央区 734 件に対し 8 ページ × 26〜36 行）ので、
+ *    偽サーバでも「行数 × 3」を件数として返し、ページ数はページャの番号でだけ分かるようにしてある。
+ */
+export function renderFakeChintaiPage(slug: string, page: number, day: number, pets = false): { status: number; html: string } {
   if (!SLUGS.includes(slug)) return { status: 404, html: "<html><body>not found</body></html>" };
-  const all = fakeChintaiBuildings(slug, day);
+  let all = fakeChintaiBuildings(slug, day);
+  if (pets) {
+    all = all
+      .map((b) => ({ ...b, rooms: b.rooms.filter((r) => r.pets) }))
+      .filter((b) => b.rooms.length > 0);
+  }
   if (all.length === 0) {
     return {
       status: 200,
@@ -363,22 +391,29 @@ export function renderFakeChintaiPage(slug: string, page: number, day: number): 
 </body></html>`,
     };
   }
-  const pageSize = 30;
+  const pageSize = 2; // 実ページは 20 件/ページ。偽サーバは少ない件数でページ送りを試したいので 2 件
   const pages = Math.ceil(all.length / pageSize);
   if (page > pages) return { status: 404, html: "<html><body>not found</body></html>" };
   const items = all.slice((page - 1) * pageSize, page * pageSize);
   const rooms = all.reduce((n, b) => n + b.rooms.length, 0);
+  const q = pets ? "?tc=0401102&" : "?";
   const pager = Array.from({ length: pages }, (_, i) => i + 1)
-    .map((p) => (p === page ? `<li class="pagination-current">${p}</li>` : `<li><a href="/chintai/fukuoka/sc_${slug}/?page=${p}">${p}</a></li>`))
-    .join("");
+    .map((p) =>
+      p === page
+        ? `<li class="pagination-current">${p}</li>`
+        : `<li class=""><a href="/chintai/fukuoka/sc_${slug}/${q}page=${p}">${p}</a></li>`,
+    )
+    .join("<li>&nbsp;</li>");
   return {
     status: 200,
     html: `<!doctype html><html><head><meta charset="utf-8"></head><body>
-<div class="paginate_set"><div class="paginate_set-hit">${rooms.toLocaleString("en-US")}<span>件</span></div>
-<ol class="pagination-parts">${pager}</ol></div>
-<div id="js-bukkenList">
-${items.map((b) => chintaiBuilding(slug, b)).join("\n")}
-</div></body></html>`,
+<div class="pagination_set"><div class="pagination_set-hit">
+	${(rooms * 3).toLocaleString("en-US")}<span>件</span>
+</div>
+<div class="pagination pagination_set-nav"><ol class="pagination-parts">${pager}</ol></div></div>
+<div id="js-bukkenList"><ul class="l-cassetteitem">
+${items.map((b) => `<li>${chintaiBuilding(slug, b)}</li>`).join("\n")}
+</ul></div></body></html>`,
   };
 }
 
@@ -416,7 +451,7 @@ function main(): void {
       m[1] === "shinchiku"
         ? renderFakeShinchikuPage(m[2], pageNo, day)
         : m[1] === "chintai"
-          ? renderFakeChintaiPage(m[2], pageNo, day)
+          ? renderFakeChintaiPage(m[2], pageNo, day, u.searchParams.get("tc") === "0401102")
           : renderFakePage(m[2], pageNo, day);
     return send(r.status, r.html);
   });

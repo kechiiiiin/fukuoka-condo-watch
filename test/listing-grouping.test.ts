@@ -361,13 +361,15 @@ test("ペット相談可トグル: 既定は絞らない・pets=1 で相談可�
   assert.equal(on.petsOnly, true);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), on, 2026, today), true);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 0 }), on, 2026, today), false);
-  assert.equal(matchesConditions(rentRow({ pets_allowed: null }), on, 2026, today), false, "表記が無いものは絞り込みで残さない");
+  assert.equal(matchesConditions(rentRow({ pets_allowed: null }), on, 2026, today), false, "不明（NULL）は絞り込みで残さない。NULL はペット不可の意味ではない");
 
   // 売買では pets を送っても効かない（sale の行に pets_allowed は無い）
   assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true, "sale").petsOnly, false);
   assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true).petsOnly, false, "kind 省略は従来どおり売買");
 });
 
+// ⚠️ listed_on は SUUMO 賃貸では常に NULL（一覧に掲載日が無い）。ここで値を入れているのは
+//    listings の汎用の列としてのまとめ方（最新を採る）を確かめるため
 test("賃貸のグルーピング: 敷礼・管理費・ペット・掲載日をまとめる", () => {
   const groups = groupListings([
     rentRow({ external_id: "jnc_1", current_price: 125000, admin_fee: 5000, deposit: 125000, key_money: 0, pets_allowed: 0, listed_on: "2026-09-20" }),

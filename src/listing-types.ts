@@ -97,6 +97,12 @@ export interface PagedSource<R = ListingRecord> {
   readonly id: string;
   readonly pageSize: number;
   readonly userAgent: string;
+  /**
+   * true なら「総ページ数はページャの最大ページ番号を正とする」（件数 ÷ pageSize では出さない）。
+   * 賃貸は件数表示が掲載の数で、一覧は建物ごとにまとめて出すため件数からページ数を出せない（src/suumo-chintai.ts）。
+   * 未指定（中古・新築）は従来どおり 件数 ÷ pageSize で、ページャの方が大きければそちらに合わせる。
+   */
+  readonly pageCountFromLinks?: boolean;
   targets(): CrawlTarget[];
   pageUrl(target: CrawlTarget, page: number): string;
   parsePage(html: string, target: CrawlTarget): ParsedListPage<R>;

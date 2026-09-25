@@ -434,6 +434,7 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
   if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
   if (r.kind === "chintai") return ingestKind(db, env, r, new ChintaiSource(), CHINTAI_STORE, now);
+  if (r.kind === "chintai_pets") return ingestKind(db, env, r, new ChintaiSource({ pets: true }), CHINTAI_PETS_STORE, now);
   return ingestKind(db, env, r, new SuumoSource(), CHUKO_STORE, now);
 }
 
@@ -566,7 +567,7 @@ SELECT ?1, json_extract(j.value, '$.id'), ?5, json_extract(j.value, '$.ward'), j
   json_extract(j.value, '$.addr'), json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.price'),
   json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3,
   json_extract(j.value, '$.fee'), json_extract(j.value, '$.dep'), json_extract(j.value, '$.key'),
-  COALESCE(json_extract(j.value, '$.pets'), 0), json_extract(j.value, '$.listed')
+  json_extract(j.value, '$.pets'), json_extract(j.value, '$.listed')
 FROM json_each(?4) AS j WHERE true
 ON CONFLICT (source, external_id) DO UPDATE SET
   ward_code = excluded.ward_code, building_name = excluded.building_name, building_year = excluded.building_year,
@@ -590,6 +591,11 @@ ON CONFLICT (source, external_id, observed_on) DO UPDATE SET price = excluded.pr
 interface StoreInfo {
   readonly sourceId: string;
   readonly table: "listings" | "new_listings";
+  /**
+   * 「見えた件数がヒット件数合計のこの割合未満なら掲載終了を付けない」の閾値。
+   * 0 なら比率では判断しない（賃貸: 件数表示が掲載の数で、一覧に出る行数と一致しないため比べる意味がない）。
+   */
+  readonly minSeenRatio: number;
 }
 
 /** 種類ごとの掲載の表。1 ページぶんの反映文（履歴 → upsert）を作る。カーソル・回の更新は applyPage が足して同じ batch にする */
@@ -607,10 +613,11 @@ interface ListingStore<R> extends StoreInfo {
  * listings 表を使う取得元（中古 = sale・賃貸 = rent）のストアを作る。
  * listingKind は CRAWL_KINDS の定数だけ（外からの値は入れない）。反映の仕方は中古・賃貸で同じ。
  */
-function listingsStore(sourceId: string, listingKind: "sale" | "rent"): ListingStore<ListingRecord> {
+function listingsStore(sourceId: string, listingKind: "sale" | "rent", minSeenRatio = CRAWL.minSeenRatio): ListingStore<ListingRecord> {
   return {
   sourceId,
   table: "listings",
+  minSeenRatio,
   async pageStatements(db, runId, date, areaCode, records) {
     const byId = new Map(records.map((r) => [r.externalId, r]));
     const ids = [...byId.keys()];
@@ -648,11 +655,11 @@ function listingsStore(sourceId: string, listingKind: "sale" | "rent"): ListingS
       addr: r.address ?? null,
       url: r.url ?? null,
       price: r.price,
-      // 賃貸だけの項目（売買では undefined → JSON に入らない → json_extract は NULL）
+      // 賃貸だけの項目（売買では undefined → NULL）。pets は「不明」を NULL で表すので 0 に倒さない
       fee: r.adminFee ?? null,
       dep: r.deposit ?? null,
       key: r.keyMoney ?? null,
-      pets: r.petsAllowed ? 1 : 0,
+      pets: r.petsAllowed === undefined ? null : r.petsAllowed ? 1 : 0,
       listed: r.listedOn ?? null,
     }));
     const stmts: D1PreparedStatement[] = [];
@@ -666,8 +673,35 @@ function listingsStore(sourceId: string, listingKind: "sale" | "rent"): ListingS
 
 /** 中古（listings.kind = 'sale'・0001/0003） */
 const CHUKO_STORE = listingsStore(SUUMO_SOURCE_ID, "sale");
-/** 賃貸（listings.kind = 'rent'・0006） */
-const CHINTAI_STORE = listingsStore(CRAWL_KINDS.chintai.sourceId, "rent");
+/**
+ * 賃貸（listings.kind = 'rent'・0006）。85% ルールは使わない（minSeenRatio = 0）:
+ * 件数表示は掲載の数で、一覧は建物ごとにまとめて出すため、見えた行数と比べる意味がない（SUUMO 自身がページ内で断っている）。
+ */
+const CHINTAI_STORE = listingsStore(CRAWL_KINDS.chintai.sourceId, "rent", 0);
+
+/**
+ * 賃貸のペット相談可（2 周目）。ペット絞り込み（tc=0401102）付きで取り直し、**見えた部屋にだけ** pets_allowed = 1 を立てる。
+ * 行は入れない（1 周目 suumo:chintai が入れた行を更新するだけ）。ペット可否は一覧のカードに出ないので、こうするしか取りようがない。
+ * NULL = 不明（ペット不可という意味ではない）。1 周目の upsert が毎回 NULL に戻すので、週ごとに付け直しになる。
+ */
+const UPDATE_PETS = `
+UPDATE listings SET pets_allowed = 1
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?2) AS j)`;
+
+const CHINTAI_PETS_STORE: ListingStore<ListingRecord> = {
+  sourceId: CRAWL_KINDS.chintai_pets.sourceId,
+  table: "listings",
+  // 自分の source の行は 1 件も無いので、掲載終了の判定も比率の判定も効かない（1 周目の回が掲載終了を持つ）
+  minSeenRatio: 0,
+  async pageStatements(db, _runId, _date, _areaCode, records) {
+    const ids = [...new Set(records.map((r) => r.externalId))];
+    const stmts: D1PreparedStatement[] = [];
+    if (ids.length) {
+      stmts.push(db.prepare(UPDATE_PETS).bind(CRAWL_KINDS.chintai.sourceId, JSON.stringify(ids.map((id) => ({ id })))));
+    }
+    return { stmts, newCount: 0, changedCount: 0, rows: ids.length };
+  },
+};
 
 // ---- 新築（new_listings・0005）。価格は幅（円）・未定は NULL。価格変化 = 下限か上限が変わった（未定→決定も含む）
 const UPSERT_NEW_LISTINGS = `
@@ -710,6 +744,7 @@ ON CONFLICT (source, external_id, observed_on) DO UPDATE SET price_min = exclude
 const SHINCHIKU_STORE: ListingStore<NewListingRecord> = {
   sourceId: CRAWL_KINDS.shinchiku.sourceId,
   table: "new_listings",
+  minSeenRatio: CRAWL.minSeenRatio,
   async pageStatements(db, runId, date, areaCode, records) {
     const byId = new Map(records.map((r) => [r.externalId, r]));
     const prev = await db
@@ -791,6 +826,10 @@ async function applyPage<R>(
     }
     totalHits = hits;
     totalPages = hits === 0 ? 0 : Math.ceil(hits / source.pageSize);
+    // 賃貸は件数からページ数を出せない（件数 = 掲載の数・一覧は建物ごとにまとめて表示）。ページャの最終番号を正にする
+    if (source.pageCountFromLinks && hits > 0 && page.maxPageLinked !== null && page.maxPageLinked > 0) {
+      totalPages = page.maxPageLinked;
+    }
   }
   if (page.maxPageLinked !== null && page.maxPageLinked > totalPages) totalPages = page.maxPageLinked;
   totalPages = Math.min(totalPages, CRAWL.maxPagesPerArea);
@@ -866,8 +905,8 @@ async function finalizeRun(
   };
 
   if ((agg?.errors ?? 0) > 0) return incomplete(`取れなかった市区町村が ${agg?.errors} 件あるため掲載終了を付けない`);
-  if (hits > 0 && seen < hits * CRAWL.minSeenRatio) {
-    return incomplete(`見えた件数 ${seen} がヒット件数合計 ${hits} の ${Math.round(CRAWL.minSeenRatio * 100)}% 未満のため掲載終了を付けない`);
+  if (store.minSeenRatio > 0 && hits > 0 && seen < hits * store.minSeenRatio) {
+    return incomplete(`見えた件数 ${seen} がヒット件数合計 ${hits} の ${Math.round(store.minSeenRatio * 100)}% 未満のため掲載終了を付けない`);
   }
 
   await db.batch([
