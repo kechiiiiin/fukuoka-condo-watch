@@ -387,7 +387,8 @@ export function parseChintaiListPage(html: string, fallbackCode: string | null =
 /**
  * 1 部屋 → 取り込み用の 1 件（金額は円・price = 月額賃料）。賃料が読めなければ null（捨てる）。
  * petsAllowed はペット絞り込みの 2 周目でだけ true を立てる（1 周目は undefined = 不明のまま）。
- * maisonette も同じで、3 周目（nj_113）では常に true。1 周目でも階の表記が "1-2階" のような範囲なら true。
+ * maisonette も同じで、**3 周目（nj_113）でだけ** true を立てる。
+ * ⚠️ 1 周目の階の表記（"1-2階"）からは判定しない（2026-09-26 Keisuke: 判定経路を専用処理の 1 本に絞る）。
  *
  * ⚠️ **パーサが持っている値をここで写し忘れると D1 まで届かない**（2026-09-26 に address で実際に起きた・e1c26b3）。
  *    建物側の値（住所・築年・**階数**）は部屋の行に無いので、全部屋に配ること。
@@ -421,9 +422,10 @@ export function toRentListingRecord(
   // ⚠️ 階数は**建物側**（cassetteitem_detail-col3）、部屋の階は**部屋の行**（<td>）。どちらも写し忘れると D1 に届かない
   if (b.buildingFloors !== null) r.buildingFloors = b.buildingFloors;
   if (room.roomFloor !== null) r.roomFloor = room.roomFloor;
-  // メゾネット: 3 周目（nj_113）で見えた or 一覧の階が "1-2階" のような範囲表記（室内 2 層）。
+  // メゾネット: **3 周目（nj_113）で見えた部屋だけ**。
+  // ⚠️ 一覧の階が "1-2階"（室内 2 層）でもここでは立てない——判定経路を専用処理の 1 本に絞るため（2026-09-26 Keisuke）。
   // 「メゾネットでない」は入れない（NULL = 不明のまま。取りこぼしで落とさないため）
-  if (maisonette || room.multiLevel) r.maisonette = true;
+  if (maisonette) r.maisonette = true;
   return r;
 }
 

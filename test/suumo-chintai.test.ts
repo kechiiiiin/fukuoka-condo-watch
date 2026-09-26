@@ -347,12 +347,16 @@ test("階数・メゾネットが パーサ → 記録 → 取り込みの検証
   assert.equal(row.rfl, room.roomFloor, "④ D1 の行: room_floor");
   assert.equal(row.addr, rec.address, "④ D1 の行: address（2026-09-26 に落ちていた項目）");
 
-  // メゾネット（室内 2 層）は "1-2階" の部屋で立つ。**立たない部屋は 0 ではなく NULL（不明）**
+  // メゾネットは **3 周目（nj_113）でだけ**立つ。1 周目は階が "1-2階"（室内 2 層）でも立てない
+  //（2026-09-26 Keisuke: 判定経路を専用処理の 1 本に絞る）。立たない部屋は 0 ではなく NULL（不明）
   const multi = page.buildings.flatMap((x) => x.rooms.map((r) => [x, r] as const)).find(([, r]) => r.multiLevel);
   assert.ok(multi, "架空ページに室内 2 層（1-2階）の部屋がある");
   const mRec = toRentListingRecord(multi[0], multi[1])!;
-  assert.equal(mRec.maisonette, true, "② 記録: 階が範囲表記ならメゾネット");
-  assert.equal(listingUpsertRow(mRec, "40133").mais, 1, "④ D1 の行: maisonette = 1");
+  assert.equal(mRec.maisonette, undefined, "② 記録: 1 周目では階が範囲表記でもメゾネットの印を立てない");
+  assert.equal(listingUpsertRow(mRec, "40133").mais, null, "④ D1 の行: 1 周目は NULL のまま");
+  const mRec3 = toRentListingRecord(multi[0], multi[1], false, true)!;
+  assert.equal(mRec3.maisonette, true, "② 記録: 3 周目（nj_113）で見えた部屋には立つ");
+  assert.equal(listingUpsertRow(mRec3, "40133").mais, 1, "④ D1 の行: maisonette = 1");
   assert.equal(rec.maisonette, undefined, "単独の階の部屋にはメゾネットの印を立てない（不明のまま）");
   assert.equal(listingUpsertRow(rec, "40133").mais, null, "④ D1 の行: 不明は NULL（0 を入れない）");
 });
@@ -368,9 +372,9 @@ test("架空ページ: メゾネットの 3 周目（nj_113）は見えた部屋
   assert.equal(recs.records.every((r) => r.maisonette === true), true, "3 周目で見えた部屋は全部メゾネット");
   // 1 周目は「階が範囲表記の部屋」だけに印が付き、それ以外は不明のまま（3 周目の方が拾える）
   const plain = new ChintaiSource().parsePage(renderFakeChintaiPage("fukuokashichuo", 1, 1).html, t);
-  assert.ok(plain.records.some((r) => r.maisonette === undefined), "1 周目には不明のままの部屋がある");
+  assert.equal(plain.records.every((r) => r.maisonette === undefined), true, "1 周目は全部不明のまま（階の表記からは判定しない）");
   assert.ok(
-    recs.records.length >= plain.records.filter((r) => r.maisonette).length,
+    recs.records.length >= 1,
     "3 周目は 1 周目の範囲表記だけより多く拾える",
   );
   // 取り込み要求としても通る（rent だけ・runId は 3 周目の取得元）
