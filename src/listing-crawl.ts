@@ -41,10 +41,12 @@ import { jstToday } from "./ingest";
 import { checkIngestToken } from "./ingest-auth";
 import {
   type AnyListingRecord,
+  type ChintaiDetailResult,
   CRAWL,
   CRAWL_KINDS,
   type CrawlKind,
   crawlSettings,
+  detailUpdateRow,
   fetchAndClassify,
   type IngestCursor,
   type IngestResponse,
@@ -56,6 +58,8 @@ import {
   type PageOutcome,
   type PagedIngestRequest,
   parseIngestRequest,
+  UPDATE_DETAIL_SQL,
+  UPSERT_LISTINGS_SQL,
 } from "./listing-crawl-core";
 import { DEFAULT_RENT_PICK_FILTERS } from "./listing-grouping";
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
@@ -434,7 +438,7 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   }
 
   const db = env.DB;
-  // 詳細ページ（LDK の畳数）は一覧の周回とは別の流れ（カーソルも回も持たない・UPDATE だけ）
+  // 詳細ページは一覧の周回とは別の流れ（カーソルも回も持たない・UPDATE だけ）
   if (r.op === "detail_targets") return ingestJson(await detailTargets(db, r.limit));
   if (r.op === "detail_results") return ingestJson(await detailResults(db, r.fetchedAt, r.results));
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
@@ -448,14 +452,15 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
 }
 
 // ---------------------------------------------------------------------------
-// 詳細ページ（LDK の畳数）。全条件を通った最終候補だけを取りに行く
+// 詳細ページ（LDK の畳数・部屋の階・階建・メゾネット）。全条件を通った最終候補だけを取りに行く
 // ---------------------------------------------------------------------------
 
 /**
  * 詳細ページを取る相手の条件（= /listings/picks の賃貸の既定条件のうち、D1 だけで判定できるもの）。
  * ⚠️ **建物の階数は条件に入れない**（2026-09-26 の確認で「建物が 2 階建てなのは OK」になったため）。
- * ⚠️ NULL は落とさない条件（ペット可・メゾネット）と、NULL を落とす条件（家賃・面積・間取り・築年）を取り違えないこと:
- *    ペット可は既定 ON なので pets_allowed = 1 の行だけ、メゾネットは maisonette IS NOT 1（NULL は残す）。
+ * ⚠️ NULL を落とす条件（家賃・面積・間取り・築年）と、そうでない条件を取り違えないこと:
+ *    ペット可は既定 ON なので pets_allowed = 1 の行だけ（NULL = 不明は取りに行かない）。
+ *    メゾネットは二値（0008）なので 0 の行だけ。移行前の NULL が残っていても落とさないよう COALESCE で 0 と同じに扱う。
  * 定数は src/listing-grouping.ts の DEFAULT_RENT_PICK_FILTERS と合わせてある（片方だけ直さないこと）。
  */
 const DETAIL_TARGETS_SQL = `
@@ -469,7 +474,7 @@ WHERE source = ?1 AND kind = 'rent' AND delisted_on IS NULL
   AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
   AND building_year IS NOT NULL AND building_year >= ?5
   AND pets_allowed = 1
-  AND (maisonette IS NULL OR maisonette <> 1)
+  AND COALESCE(maisonette, 0) = 0
 ORDER BY first_seen DESC, external_id`;
 
 /** 詳細ページを取る相手（未取得の最終候補）を limit 件まで返す。残り件数も返す（持ち越しの確認用） */
@@ -494,23 +499,18 @@ async function detailTargets(db: D1Database, limit: number): Promise<IngestRespo
 }
 
 /**
- * 詳細ページから読めた LDK の畳数を反映する。**UPDATE だけ**（行は増やさない）。
+ * 詳細ページから読めた値（LDK の畳数・部屋の階・階建・メゾネット）を反映する。**UPDATE だけ**（行は増やさない）。
+ * SQL とその決めごとは src/listing-crawl-core.ts の UPDATE_DETAIL_SQL（テストが素の SQLite で実行して確かめている）。
  * ⚠️ 畳数が読めなくても detail_fetched_at は入れる（同じ部屋を毎回取り直さないため）。
  */
-const UPDATE_DETAIL = `
-UPDATE listings SET ldk_tatami = (
-    SELECT json_extract(j.value, '$.t') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
-  ), detail_fetched_at = ?2
-WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
-
 async function detailResults(
   db: D1Database,
   fetchedAt: string,
-  results: { externalId: string; ldkTatami: number | null }[],
+  results: ChintaiDetailResult[],
 ): Promise<IngestResponse> {
   if (results.length === 0) return { ok: true, status: "running", updated: 0 };
-  const json = JSON.stringify(results.map((r) => ({ id: r.externalId, t: r.ldkTatami })));
-  const res = await db.prepare(UPDATE_DETAIL).bind(CHINTAI_SOURCE_ID, fetchedAt, json).run();
+  const json = JSON.stringify(results.map(detailUpdateRow));
+  const res = await db.prepare(UPDATE_DETAIL_SQL).bind(CHINTAI_SOURCE_ID, fetchedAt, json).run();
   return { ok: true, status: "running", updated: res.meta?.changes ?? results.length };
 }
 
@@ -626,42 +626,6 @@ async function cursorDone(
     .run();
 }
 
-/**
- * listings への 1 ページぶんの upsert。中古（kind='sale'）と賃貸（kind='rent'）で共通。
- * ?5 = listings.kind（取得元ごとに CRAWL_KINDS.listingKind で決まる。外からの値は入らない）。
- * 賃貸だけの列（admin_fee・deposit・key_money・pets_allowed・listed_on・building_floors・room_floor・maisonette）は
- * sale では常に NULL / 0 になる（JSON に鍵が無ければ json_extract は NULL。pets・mais は 0 を入れて渡す）。
- *
- * ⚠️ **ldk_tatami・detail_fetched_at はここで触らない**（詳細ページの周回が入れる値で、毎週の一覧クロールで消したくない）。
- */
-const UPSERT_LISTINGS = `
-INSERT INTO listings (source, external_id, kind, ward_code, building_name, building_year, built_month, area_sqm, floor_plan,
-  line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
-  price_cut_count, relisted_count, missed_runs, delisted_on, last_seen_run,
-  admin_fee, deposit, key_money, pets_allowed, listed_on, building_floors, room_floor, maisonette)
-SELECT ?1, json_extract(j.value, '$.id'), ?5, json_extract(j.value, '$.ward'), json_extract(j.value, '$.name'),
-  json_extract(j.value, '$.by'), json_extract(j.value, '$.bm'), json_extract(j.value, '$.area'), json_extract(j.value, '$.plan'),
-  json_extract(j.value, '$.line'), json_extract(j.value, '$.st'), json_extract(j.value, '$.walk'), json_extract(j.value, '$.bus'),
-  json_extract(j.value, '$.addr'), json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.price'),
-  json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3,
-  json_extract(j.value, '$.fee'), json_extract(j.value, '$.dep'), json_extract(j.value, '$.key'),
-  json_extract(j.value, '$.pets'), json_extract(j.value, '$.listed'),
-  json_extract(j.value, '$.bfl'), json_extract(j.value, '$.rfl'), json_extract(j.value, '$.mais')
-FROM json_each(?4) AS j WHERE true
-ON CONFLICT (source, external_id) DO UPDATE SET
-  ward_code = excluded.ward_code, building_name = excluded.building_name, building_year = excluded.building_year,
-  built_month = excluded.built_month, area_sqm = excluded.area_sqm, floor_plan = excluded.floor_plan,
-  line_name = excluded.line_name, station_name = excluded.station_name, walk_minutes = excluded.walk_minutes,
-  bus = excluded.bus, address = excluded.address, url = excluded.url,
-  admin_fee = excluded.admin_fee, deposit = excluded.deposit, key_money = excluded.key_money,
-  pets_allowed = excluded.pets_allowed, listed_on = COALESCE(excluded.listed_on, listings.listed_on),
-  building_floors = excluded.building_floors, room_floor = excluded.room_floor, maisonette = excluded.maisonette,
-  last_seen = excluded.last_seen,
-  price_cut_count = listings.price_cut_count + (CASE WHEN excluded.current_price < listings.current_price THEN 1 ELSE 0 END),
-  current_price = excluded.current_price,
-  relisted_count = listings.relisted_count + (CASE WHEN listings.delisted_on IS NOT NULL THEN 1 ELSE 0 END),
-  delisted_on = NULL, missed_runs = 0, last_seen_run = excluded.last_seen_run`;
-
 const INSERT_HISTORY = `
 INSERT INTO listing_price_history (source, external_id, observed_on, price)
 SELECT ?1, json_extract(j.value, '$.id'), ?2, json_extract(j.value, '$.price') FROM json_each(?3) AS j WHERE true
@@ -726,7 +690,7 @@ function listingsStore(sourceId: string, listingKind: "sale" | "rent", minSeenRa
     const stmts: D1PreparedStatement[] = [];
     // 履歴は listings を更新する前に（新規・価格変更の判定は上の prev で済ませてある）
     if (history.length) stmts.push(db.prepare(INSERT_HISTORY).bind(this.sourceId, date, JSON.stringify(history)));
-    stmts.push(db.prepare(UPSERT_LISTINGS).bind(this.sourceId, date, runId, JSON.stringify(rows), listingKind));
+    stmts.push(db.prepare(UPSERT_LISTINGS_SQL).bind(this.sourceId, date, runId, JSON.stringify(rows), listingKind));
     return { stmts, newCount, changedCount, rows: rows.length };
   },
   };
@@ -769,7 +733,9 @@ const CHINTAI_PETS_STORE: ListingStore<ListingRecord> = {
  * ペットの 2 周目とまったく同じ手口: 行は入れず、1 周目 suumo:chintai が入れた行を UPDATE するだけ。
  * 一覧のカードに「メゾネット」の表記が無いので、こうするしか取りようがない
  * （階の表記が "1-2階" の部屋は 1 周目でも分かるが、"1階" と出るメゾネットもある。2026-09-26 の実ページで確認）。
- * NULL = 不明（ワンフロアだと確かめたという意味ではない）。1 周目の upsert が毎回 NULL に戻すので、週ごとに付け直しになる。
+ * 0008 以降は二値（0 = メゾネットでない / 1 = メゾネット）。1 周目の upsert が毎週 0 に戻すので、週ごとに付け直しになる。
+ * ⚠️ **割り切り: この 3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke 了解済み・2026-09-27）。
+ *    どの回まで完走したかは listing_crawl_runs（source = suumo:chintai-maisonette・status='complete'）で追える。
  */
 const UPDATE_MAISONETTE = `
 UPDATE listings SET maisonette = 1

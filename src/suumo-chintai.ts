@@ -442,6 +442,7 @@ export function toRentListingRecord(
  *
  * ⚠️ **「畳」という字はページのどこにも出てこない**（一覧も詳細も 0 回）。畳数は「LDK16.4」のように
  *    部屋の種類の直後の数字で書かれている（単位は省略）。和室は「和6」、洋室は「洋7」、納戸は「S」。
+ *    **LD と K が分かれる掲載もある**（"和6 洋6 洋5 LD12.6K3.3" = LDK 15.9 畳。parseLdkTatami が足す）。
  * ⚠️ メゾネットは「特徴」のタグ一覧（読点区切り）に「メゾネット」として出る。
  *    一覧の階が "1階" でもメゾネットのことがある（detail_2_maisonette.html が実例）ので、
  *    一覧の範囲表記だけには頼らない。
@@ -451,7 +452,7 @@ export function toRentListingRecord(
 export interface ChintaiDetail {
   /** 「間取り詳細」の表記そのまま（"和6 洋7 洋5.2 LDK16.4"）。無ければ null */
   layoutDetail: string | null;
-  /** LDK（L を含む部屋）の畳数。"LDK16.4" → 16.4。L を含む部屋が無ければ null */
+  /** LDK（L を含む部屋）の畳数。"LDK16.4" → 16.4・"LD12.6K3.3" → 15.9（分離表記は足す）。L を含む部屋が無ければ null */
   ldkTatami: number | null;
   /** 部屋の階（"4階/8階建" → 4）。読めなければ null */
   roomFloor: number | null;
@@ -473,17 +474,30 @@ function gaiyouValue(html: string, header: string): string | null {
 /**
  * 「間取り詳細」→ LDK の畳数。
  * 部屋は「和6」「洋7」「LDK16.4」「S3」のように 種類 + 数字 で並ぶ。
- * **L を含む種類（LDK・LD・L・SLDK）の数字**を返す（複数あれば一番大きいもの）。無ければ null。
+ * **L を含む種類（LDK・LD・L・SLDK）の数字**が起点（複数あれば一番大きいもの）。無ければ null。
+ *
+ * ⚠️ **LD と K が分かれて書かれる掲載がある**（実ページに "和6 洋6 洋5 LD12.6K3.3"。2026-09-27 の直し）。
+ *    L の数字だけを見ると 12.6 になるが実質の LDK は 15.9 畳で、既定の「LDK 15畳以上」から誤って落ちていた。
+ *    そのため **L を含む種類を起点に、その直後に続く D / K / DK の数字を足す**。
+ *    和室（和）・洋室（洋）・納戸（S）は**決して足さない**（そこで加算を打ち切る）。
  */
 export function parseLdkTatami(layoutDetail: string | null | undefined): number | null {
   if (!layoutDetail) return null;
   const s = toHalfWidth(decodeEntities(layoutDetail)).toUpperCase();
+  // 種類 + 数字 を左から順に並べる。和・洋 も拾うのは、L の後ろの加算をそこで止めるため
+  const rooms: { label: string; size: number }[] = [];
+  for (const m of s.matchAll(/(和|洋|[A-Z]{1,4})\s*(\d+(?:\.\d+)?)/g)) {
+    const size = Number(m[2]);
+    if (!Number.isFinite(size) || size <= 0 || size > 200) continue;
+    rooms.push({ label: m[1] ?? "", size });
+  }
   let best: number | null = null;
-  for (const m of s.matchAll(/([A-Z]{1,4})\s*(\d+(?:\.\d+)?)/g)) {
-    const label = m[1] ?? "";
-    if (!label.includes("L")) continue;
-    const v = Number(m[2]);
-    if (!Number.isFinite(v) || v <= 0 || v > 200) continue;
+  for (let i = 0; i < rooms.length; i++) {
+    if (!(rooms[i]?.label ?? "").includes("L")) continue;
+    let sum = rooms[i]!.size;
+    for (let j = i + 1; j < rooms.length && /^(?:D|K|DK)$/.test(rooms[j]!.label); j++) sum += rooms[j]!.size;
+    // 12.6 + 3.3 = 15.899999… になるので、畳数の桁（小数第1位）に丸める（src/listing-metrics.ts と同じ流儀）
+    const v = Math.round(sum * 10) / 10;
     if (best === null || v > best) best = v;
   }
   return best;

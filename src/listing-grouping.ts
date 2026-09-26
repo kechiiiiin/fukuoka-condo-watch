@@ -43,7 +43,7 @@ export interface ListingPickRow {
   building_floors?: number | null;
   /** 部屋の階（「1-2階」は一番下の階） */
   room_floor?: number | null;
-  /** 1 = メゾネット（室内2層）/ NULL = 不明（ワンフロアだと確かめたわけではない） */
+  /** 1 = メゾネット（室内2層）/ 0 = メゾネットでない（0008 で二値にした。移行前の NULL は 0 と同じに扱う） */
   maisonette?: number | null;
   /** LDK の畳数。NULL = 未取得（15 畳未満という意味ではない） */
   ldk_tatami?: number | null;
@@ -97,7 +97,7 @@ export interface PickFilters {
   petsOnly: boolean;
   /**
    * true ならメゾネット（maisonette = 1）を除く（賃貸の既定 true）。
-   * ⚠️ **不明（NULL）は落とさない** — 3 周目で拾えなかっただけのことがあるため。
+   * 0008 で maisonette は二値になったので、残るのは 0（と移行前の NULL）の行。
    */
   excludeMaisonette: boolean;
   /**
@@ -262,7 +262,7 @@ export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: 
   // ペット相談可（賃貸のみ。sale の行は pets_allowed が 0 / undefined なので、トグル ON なら残らない）
   if (f.petsOnly && !row.pets_allowed) return false;
 
-  // メゾネット（室内 2 層）を除く。⚠️ **不明（NULL / undefined）は落とさない**（3 周目で拾えなかっただけのことがある）
+  // メゾネット（室内 2 層）を除く。0008 以降は二値なので 0（移行前の NULL・列の無い行も同じ扱い）だけが残る
   if (f.excludeMaisonette && row.maisonette === 1) return false;
 
   // LDK の畳数。⚠️ **未取得（NULL / undefined）は落とさない**（詳細ページをまだ取っていないだけのことがある）
@@ -329,7 +329,7 @@ export interface ListingGroup {
   /** 部屋の階（同条件でまとまった部屋が複数あれば一番下）。読めた行が無ければ null */
   roomFloorMin: number | null;
   roomFloorMax: number | null;
-  /** グループの中に 1 件でもメゾネットがあれば true（**false は「ワンフロアだと確かめた」ではなく「不明」**） */
+  /** グループの中に 1 件でもメゾネット（maisonette = 1）があれば true。false = メゾネットでない（二値・0008） */
   maisonette: boolean;
   /** LDK の畳数（複数の部屋がまとまっていれば一番小さいもの）。null = 未取得 */
   ldkTatami: number | null;

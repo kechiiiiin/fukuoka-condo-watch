@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  賃貸の詳細ページ（LDK の畳数・週 1 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
+  賃貸の詳細ページ（LDK の畳数・階・メゾネット・週 1 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
   ~/Library/LaunchAgents/ に置き、launchctl bootstrap する。
 -->
 <plist version="1.0">
@@ -15,7 +15,7 @@
   </array>
   <key>WorkingDirectory</key> <string>__REPO__</string>
 
-  <!-- LDK の畳数を詳細ページから取る。毎週土曜 16:00。
+  <!-- LDK の畳数・部屋の階・階建・メゾネットを詳細ページから取る。毎週土曜 16:00。
        **1 周目（06:00）・ペット（12:00）・メゾネット（14:00）の後**に走らせること
        （取りに行くのは「それらの条件を全部通った最終候補」なので、印が付く前に走らせても対象が出ない）。
        1 回 60 件まで × 61 秒 ≒ 1 時間。超えた分は次回へ持ち越し、取得済みは取り直さない。

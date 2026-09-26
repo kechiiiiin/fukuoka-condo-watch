@@ -1,10 +1,12 @@
-// 賃貸の詳細ページから「LDK の畳数」を取る（Mac 側）。launchd（ops/launchd/）から毎週土曜 16:00。
+// 賃貸の詳細ページから「LDK の畳数・部屋の階・階建・メゾネット」を取る（Mac 側）。launchd（ops/launchd/）から毎週土曜 16:00。
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ詳細ページか: **畳数は一覧に出ない**（2026-09-26 に保存した一覧 6 ページで「畳」の出現が 0 回）。
 // 詳細ページ（/chintai/jnc_<掲載 ID>/?bc=<部屋 ID>）の「物件概要」に
 //   間取り詳細 … 和6 洋7 洋5.2 LDK16.4
 // があり、ここから LDK の畳数が読める（単位の「畳」は書かれていない。src/suumo-chintai.ts の ChintaiDetail）。
+// 同じ表の「階建」（4階/8階建）と「特徴」のメゾネットタグも一緒に送る（2026-09-27〜。一覧で読めなかった分を埋める。
+// ⚠️ D1 では**一覧に値があれば一覧を優先**し、NULL のときだけ詳細で補う。メゾネットは見つかったときだけ 1 を立てる）。
 //
 // 相手への負担を増やさないための決めごと:
 //   - **取りに行くのは「全条件を通った最終候補」だけ**（家賃15万以下・70㎡以上・3LDK以上・築25年以内・
@@ -21,7 +23,7 @@
 //   npm run crawl:detail -- --dry-run     # 設定の確認だけ（SUUMO にも Worker にもアクセスしない）
 //   npm run crawl:detail -- --max 3       # 試し走り（3 件で切り上げ。続きは次回）
 
-import { CHINTAI_DETAIL_MAX_PER_RUN, CRAWL, crawlSettings } from "../src/listing-crawl-core";
+import { CHINTAI_DETAIL_MAX_PER_RUN, type ChintaiDetailResult, CRAWL, crawlSettings } from "../src/listing-crawl-core";
 import { DEFAULT_USER_AGENT } from "../src/suumo-source";
 import { hasChintaiDetailStructure, parseChintaiDetailPage } from "../src/suumo-chintai";
 import { detectBlock } from "../src/suumo";
@@ -40,11 +42,15 @@ function numArg(name: string, dflt: number): number {
   return v;
 }
 
-interface FetchedDetail {
-  externalId: string;
-  ldkTatami: number | null;
+/** Worker に送る 1 件（ChintaiDetailResult）＋ 打ち切り判定。読めなかった項目は null / false で送る */
+interface FetchedDetail extends ChintaiDetailResult {
   /** 止まるべき応答なら種別（403 等）。あれば打ち切る */
   block: string | null;
+}
+
+/** 読めなかったとき（通信失敗・掲載消滅・HTTP エラー）の中身 */
+function emptyDetail(externalId: string, block: string | null = null): FetchedDetail {
+  return { externalId, ldkTatami: null, roomFloor: null, buildingFloors: null, maisonette: false, block };
 }
 
 async function fetchDetail(url: string, externalId: string, userAgent: string): Promise<FetchedDetail> {
@@ -63,21 +69,29 @@ async function fetchDetail(url: string, externalId: string, userAgent: string): 
   } catch (e) {
     // 通信の失敗は「読めなかった」扱い（次回また取れるよう、結果は送らない）
     log(`${externalId}: fetch 失敗 ${String(e).slice(0, 200)}`);
-    return { externalId, ldkTatami: null, block: null };
+    return emptyDetail(externalId);
   }
   const block = detectBlock(status, html, { url, location }, CHINTAI_PATH_PREFIX, hasChintaiDetailStructure);
-  if (block) return { externalId, ldkTatami: null, block };
+  if (block) return emptyDetail(externalId, block);
   if (status === 404 || (status >= 300 && status < 400)) {
     // 掲載が消えた。畳数は読めないが「取った」ことにして取り直さない（掲載終了は一覧の周回が付ける）
     log(`${externalId}: HTTP ${status}（掲載が無くなった）`);
-    return { externalId, ldkTatami: null, block: null };
+    return emptyDetail(externalId);
   }
   if (status !== 200) {
     log(`${externalId}: HTTP ${status}`);
-    return { externalId, ldkTatami: null, block: null };
+    return emptyDetail(externalId);
   }
   const d = parseChintaiDetailPage(html);
-  return { externalId, ldkTatami: d.ldkTatami, block: null };
+  // ⚠️ ここに写し忘れると、パーサが読めていても D1 まで届かない（2026-09-26 に address で実際に起きた・e1c26b3）
+  return {
+    externalId,
+    ldkTatami: d.ldkTatami,
+    roomFloor: d.roomFloor,
+    buildingFloors: d.buildingFloors,
+    maisonette: d.maisonette,
+    block: null,
+  };
 }
 
 async function main(): Promise<number> {
@@ -87,7 +101,7 @@ async function main(): Promise<number> {
   const s = crawlSettings(cfg.env);
   const origin = s.origin ?? "https://suumo.jp";
   const userAgent = s.userAgent ?? DEFAULT_USER_AGENT;
-  log(`賃貸の詳細ページ（LDK 畳数）・取得先 ${origin}・間隔 ${s.intervalMs}ms・上限 ${max} 件・取り込み先 ${new URL(cfg.ingestUrl).origin}`);
+  log(`賃貸の詳細ページ（LDK 畳数・階・メゾネット）・取得先 ${origin}・間隔 ${s.intervalMs}ms・上限 ${max} 件・取り込み先 ${new URL(cfg.ingestUrl).origin}`);
   if (dryRun) {
     log("--dry-run: 設定の確認だけで終わる");
     return 0;
@@ -100,7 +114,7 @@ async function main(): Promise<number> {
     log(`対象 ${targets.length} 件（未取得の最終候補は全部で ${t.remaining ?? "?"} 件）`);
     if (targets.length === 0) return 0;
 
-    const results: { externalId: string; ldkTatami: number | null }[] = [];
+    const results: ChintaiDetailResult[] = [];
     let lastFetch = 0;
     for (const target of targets) {
       const wait = Math.max(0, lastFetch + s.intervalMs - Date.now());
@@ -114,8 +128,12 @@ async function main(): Promise<number> {
         await send(cfg, results);
         return 2;
       }
-      results.push({ externalId: r.externalId, ldkTatami: r.ldkTatami });
-      log(`${r.externalId}: LDK ${r.ldkTatami === null ? "読めず" : `${r.ldkTatami}畳`}`);
+      const { block: _block, ...result } = r;
+      results.push(result);
+      log(
+        `${r.externalId}: LDK ${r.ldkTatami === null ? "読めず" : `${r.ldkTatami}畳`}` +
+          `・階 ${r.roomFloor ?? "?"}/${r.buildingFloors ?? "?"}階建${r.maisonette ? "・メゾネット" : ""}`,
+      );
     }
     await send(cfg, results);
     const left = Math.max(0, (t.remaining ?? results.length) - results.length);
@@ -130,7 +148,7 @@ async function main(): Promise<number> {
 }
 
 /** まとめて送る（1 件ずつ送らず D1 への書き込みを 1 回にする）。読めなかった部屋も送る = 取り直さない印になる */
-async function send(cfg: Config, results: { externalId: string; ldkTatami: number | null }[]): Promise<void> {
+async function send(cfg: Config, results: ChintaiDetailResult[]): Promise<void> {
   if (results.length === 0) return;
   const r = await ingest(cfg, { op: "detail_results", kind: "chintai", fetchedAt: new Date().toISOString(), results });
   log(`反映 ${r.updated ?? 0} 件`);

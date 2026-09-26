@@ -22,7 +22,7 @@ const SALE_DEFAULTS_TEXT =
 const RENT_DEFAULTS_TEXT =
   `既定の条件: 家賃 ${R.priceMaxMan}万円以下・${R.areaMin}㎡以上・${R.planRoomsMin}LDK以上・築${R.ageMax}年以内・` +
   `ペット相談可・メゾネットでない・LDK ${R.ldkTatamiMin}畳以上（徒歩分は指定なし・バス便も含む・建物の階数では絞りません）。` +
-  `メゾネット不明・LDK畳数 未取得のものは落としていません。空欄の項目は既定の値で絞ります。`;
+  `LDK畳数 未取得のものは落としていません。空欄の項目は既定の値で絞ります。`;
 
 const HTML = `<!doctype html>
 <html lang="ja">
@@ -103,7 +103,7 @@ const HTML = `<!doctype html>
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
         <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1" checked> ペット相談可のみ（不明は除く）</label>
-        <label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1" checked> メゾネットを除く（不明は残す）</label>
+        <label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1" checked> メゾネットを除く</label>
         <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
@@ -276,8 +276,8 @@ const HTML = `<!doctype html>
     var floors = it.buildingFloors === null || it.buildingFloors === undefined ? "階建 不明" : (it.buildingFloors + "階建");
     var roomFloor = it.roomFloorMin === null || it.roomFloorMin === undefined ? "部屋の階 不明"
       : (it.roomFloorMin === it.roomFloorMax ? it.roomFloorMin + "階" : it.roomFloorMin + "〜" + it.roomFloorMax + "階");
-    // メゾネットは 1 か不明だけ（「ワンフロアだと確かめた」という印は無い）
-    var maisBadge = it.maisonette ? '<span class="badge warnbadge">メゾネット</span>' : '<span class="badge">メゾネット 不明</span>';
+    // メゾネットは二値（0008）。メゾネットのときだけバッジを出す（ワンフロアは既定なので何も出さない）
+    var maisBadge = it.maisonette ? '<span class="badge warnbadge">メゾネット</span>' : '';
     // LDK の畳数は詳細ページを取れた部屋にだけ付く。未取得は「15畳未満」ではない
     var tatami = it.ldkTatami === null || it.ldkTatami === undefined
       ? '<span class="meta">LDK畳数 未取得' + (it.detailFetched ? "（詳細ページに記載なし）" : "") + "</span>"

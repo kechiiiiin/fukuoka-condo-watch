@@ -290,17 +290,34 @@ export type IngestRequest =
   /** 実行の終わり（借りを返し、結果を記録する） */
   | { op: "end"; kind: CrawlKind; runId: string; summary: { status: string; pages: number; detail?: string } }
   /**
-   * 詳細ページ（LDK の畳数）を取る相手をもらう。**全条件を通った最終候補だけ**を Worker 側が選ぶ
+   * 詳細ページ（LDK の畳数・部屋の階・階建・メゾネット）を取る相手をもらう。**全条件を通った最終候補だけ**を Worker 側が選ぶ
    * （家賃・面積・間取り・築年・ペット可・メゾネットでない）。既に取ったもの（detail_fetched_at IS NOT NULL）は返らない。
    */
   | { op: "detail_targets"; kind: CrawlKind; limit: number }
-  /** 詳細ページから読めた LDK の畳数を反映する（行は増やさない・UPDATE だけ）。読めなくても送る（取り直さないため） */
+  /** 詳細ページから読めた項目を反映する（行は増やさない・UPDATE だけ）。読めなくても送る（取り直さないため） */
   | {
       op: "detail_results";
       kind: CrawlKind;
       fetchedAt: string;
-      results: { externalId: string; ldkTatami: number | null }[];
+      results: ChintaiDetailResult[];
     };
+
+/**
+ * 詳細ページ 1 件から Mac が送ってくる結果（src/suumo-chintai.ts の ChintaiDetail のうち D1 に入れる分）。
+ * **鍵の名前は UPDATE_DETAIL_SQL の json_extract(j.value, '$.<鍵>') と 1:1** なので片方だけ直さないこと
+ * （ここに写し忘れるとパーサが読めていても D1 まで届かない。2026-09-26 に address で実際に起きた・e1c26b3）。
+ */
+export interface ChintaiDetailResult {
+  externalId: string;
+  /** LDK の畳数。読めなければ null（それでも送る = 取り直さない印） */
+  ldkTatami: number | null;
+  /** 部屋の階。⚠️ 一覧にも入る列なので、D1 では**一覧側に値があればそちらを優先**し NULL のときだけこれで補う */
+  roomFloor?: number | null;
+  /** 建物の階数。同じく一覧優先で、NULL のときだけ補う */
+  buildingFloors?: number | null;
+  /** 詳細ページの特徴タグに「メゾネット」があったときだけ true。false は「ワンフロア」の証拠にしないので 0 を書かない */
+  maisonette?: boolean;
+}
 
 /**
  * listings への UPSERT（src/listing-crawl.ts の UPSERT_LISTINGS）に渡す JSON 1 行ぶん。
@@ -335,8 +352,12 @@ export interface ListingUpsertRow {
   bfl: number | null;
   /** 部屋の階（情報として出すだけ） */
   rfl: number | null;
-  /** 1 = メゾネット / null = 不明（**0 は入れない**。ワンフロアだと確かめたことにしないため） */
-  mais: number | null;
+  /**
+   * 0 = メゾネットでない（既定）/ 1 = メゾネット。
+   * ⚠️ 0008 で二値にした（それまでは「NULL = 不明」で、画面がほぼ全件「メゾネット 不明」になっていた）。
+   *    1 周目はここで毎週 0 に戻し、3 周目（nj_113）で見えた部屋にだけ 1 を立て直す。
+   */
+  mais: 0 | 1;
 }
 
 /** ListingRecord → UPSERT に渡す 1 行。ward が無ければクロール中の市区町村コードを入れる */
@@ -364,9 +385,103 @@ export function listingUpsertRow(r: ListingRecord, areaCode: string): ListingUps
     listed: r.listedOn ?? null,
     bfl: r.buildingFloors ?? null,
     rfl: r.roomFloor ?? null,
+    // メゾネットは二値（0008）。1 周目は必ず 0 を入れ、3 周目で見えた部屋にだけ 1 を立て直す
+    mais: r.maisonette ? 1 : 0,
+  };
+}
+
+/**
+ * listings への 1 ページぶんの upsert（src/listing-crawl.ts の listingsStore が使う）。
+ * 中古（kind='sale'）と賃貸（kind='rent'）で共通。?1 = 取得元・?2 = 日付・?3 = run_id・?4 = listingUpsertRow の配列 JSON・
+ * ?5 = listings.kind（取得元ごとに CRAWL_KINDS.listingKind で決まる。外からの値は入らない）。
+ * 賃貸だけの列（admin_fee・deposit・key_money・pets_allowed・listed_on・building_floors・room_floor・maisonette）は
+ * sale では常に NULL / 0 になる（JSON に鍵が無ければ json_extract は NULL。pets・mais は 0 を入れて渡す）。
+ *
+ * ⚠️ **ldk_tatami・detail_fetched_at はここで触らない**（詳細ページの周回が入れる値で、毎週の一覧クロールで消したくない）。
+ * ⚠️ **building_floors / room_floor も詳細で補った値を毎週消さない**: 一覧に値があれば一覧を正にし、
+ *    一覧が NULL のときだけ今ある値（詳細由来）を残す（COALESCE(excluded, listings)。2026-09-27）。
+ * ⚠️ **maisonette は毎週 0 に戻す**（二値・0008）。3 周目（nj_113）が同じ日に走って 1 を立て直す前提。
+ *    割り切り: **3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke 了解済み・2026-09-27）。
+ *    どの回まで 3 周目が完走したかは listing_crawl_runs（source = suumo:chintai-maisonette・status='complete'）で追える。
+ */
+export const UPSERT_LISTINGS_SQL = `
+INSERT INTO listings (source, external_id, kind, ward_code, building_name, building_year, built_month, area_sqm, floor_plan,
+  line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
+  price_cut_count, relisted_count, missed_runs, delisted_on, last_seen_run,
+  admin_fee, deposit, key_money, pets_allowed, listed_on, building_floors, room_floor, maisonette)
+SELECT ?1, json_extract(j.value, '$.id'), ?5, json_extract(j.value, '$.ward'), json_extract(j.value, '$.name'),
+  json_extract(j.value, '$.by'), json_extract(j.value, '$.bm'), json_extract(j.value, '$.area'), json_extract(j.value, '$.plan'),
+  json_extract(j.value, '$.line'), json_extract(j.value, '$.st'), json_extract(j.value, '$.walk'), json_extract(j.value, '$.bus'),
+  json_extract(j.value, '$.addr'), json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.price'),
+  json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3,
+  json_extract(j.value, '$.fee'), json_extract(j.value, '$.dep'), json_extract(j.value, '$.key'),
+  json_extract(j.value, '$.pets'), json_extract(j.value, '$.listed'),
+  json_extract(j.value, '$.bfl'), json_extract(j.value, '$.rfl'), json_extract(j.value, '$.mais')
+FROM json_each(?4) AS j WHERE true
+ON CONFLICT (source, external_id) DO UPDATE SET
+  ward_code = excluded.ward_code, building_name = excluded.building_name, building_year = excluded.building_year,
+  built_month = excluded.built_month, area_sqm = excluded.area_sqm, floor_plan = excluded.floor_plan,
+  line_name = excluded.line_name, station_name = excluded.station_name, walk_minutes = excluded.walk_minutes,
+  bus = excluded.bus, address = excluded.address, url = excluded.url,
+  admin_fee = excluded.admin_fee, deposit = excluded.deposit, key_money = excluded.key_money,
+  pets_allowed = excluded.pets_allowed, listed_on = COALESCE(excluded.listed_on, listings.listed_on),
+  building_floors = COALESCE(excluded.building_floors, listings.building_floors),
+  room_floor = COALESCE(excluded.room_floor, listings.room_floor),
+  maisonette = excluded.maisonette,
+  last_seen = excluded.last_seen,
+  price_cut_count = listings.price_cut_count + (CASE WHEN excluded.current_price < listings.current_price THEN 1 ELSE 0 END),
+  current_price = excluded.current_price,
+  relisted_count = listings.relisted_count + (CASE WHEN listings.delisted_on IS NOT NULL THEN 1 ELSE 0 END),
+  delisted_on = NULL, missed_runs = 0, last_seen_run = excluded.last_seen_run`;
+
+/**
+ * 詳細ページの結果 → UPDATE_DETAIL_SQL に渡す JSON 1 行ぶん（鍵は SQL の json_extract と 1:1）。
+ * mais は **1 か null だけ**（0 は入れない = 詳細ページで「メゾネット」タグが見つからないことを
+ * 「ワンフロア」の証拠にしない）。0 を書くのは 1 周目の一覧クロールだけ。
+ */
+export function detailUpdateRow(r: ChintaiDetailResult): {
+  id: string;
+  t: number | null;
+  rfl: number | null;
+  bfl: number | null;
+  mais: 1 | null;
+} {
+  return {
+    id: r.externalId,
+    t: r.ldkTatami,
+    rfl: r.roomFloor ?? null,
+    bfl: r.buildingFloors ?? null,
     mais: r.maisonette ? 1 : null,
   };
 }
+
+/**
+ * 詳細ページの結果を listings に反映する UPDATE（?1 = 取得元・?2 = 取得時刻・?3 = detailUpdateRow の配列 JSON）。
+ * SQL を src/listing-crawl.ts ではなくここに置いているのは、テスト（test/listing-crawl-sql.test.ts）が
+ * 素の SQLite でそのまま実行して「一覧由来の値を壊さないか」まで確かめられるようにするため。
+ *
+ * ⚠️ **一覧クロール由来の値を詳細で壊さない**: building_floors / room_floor は一覧にも入る列なので、
+ *    **一覧側に値があればそれを優先し、NULL のときだけ詳細で補う**（COALESCE の順序を入れ替えないこと）。
+ * ⚠️ **メゾネットは詳細で「メゾネット」タグが見つかったときだけ 1 を立てる**。
+ *    見つからないことは「メゾネットでない」の証拠にならないので、ここから 0 を書くことは決してしない
+ *    （0 に戻すのは 1 周目の一覧クロールの upsert だけ。0008）。
+ * ⚠️ 畳数が読めなくても detail_fetched_at は入れる（同じ部屋を毎回取り直さないため）。
+ */
+export const UPDATE_DETAIL_SQL = `
+UPDATE listings SET ldk_tatami = (
+    SELECT json_extract(j.value, '$.t') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ),
+  room_floor = COALESCE(listings.room_floor, (
+    SELECT json_extract(j.value, '$.rfl') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  )),
+  building_floors = COALESCE(listings.building_floors, (
+    SELECT json_extract(j.value, '$.bfl') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  )),
+  maisonette = CASE WHEN (
+      SELECT json_extract(j.value, '$.mais') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+    ) = 1 THEN 1 ELSE listings.maisonette END,
+  detail_fetched_at = ?2
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
 
 /** 一覧の周回（カーソル・回を持つ）の要求だけ。詳細ページ（detail_*）は別の流れなので含まない */
 export type PagedIngestRequest = Extract<IngestRequest, { op: "begin" | "page" | "end" }>;
@@ -600,14 +715,31 @@ export function parseIngestRequest(body: unknown): IngestRequest {
       const fetchedAt = body.fetchedAt;
       if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
       if (!Array.isArray(body.results) || body.results.length > CHINTAI_DETAIL_MAX_PER_RUN) throw new Error("results が不正");
-      const results = body.results.map((x) => {
+      const results = body.results.map((x): ChintaiDetailResult => {
         if (!isObj(x)) throw new Error("results の要素が不正");
         const externalId = x.externalId;
         if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
         const t = x.ldkTatami;
-        if (t === undefined || t === null) return { externalId, ldkTatami: null };
-        if (typeof t !== "number" || !Number.isFinite(t) || t <= 0 || t > 200) throw new Error("ldkTatami が不正");
-        return { externalId, ldkTatami: t };
+        let ldkTatami: number | null = null;
+        if (t !== undefined && t !== null) {
+          if (typeof t !== "number" || !Number.isFinite(t) || t <= 0 || t > 200) throw new Error("ldkTatami が不正");
+          ldkTatami = t;
+        }
+        // 階・メゾネットは後から足した項目なので、無い（古い Mac 側スクリプト）ときは「読めなかった」扱い
+        const floor = (v: unknown, name: string): number | null => {
+          if (v === undefined || v === null) return null;
+          if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 200) throw new Error(`${name} が不正`);
+          return v;
+        };
+        const m = x.maisonette;
+        if (m !== undefined && typeof m !== "boolean") throw new Error("maisonette が不正");
+        return {
+          externalId,
+          ldkTatami,
+          roomFloor: floor(x.roomFloor, "roomFloor"),
+          buildingFloors: floor(x.buildingFloors, "buildingFloors"),
+          maisonette: m === true,
+        };
       });
       return { op: "detail_results", kind, fetchedAt, results };
     }

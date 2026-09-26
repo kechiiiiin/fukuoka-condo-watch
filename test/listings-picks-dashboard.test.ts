@@ -203,7 +203,8 @@ test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・
   // 0007 で足した 4 項目（建物階数・部屋の階・メゾネット可否・LDK 畳数）がカードに出る
   assert.ok(cards.includes("8階建"), "建物の階数");
   assert.ok(cards.includes("4階"), "部屋の階");
-  assert.ok(cards.includes("メゾネット 不明"), "メゾネットは 1 か不明だけ（ワンフロアだと確かめた印は無い）");
+  // 0008: メゾネットは二値。0 のカードにはバッジを出さない（「メゾネット 不明」は廃止）
+  assert.ok(!cards.includes("メゾネット"), "メゾネットでない部屋にはバッジを出さない");
   assert.ok(cards.includes("LDK 16.4畳"), "LDK の畳数");
   assert.ok(cards.includes("初めて見た日 2026-09-20"), "SUUMO の掲載日は取れないので「初めて見た日」と出す");
   assert.ok(!cards.includes("情報公開日"));
@@ -211,4 +212,14 @@ test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・
   assert.ok(!cards.includes("価格維持"), "価格維持は売買の指標なので出さない");
   assert.ok(!cards.includes("㎡単価"));
   assert.ok(h.ids.get("footer")!.innerHTML.includes("賃貸掲載"), "出典の注記も賃貸向けに差し替わる");
+});
+
+// 0008（2026-09-27）: maisonette は 0/1 の二値。1 のときだけ警告色のバッジを出す
+test("画面（賃貸）: メゾネットの部屋にはバッジが出る", async () => {
+  const h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, maisonette: true }] }));
+  h.run();
+  await flush();
+  const cards = h.ids.get("cards")!.innerHTML;
+  assert.ok(cards.includes('<span class="badge warnbadge">メゾネット</span>'), "メゾネットのバッジ");
+  assert.ok(!cards.includes("メゾネット 不明"), "「不明」バッジは廃止した");
 });

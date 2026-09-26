@@ -16,13 +16,13 @@
 | `src/metrics.ts` | 件数・㎡単価中央値・築年帯・価格帯・売りやすさ/貸しやすさスコア（式は画面にも表示）。`scope=city|suburb|all` で範囲を切り替え |
 | `src/listing.ts` | 掲載情報（掲載日数・値下げ）用の `ListingSource` / `PagedListingSource` 差し込み口 |
 | `src/suumo.ts` / `src/suumo-source.ts` | SUUMO 検索結果 HTML のパーサ・正規化（価格→万円・㎡・築年月・駅/徒歩・市区町村コード）と `SuumoSource` |
-| `src/suumo-chintai.ts` | SUUMO 賃貸検索結果のパーサ・正規化（賃料・管理費・敷金・礼金・間取り・面積・築年数・沿線/駅・徒歩分・ペット相談可・**建物の階数・部屋の階・メゾネット**）と `ChintaiSource`、詳細ページのパーサ（**LDK の畳数**）。2026-09-26 に実ページで確認済み |
+| `src/suumo-chintai.ts` | SUUMO 賃貸検索結果のパーサ・正規化（賃料・管理費・敷金・礼金・間取り・面積・築年数・沿線/駅・徒歩分・ペット相談可・**建物の階数・部屋の階・メゾネット**）と `ChintaiSource`、詳細ページのパーサ（**LDK の畳数・部屋の階・階建・メゾネット**）。2026-09-26 に実ページで確認済み |
 | `src/suumo-shinchiku.ts` | SUUMO 新築マンション検索結果のパーサ・正規化（価格の幅・未定・予定、面積の幅、引渡時期、販売状況、物件/住戸の別）と `ShinchikuSource` |
 | `src/listing-crawl.ts` | 掲載クロールの D1 側。Mac からの取り込み口 `POST /api/ingest/listings`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了。種類（中古 `listings` / 新築 `new_listings`）は `ListingStore` で差し替える |
 | `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・種類 `CRAWL_KINDS`・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST・賃貸は土曜 06:00 / 12:00（`chintai_pets`）/ 14:00（`chintai_maisonette`） |
-| `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎週土曜 16:00 |
+| `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎週土曜 16:00 |
 | `scripts/crawl-local-lib.ts` | 上の 2 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
 | `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット相談可・メゾネットでない・LDK15畳以上（建物の階数では絞らない）。ペット可否とメゾネットは 2・3 周目、LDK 畳数は詳細ページで取る） |
@@ -277,25 +277,37 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 - URL は `/chintai/fukuoka/sc_<slug>/nj_113/?cb=…&md=…`。**取得時の絞り込みクエリはパスの上に載る**
   （2026-09-26 に本番で 1 回確認: 中央区 734 件 → **37 件・1 ページ**、返るのは 3LDK/3SLDK・78.96㎡ 以上）
 - 3 周目は**行を入れない**。1 周目が入れた行のうち**見えた部屋にだけ** `maisonette = 1` を立てる（`UPDATE` だけ）
-- **`maisonette` の NULL は「不明」であって「ワンフロアだと確かめた」ではない**。0 は入れない。
-  1 周目の upsert が毎回上書きするので → **3 周目は必ず 1 周目の後**（launchd は 06:00 / 12:00 / **14:00**）
-- 1 周目でも**部屋の階が範囲表記（`1-2階`）なら** `maisonette = 1` を立てる（住戸が 2 フロアにまたがっている）。
-  ⚠️ ただしこれだけでは足りない: **一覧の階が `1階`（単独）でもメゾネットの部屋が実在する**
+- **`maisonette` は 0/1 の二値**（`migrations/0008_maisonette_binary.sql`・2026-09-27）。
+  0 = メゾネットでない（既定）・1 = メゾネット。**「NULL = 不明」はやめた**——1 を立てられるのは 3 周目で見えた部屋だけなので、
+  それ以外が全部「メゾネット 不明」になり画面がほぼ全件「不明」で埋まっていた。3 周目は全市区町村を完走しているので、
+  表示上の推定ではなくデータの持ち方を二値にした（Keisuke 判断）
+- 0 を書くのは **1 周目の upsert だけ**（毎週いったん落とす）→ **3 周目は必ず 1 周目の後**（launchd は 06:00 / 12:00 / **14:00**）。
+  1 を立てるのは 3 周目と、詳細ページで特徴タグに「メゾネット」が出たとき（`UPDATE_DETAIL_SQL`。**1 を消す方向には書かない**）
+- ⚠️ **割り切り: 3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke 了解済み）。
+  どの回まで完走したかは `listing_crawl_runs`（`source = 'suumo:chintai-maisonette' AND status = 'complete'`）で追える
+- 1 周目の**部屋の階が範囲表記（`1-2階`）でも印は立てない**（判定経路を 3 周目の 1 本に絞った・`990c2a8`。階は `room_floor` に残る）。
+  ⚠️ **一覧の階が `1階`（単独）でもメゾネットの部屋が実在する**
   （`nj_113` の中央区 19 行のうち 8 行が `1階`。詳細ページの特徴タグに「メゾネット」があるものを実確認）
 
-#### LDK の畳数（詳細ページ・2026-09-26〜）
+#### LDK の畳数・階・メゾネット（詳細ページ・2026-09-26〜）
 
 - **畳数は一覧に出ない**（保存した一覧 6 ページで「畳」の出現が **0 回**）。詳細ページ
   `/chintai/jnc_<掲載 ID>/?bc=<部屋 ID>` の「物件概要」の表にだけある:
-  - `<th>間取り詳細</th><td>和6 洋7 洋5.2 LDK16.4</td>` … **「畳」の字は書かれない**（`LDK16.4` = 16.4 畳）
+  - `<th>間取り詳細</th><td>和6 洋7 洋5.2 LDK16.4</td>` … **「畳」の字は書かれない**（`LDK16.4` = 16.4 畳）。
+    ⚠️ **`LD` と `K` が分かれる掲載がある**（`和6 洋6 洋5 LD12.6K3.3` = LDK **15.9 畳**）。
+    L を含む種類を起点に**直後の `D`/`K`/`DK` を足す**（和・洋・S は足さない。2026-09-27 の直し。それまでは 12.6 と読んで「15 畳以上」から誤って落ちていた）
   - `<th>階建</th><td>4階/8階建</td>`（`1階/地上3階建` の形もある）
   - 特徴のタグ一覧（読点区切り）に `メゾネット` が出ることがある
 - **取りに行くのは「全条件を通った最終候補」だけ**（家賃15万以下・70㎡以上・3LDK以上・築25年以内・
   ペット可・メゾネットでない）。誰を取るかは Worker が D1 で選ぶ（`src/listing-crawl.ts` の `detailTargets`）
 - **1 回の実行で 60 件まで**（`CHINTAI_DETAIL_MAX_PER_RUN`。60 秒間隔なので ≒1 時間）。超えた分は次回へ持ち越し
 - **取得済みは取り直さない**（`detail_fetched_at` が入っていれば対象外。畳数が読めなかった部屋も含む）
+- 反映するのは `ldk_tatami` と、**部屋の階・階建・メゾネット**（2026-09-27〜。それまで `ldk_tatami` だけ送っていたので、
+  詳細で読めていても画面が「部屋の階 不明／階建 不明」のままだった）。決めごと:
+  - ⚠️ `building_floors` / `room_floor` は一覧にも入る列なので、**一覧側に値があれば一覧を優先**し、NULL のときだけ詳細で補う
+  - ⚠️ メゾネットは**タグが見つかったときだけ 1**。見つからないことは証拠にしないので 0 は書かない
 - `ldk_tatami` の **NULL は「未取得」であって「15 畳未満」ではない**。既定の絞り込みでも落とさない。
-  1 周目の upsert は `ldk_tatami` / `detail_fetched_at` を触らないので、毎週のクロールで消えない
+  1 周目の upsert は `ldk_tatami` / `detail_fetched_at` を触らず、**詳細で補った階も消さない**（`COALESCE(excluded, listings)`）ので、毎週のクロールで消えない
 - スクリプトは `scripts/suumo-chintai-detail.ts`（`npm run crawl:detail`）。launchd は**毎週土曜 16:00**
 
 #### 一覧から取れないもの（賃貸）
@@ -312,12 +324,19 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 - `migrations/0006_listings_rent.sql`: `listings` に `admin_fee`・`deposit`・`key_money`・`pets_allowed`・`listed_on` を足しただけ（**追加のみ**）。
   クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:chintai` / `suumo:chintai-pets` で中古と同じ表を使う
 - `migrations/0007_listings_floors.sql`（2026-09-26）: `building_floors`・`room_floor`・`maisonette`・`ldk_tatami`・`detail_fetched_at`（**追加のみ**）
+- `migrations/0008_maisonette_binary.sql`（2026-09-27）: `maisonette` を二値に（既存の NULL を 0 に埋める）。
+  ⚠️ 0007 の「0 は入れない・NULL = 不明」という設計はここで取り消し（0007 自体は履歴なので直さない）。
+  列の `DEFAULT` は SQLite では後から変えられないので、**書き手（`listingUpsertRow`）が必ず 0 か 1 を入れる**ことで既定 0 を保つ
 - 取り込みは中古・新築と同じ `POST /api/ingest/listings` に `kind: "chintai"` / `"chintai_pets"` / `"chintai_maisonette"` を付けて送る。
   詳細ページだけは回もカーソルも持たないので `op: "detail_targets"` / `"detail_results"`（どちらも `kind: "chintai"` 固定・`UPDATE` だけ）
   **取得元ごとに許す `listings.kind`** は `src/listing-crawl-core.ts` の `CRAWL_KINDS[kind].listingKind`（中古 = `sale`・賃貸 = `rent`・新築 = `null`）。食い違う要求は 400
 - ⚠️ **パーサ → 記録（`toRentListingRecord`）→ 取り込みの検証（`parseRecord`）→ D1 の行（`listingUpsertRow`）** の
   どこかで写し忘れると値が D1 まで届かない（2026-09-26 に `address` で実際に起きた・`e1c26b3`）。
-  UPSERT の JSON の鍵は `listingUpsertRow` が正で、`UPSERT_LISTINGS` の `json_extract` と 1:1。各段を通ることをテストで押さえている
+  UPSERT の JSON の鍵は `listingUpsertRow` が正で、`UPSERT_LISTINGS_SQL` の `json_extract` と 1:1。各段を通ることをテストで押さえている
+  （詳細ページは `ChintaiDetailResult` → `detailUpdateRow` → `UPDATE_DETAIL_SQL` が同じ関係）
+- 保存の SQL（`UPSERT_LISTINGS_SQL`・`UPDATE_DETAIL_SQL`）は `src/listing-crawl-core.ts` に置いてある。
+  `test/listing-crawl-sql.test.ts` が `migrations/` から組んだ**素の SQLite に対して実際に実行**し、
+  「詳細が一覧の値を壊さない／一覧が詳細由来の値を毎週消さない」ことを確かめている
 - 取得元キー: `suumo:chintai@mac` / `suumo:chintai-pets@mac` / `suumo:chintai-maisonette@mac`。送信元は同じ Mac なので、**どれかがクールダウン中なら全部取らない**・**間隔の起点はどれかで最後に取った時刻**
 - launchd（土曜・**この順番でなければならない**）: `….suumo-chintai` **06:00** → `….suumo-chintai-pets` **12:00**
   → `….suumo-chintai-maisonette` **14:00** → `….suumo-chintai-detail` **16:00**。
@@ -331,7 +350,8 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 - 既定の条件: **家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内・ペット相談可・メゾネットでない・LDK 15 畳以上**。
   徒歩分は指定なし・バス便も含む・**建物の階数では絞らない**（依頼に無い条件で勝手に狭めない）
 - **ペット相談可は既定 ON**（`pets=0` で外す。**不明は残らない**）。カードには「ペット相談可」か「ペット 不明」を常に出す
-- **メゾネット除外は既定 ON**（`mais=0` で外す）。⚠️ **不明（NULL）は落とさない**。カードには「メゾネット」か「メゾネット 不明」
+- **メゾネット除外は既定 ON**（`mais=0` で外す）。`maisonette` は二値（0008）なので、残るのは 0 の部屋。
+  カードには**メゾネットのときだけ**「メゾネット」バッジを出す（「メゾネット 不明」バッジは 2026-09-27 に廃止）
 - **LDK 15 畳以上は既定 ON**（`tatami=18` で変更・`tatami=0` で外す）。⚠️ **未取得（NULL）は落とさない**。カードには「LDK 16.4畳」か「LDK畳数 未取得」
 - **建物の階数は既定では絞らない**（`floors=3` を付けたときだけ効く）。⚠️ 不明（NULL）は落とさない
 - カード: 賃料（幅）・管理費・敷金・礼金・間取り・面積・築年・**LDK 畳数**・**部屋の階／建物の階数**・沿線/駅・徒歩分・初めて見た日・貸しやすさ（市区町村）
@@ -343,8 +363,8 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 - ~~**管理費・敷金・礼金の "-"**: 詳細ページを見れば分かるかもしれない~~
   → **2026-09-26 に詳細ページで確認して決着。詳細ページでも `-` のままで判別できない**ので不明（NULL）を続ける（上の「一覧から取れないもの」）
 - **ペット可の取りこぼし**: 2 周目で見えた部屋にしか付かない（下限）。全部に付けるには詳細ページか、絞り込みを細かく分けて回す必要がある
-- **メゾネットの取りこぼし**: 3 周目（`nj_113`）と「階が範囲表記」の合わせ技だが、どちらにも出ない部屋が残りうる（NULL = 不明は落としていない）。
-  詳細ページの特徴タグには「メゾネット」が出るので、LDK 畳数を取るついでに拾う手はある（いまは実装していない）
+- **メゾネットの取りこぼし**: 3 周目（`nj_113`）で見えた部屋と、詳細ページの特徴タグに「メゾネット」が出た部屋にだけ 1 が立つ（2026-09-27 に詳細ページ分を追加）。
+  0/1 の二値にした割り切りとして、**3 周目が完走しなかった週はメゾネットの部屋が 0 のまま出てくる**（完走状態は `listing_crawl_runs` で見える）
 - **LDK 畳数の取りこぼし**: 詳細ページを取った部屋にしか付かない。1 回 60 件なので、候補が多い週は数週かけて埋まる（未取得は落としていない）
 - **取得時の絞り込みの幅**: いまは賃料 20 万円・60㎡・3K 以上。広げるとページ数（＝時間）がそのまま増える
 - **重複のまとめ方**: 売買のロジックを使い回している。別の部屋が 1 枚になる問題を直すなら、部屋の階（一覧に出ている）を鍵に足す

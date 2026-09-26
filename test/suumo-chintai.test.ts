@@ -12,6 +12,7 @@ import { fakeChintaiBuildings, renderFakeChintaiDetail, renderFakeChintaiPage } 
 import {
   CHINTAI_DETAIL_MAX_PER_RUN,
   classifyResponse,
+  detailUpdateRow,
   CRAWL_KINDS,
   listingKindOf,
   listingUpsertRow,
@@ -144,7 +145,13 @@ test("間取り詳細 → LDK の畳数 / 階建 → 部屋の階・建物の階
   assert.equal(parseLdkTatami("洋10.8 洋6.7 洋4.7 LDK17.6"), 17.6);
   assert.equal(parseLdkTatami("和4.5 洋6 洋6 洋5 LDK18"), 18);
   assert.equal(parseLdkTatami("洋8 洋6 DK7"), null, "L を含まない間取りには LDK 畳数を作らない");
-  assert.equal(parseLdkTatami("洋8 LD14 K4"), 14, "LD も L を含むので拾う");
+  // ⚠️ LD と K が分かれる掲載（2026-09-27 の直し）。L の数字だけ見ると 12.6 で「15畳以上」から誤って落ちていた
+  assert.equal(parseLdkTatami("和6 洋6 洋5 LD12.6K3.3"), 15.9, "LD + K を足す（浮動小数は小数第1位に丸める）");
+  assert.equal(parseLdkTatami("和6 洋7 洋5.2 LDK16.4"), 16.4, "単独表記は従来どおり");
+  assert.equal(parseLdkTatami("洋6 洋5 L10 D4 K3"), 17, "L・D・K が 3 つに分かれていても足す");
+  assert.equal(parseLdkTatami("洋8 LD14 K4"), 18, "LD も L を含む起点（後ろの K は足す）");
+  assert.equal(parseLdkTatami("LD12 洋6 K3"), 12, "和室・洋室をまたいだ D/K は足さない");
+  assert.equal(parseLdkTatami("LD12 S3 K3"), 12, "納戸（S）も足さない・そこで打ち切る");
   assert.equal(parseLdkTatami(null), null);
   assert.equal(parseLdkTatami("-"), null);
   assert.deepEqual(parseDetailFloors("4階/8階建"), { roomFloor: 4, buildingFloors: 8 });
@@ -348,17 +355,17 @@ test("階数・メゾネットが パーサ → 記録 → 取り込みの検証
   assert.equal(row.addr, rec.address, "④ D1 の行: address（2026-09-26 に落ちていた項目）");
 
   // メゾネットは **3 周目（nj_113）でだけ**立つ。1 周目は階が "1-2階"（室内 2 層）でも立てない
-  //（2026-09-26 Keisuke: 判定経路を専用処理の 1 本に絞る）。立たない部屋は 0 ではなく NULL（不明）
+  //（2026-09-26 Keisuke: 判定経路を専用処理の 1 本に絞る）。0008 で二値にしたので、立たない部屋は 0
   const multi = page.buildings.flatMap((x) => x.rooms.map((r) => [x, r] as const)).find(([, r]) => r.multiLevel);
   assert.ok(multi, "架空ページに室内 2 層（1-2階）の部屋がある");
   const mRec = toRentListingRecord(multi[0], multi[1])!;
   assert.equal(mRec.maisonette, undefined, "② 記録: 1 周目では階が範囲表記でもメゾネットの印を立てない");
-  assert.equal(listingUpsertRow(mRec, "40133").mais, null, "④ D1 の行: 1 周目は NULL のまま");
+  assert.equal(listingUpsertRow(mRec, "40133").mais, 0, "④ D1 の行: 1 周目は 0（毎週いったん落とす・0008）");
   const mRec3 = toRentListingRecord(multi[0], multi[1], false, true)!;
   assert.equal(mRec3.maisonette, true, "② 記録: 3 周目（nj_113）で見えた部屋には立つ");
   assert.equal(listingUpsertRow(mRec3, "40133").mais, 1, "④ D1 の行: maisonette = 1");
   assert.equal(rec.maisonette, undefined, "単独の階の部屋にはメゾネットの印を立てない（不明のまま）");
-  assert.equal(listingUpsertRow(rec, "40133").mais, null, "④ D1 の行: 不明は NULL（0 を入れない）");
+  assert.equal(listingUpsertRow(rec, "40133").mais, 0, "④ D1 の行: 既定は 0 = メゾネットでない（0008）");
 });
 
 test("架空ページ: メゾネットの 3 周目（nj_113）は見えた部屋に maisonette を立てるだけ", () => {
@@ -416,7 +423,32 @@ test("架空ページ: 詳細ページから LDK の畳数が読める・取り�
   });
   assert.equal(r.op, "detail_results");
   // ⚠️ 読めなかった部屋（null）も送る = 「取った」印になり、次回また取りに行かない
-  if (r.op === "detail_results") assert.deepEqual(r.results[1], { externalId: "100000000001", ldkTatami: null });
+  if (r.op === "detail_results") {
+    assert.deepEqual(r.results[1], {
+      externalId: "100000000001", ldkTatami: null, roomFloor: null, buildingFloors: null, maisonette: false,
+    });
+  }
+  // 2026-09-27: 階・メゾネットも送る（無い要求も通す = 古い Mac 側スクリプトを弾かない）
+  const withFloors = parseIngestRequest({
+    op: "detail_results", kind: "chintai", fetchedAt: "2026-09-27T00:00:00.000Z",
+    results: [{ externalId: room.id, ldkTatami: 15.9, roomFloor: 4, buildingFloors: 8, maisonette: true }],
+  });
+  if (withFloors.op === "detail_results") {
+    assert.deepEqual(withFloors.results[0], {
+      externalId: room.id, ldkTatami: 15.9, roomFloor: 4, buildingFloors: 8, maisonette: true,
+    });
+    // 詳細の結果 → UPDATE に渡す JSON の鍵（mais は 1 か null だけ。0 は書かない）
+    assert.deepEqual(detailUpdateRow(withFloors.results[0]!), { id: room.id, t: 15.9, rfl: 4, bfl: 8, mais: 1 });
+    assert.equal(detailUpdateRow({ externalId: room.id, ldkTatami: null, maisonette: false }).mais, null);
+  }
+  assert.throws(() => parseIngestRequest({
+    op: "detail_results", kind: "chintai", fetchedAt: "2026-09-27T00:00:00.000Z",
+    results: [{ externalId: room.id, ldkTatami: 16, roomFloor: 0 }],
+  }), /roomFloor が不正/);
+  assert.throws(() => parseIngestRequest({
+    op: "detail_results", kind: "chintai", fetchedAt: "2026-09-27T00:00:00.000Z",
+    results: [{ externalId: room.id, ldkTatami: 16, maisonette: "yes" }],
+  }), /maisonette が不正/);
   assert.throws(() => parseIngestRequest({
     op: "detail_results", kind: "chintai", fetchedAt: "2026-09-26T00:00:00.000Z",
     results: [{ externalId: room.id, ldkTatami: 0 }],
