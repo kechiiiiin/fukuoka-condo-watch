@@ -1,5 +1,5 @@
 // /listings/picks（非公開・Cloudflare Access 保護）。「条件に合う新着・掲載中の物件」ビュー。
-// 売買（中古・既定）と賃貸（?kind=rent。2026-09-26〜）をタブで切り替える。データは /api/listings/picks（src/listing-picks.ts）。
+// 賃貸（既定。2026-09-26〜）と売買（中古・?kind=sale）をタブで切り替える。方針が賃貸優先になったため既定は賃貸。データは /api/listings/picks（src/listing-picks.ts）。
 // ⚠️ クライアント側スクリプトではバッククォートと「ドル記号+波括弧」を使わない（この TS テンプレートに展開されてしまう）。
 
 import { DEFAULT_PICK_FILTERS, DEFAULT_RENT_PICK_FILTERS } from "./listing-grouping";
@@ -80,7 +80,7 @@ const HTML = `<!doctype html>
 <header>
   <h1 id="title">条件に合う新着・掲載中の物件（非公開）</h1>
   <div class="sub"><a href="/listings">← 掲載ウォッチ全体</a> ／ 私的・非商用の個人利用</div>
-  <nav class="tabs"><a id="tab-sale" href="/listings/picks">売買（中古）</a><a id="tab-rent" href="/listings/picks?kind=rent">賃貸</a></nav>
+  <nav class="tabs"><a id="tab-rent" href="/listings/picks">賃貸</a><a id="tab-sale" href="/listings/picks?kind=sale">売買（中古）</a></nav>
   <div class="sub" id="asof">読み込み中…</div>
   <div id="notices"></div>
   <div class="coverage" id="coverage"></div>
@@ -122,7 +122,7 @@ const HTML = `<!doctype html>
   var GROUP_LABEL = ${GROUPS_JSON};
   var DEFAULTS = { sale: ${DEFAULTS_SALE_JSON}, rent: ${DEFAULTS_RENT_JSON} };
   var DEFAULTS_TEXT = { sale: ${safeJson(SALE_DEFAULTS_TEXT)}, rent: ${safeJson(RENT_DEFAULTS_TEXT)} };
-  var KIND = new URLSearchParams(location.search).get("kind") === "rent" ? "rent" : "sale";
+  var KIND = new URLSearchParams(location.search).get("kind") === "sale" ? "sale" : "rent";
   var IS_RENT = KIND === "rent";
   var D = DEFAULTS[KIND];
   var LS_KEY = "fcw_picks_filters_v1_" + KIND;
@@ -213,7 +213,7 @@ const HTML = `<!doctype html>
     if (f.plan.value) p.set("plan", f.plan.value);
     if (f.age.value) p.set("age", f.age.value);
     if (f.walk.value) p.set("walk", f.walk.value);
-    if (IS_RENT) p.set("kind", "rent");
+    if (!IS_RENT) p.set("kind", "sale");
     if (f.dk.checked) p.set("dk", "1");
     // バス便は賃貸の既定が「含める」なので、外したときに 0 を明示する
     if (IS_RENT) { if (!f.bus.checked) p.set("bus", "0"); } else if (f.bus.checked) p.set("bus", "1");

@@ -149,8 +149,8 @@ const PAYLOAD = (kind: string) => ({
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-test("画面（売買）: スクリプトが動いてカードが描ける・タブは売買が選択・ペットのトグルは隠す", async () => {
-  const h = harness("", () => PAYLOAD("sale"));
+test("画面（売買）: ?kind=sale でカードが描ける・タブは売買が選択・ペットのトグルは隠す", async () => {
+  const h = harness("?kind=sale", () => PAYLOAD("sale"));
   h.run();
   await flush();
   assert.equal(h.ids.get("tab-sale")!.className, "on");
@@ -160,15 +160,15 @@ test("画面（売買）: スクリプトが動いてカードが描ける・タ
   assert.equal(h.ids.get("lb-pets")!.className, "checks hidden", "売買ではペットのトグルを出さない");
   assert.equal(h.ids.get("opt-retention")!.removed, false, "売買では価格維持の並べ替えを残す");
   assert.equal(h.requestedUrls.length, 1);
-  assert.ok(!h.requestedUrls[0]!.includes("kind=rent"));
+  assert.ok(h.requestedUrls[0]!.includes("kind=sale"));
   const cards = h.ids.get("cards")!.innerHTML;
   assert.ok(cards.includes("架空ハイツ"), "カードが描けている");
   assert.ok(cards.includes("㎡単価"), "売買のカード");
   assert.ok(!cards.includes("ペット相談可"));
 });
 
-test("画面（賃貸）: ?kind=rent でタブ・既定条件・賃料/管理費/敷礼/ペット/掲載日が出る", async () => {
-  const h = harness("?kind=rent", () => PAYLOAD("rent"));
+test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・賃料/管理費/敷礼/ペット/掲載日が出る", async () => {
+  const h = harness("", () => PAYLOAD("rent"));
   h.run();
   await flush();
   assert.equal(h.ids.get("tab-rent")!.className, "on");
@@ -179,7 +179,7 @@ test("画面（賃貸）: ?kind=rent でタブ・既定条件・賃料/管理費
   assert.equal(h.ids.get("lb-pets")!.className, "", "賃貸ではペットのトグルを出す");
   assert.equal(h.ids.get("opt-retention")!.removed, true, "賃貸では価格維持の並べ替えを消す");
   assert.equal(h.requestedUrls.length, 1);
-  assert.ok(h.requestedUrls[0]!.includes("kind=rent"));
+  assert.ok(!h.requestedUrls[0]!.includes("kind=sale"), "既定は賃貸なので kind は付けない");
 
   const cards = h.ids.get("cards")!.innerHTML;
   assert.ok(cards.includes("125,000円〜128,000円"), "賃料の幅");

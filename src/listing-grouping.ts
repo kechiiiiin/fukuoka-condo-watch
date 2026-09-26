@@ -92,11 +92,14 @@ export interface PickFilters {
   freshDays: number;
 }
 
-/** 画面の種類。sale = 中古の売り物件（既定）/ rent = 賃貸 */
+/**
+ * 画面の種類。rent = 賃貸（**既定**）/ sale = 中古の売り物件。
+ * 2026-09-26 に方針が「賃貸優先・賃貸に良い物件が無ければ購入」に決まったので既定を賃貸にした。
+ */
 export type PickKind = "sale" | "rent";
 
 export function parsePickKind(v: string | null | undefined): PickKind {
-  return v === "rent" ? "rent" : "sale";
+  return v === "sale" ? "sale" : "rent";
 }
 
 /** 売買（中古）の既定条件 */

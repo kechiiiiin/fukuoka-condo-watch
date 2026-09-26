@@ -23,7 +23,7 @@
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
-| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**`?kind=rent` で賃貸のタブ**（既定 家賃15万円以下・70㎡以上・3LDK以上・築25年以内、ペット相談可は絞り込みトグル。ペット可否は 2 周目で取る） |
+| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内、ペット相談可は絞り込みトグル。ペット可否は 2 周目で取る） |
 | `src/new-listings.ts` / `src/new-listing-view.ts` / `src/new-listings-dashboard.ts` | `/listings/shinchiku`・`/api/listings/shinchiku`（非公開）。新築の価格幅・㎡単価幅・面積幅・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化と**新築プレミアム**（下の「新築」） |
 | `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
 | `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
@@ -86,7 +86,8 @@ FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/ingest/l
 # 新築は同じ環境変数で `npm run crawl:local -- --kind shinchiku`（24 ページ。2 日目は価格未定→決定・値下げ・完売・新着）
 # 賃貸は `npm run crawl:local -- --kind chintai`（偽サーバは /chintai/fukuoka/sc_<slug>/ も返す。2 日目は値下げ・募集終了・新着）
 # ペット相談可の 2 周目は `npm run crawl:local -- --kind chintai_pets`（chintai の後に流すこと）
-open http://localhost:8787/listings/picks?kind=rent
+open http://localhost:8787/listings/picks          # 既定は賃貸
+open http://localhost:8787/listings/picks?kind=sale # 売買（中古）
 open http://localhost:8787/listings/shinchiku
 curl -X POST http://127.0.0.1:8790/__day/2      # 翌日: 消える・値下げ・新着（wrangler dev の LISTINGS_TODAY_OVERRIDE も翌日にして起動し直す）
 curl -X POST http://127.0.0.1:8790/__mode/429   # 止まる動作の確認（Mac 側が 72 時間クールダウンになる）
@@ -128,7 +129,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
 ## 掲載情報（SUUMO）— 私的利用・Mac から取る
 
 **私的・非商用の個人利用に限る**（SUUMO ご利用規約 第2条1項「私的利用の範囲」・第3条7号 商業目的の禁止）。許諾契約ではない。
-データは非公開の `/listings`（新築は `/listings/shinchiku`・賃貸は `/listings/picks?kind=rent`）でだけ見せ、公開ダッシュボード（`/`・`/api/metrics`）には出さない。robots.txt（2026-09-14）は `/ms/chuko/` と `/chintai/<都道府県>/sc_*/` を、（2026-09-22）は `/ms/shinchiku/<都道府県>/sc_*/` を Disallow していない（Disallow は `brand_list`・`ek_*/null`・`tokushu`・`?*sort=` など。並べ替えのパラメータは付けない）。
+データは非公開の `/listings`（新築は `/listings/shinchiku`・賃貸は `/listings/picks`・売買は `/listings/picks?kind=sale`）でだけ見せ、公開ダッシュボード（`/`・`/api/metrics`）には出さない。robots.txt（2026-09-14）は `/ms/chuko/` と `/chintai/<都道府県>/sc_*/` を、（2026-09-22）は `/ms/shinchiku/<都道府県>/sc_*/` を Disallow していない（Disallow は `brand_list`・`ek_*/null`・`tokushu`・`?*sort=` など。並べ替えのパラメータは付けない）。
 
 ### 取る場所（`LISTINGS_ENABLED`）
 
@@ -266,9 +267,9 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - launchd: `….suumo-chintai`（**毎週土曜 06:00**）と `….suumo-chintai-pets`（**毎週土曜 12:00**）。中古の 01:00〜≒05:00 とも新築の日曜 06:00 とも重ならない。4 本とも同じロックファイル
 - 1 回の上限: 1 周目 250 ページ・5 時間 / 2 周目 120 ページ・3 時間
 
-#### 見る画面（`/listings/picks?kind=rent`。Access 保護）
+#### 見る画面（`/listings/picks`。Access 保護）
 
-売買（中古）と同じ `/listings/picks` にタブを足した（既定は従来どおり売買。`?kind=rent` で賃貸）。
+売買（中古）と同じ `/listings/picks` にタブを足した。**2026-09-26 に家さがしの方針が「賃貸優先・賃貸に良い物件が無ければ購入」に決まったので、既定のタブを賃貸にした**（売買は `?kind=sale`）。
 
 - 既定の条件: **家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内**。徒歩分は指定なし・バス便も含む（依頼に無い条件で勝手に狭めない）
 - **ペット相談可は絞り込みトグル**（既定 OFF = 絞らない。`pets=1` で相談可だけ。**不明は残らない**）。カードには「ペット相談可」か「ペット 不明」を常に出す
