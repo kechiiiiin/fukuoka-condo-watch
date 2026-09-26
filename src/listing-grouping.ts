@@ -119,7 +119,9 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
 
 /**
  * 賃貸の既定条件（2026-09-26 の依頼）: 家賃 15 万円以下・70㎡以上・3LDK 以上・築 25 年以内。
- * 徒歩分は指定なし（依頼に無い条件で勝手に狭めない）・バス便も含める。ペット相談可は絞らない（トグルで絞る）。
+ * 徒歩分は指定なし（依頼に無い条件で勝手に狭めない）・バス便も含める。
+ * **ペット相談可は既定 ON**（2026-09-26 に「良い物件の線引き＝①ペット可であること ②博多駅までの距離」と決まったため。
+ * ⚠️ pets_allowed はペット絞り込みの 2 周目で見えた部屋にしか付かない下限値なので、OFF にすると印の無いものも出る）。
  */
 export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
   priceMaxMan: 15,
@@ -129,7 +131,7 @@ export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { 
   ageMax: 25,
   walkMax: null,
   includeBus: true,
-  petsOnly: false,
+  petsOnly: true,
   municipalities: null,
   freshOnly: false,
   freshDays: 7,

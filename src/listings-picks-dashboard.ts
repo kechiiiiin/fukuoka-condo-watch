@@ -98,7 +98,7 @@ const HTML = `<!doctype html>
       <div class="toggles">
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
-        <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1"> ペット相談可のみ（不明は除く）</label>
+        <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1" checked> ペット相談可のみ（不明は除く）</label>
         <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
@@ -196,7 +196,7 @@ const HTML = `<!doctype html>
     if (saved.walk) f.walk.value = saved.walk;
     f.dk.checked = !!saved.dk;
     f.bus.checked = !!saved.bus;
-    f.pets.checked = !!saved.pets;
+    f.pets.checked = saved.pets === undefined ? IS_RENT : !!saved.pets;
     f.fresh.checked = !!saved.fresh;
     if (saved.sort === "newest" || (saved.sort === "retention" && !IS_RENT)) f.sort.value = saved.sort;
     if (saved.muni && saved.muni.length) {
@@ -217,7 +217,8 @@ const HTML = `<!doctype html>
     if (f.dk.checked) p.set("dk", "1");
     // バス便は賃貸の既定が「含める」なので、外したときに 0 を明示する
     if (IS_RENT) { if (!f.bus.checked) p.set("bus", "0"); } else if (f.bus.checked) p.set("bus", "1");
-    if (IS_RENT && f.pets.checked) p.set("pets", "1");
+    // ペット相談可は賃貸の既定が ON なので、外したときに 0 を明示する（2026-09-26 の線引き）
+    if (IS_RENT && !f.pets.checked) p.set("pets", "0");
     if (f.fresh.checked) p.set("fresh", "1");
     if (f.sort.value === "retention" && !IS_RENT) p.set("sort", "retention");
     var munis = Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; });

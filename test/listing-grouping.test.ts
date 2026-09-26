@@ -324,25 +324,31 @@ function rentRow(over: Partial<ListingPickRow> = {}): ListingPickRow {
   });
 }
 
-test("賃貸の既定条件: 家賃15万円以下・70㎡以上・3LDK以上・築25年以内（徒歩は指定なし・バス便も含む）", () => {
+test("賃貸の既定条件: 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット可のみ（徒歩は指定なし・バス便も含む）", () => {
   const today = "2026-09-26";
   const f = parsePickFilters(new URLSearchParams(""), () => true, "rent");
   assert.deepEqual(f, { ...DEFAULT_RENT_PICK_FILTERS });
   assert.equal(f.priceMaxMan, 15);
   assert.equal(f.walkMax, null);
   assert.equal(f.includeBus, true);
+  assert.equal(f.petsOnly, true, "ペット可は必須（2026-09-26 の線引き）");
 
-  assert.equal(matchesConditions(rentRow(), f, 2026, today), true);
-  assert.equal(matchesConditions(rentRow({ current_price: 150000 }), f, 2026, today), true, "15万円ちょうどはyes");
-  assert.equal(matchesConditions(rentRow({ current_price: 150001 }), f, 2026, today), false);
-  assert.equal(matchesConditions(rentRow({ area_sqm: 69.9 }), f, 2026, today), false);
-  assert.equal(matchesConditions(rentRow({ floor_plan: "2LDK" }), f, 2026, today), false);
-  assert.equal(matchesConditions(rentRow({ floor_plan: "3DK" }), f, 2026, today), false, "3DKは既定でno（dk=1 で含む）");
-  assert.equal(matchesConditions(rentRow({ building_year: 2000 }), f, 2026, today), false, "築26年はno");
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: null }), f, 2026, today), false, "ペットの印が無いものは既定では出さない");
+
+  // 家賃・面積・間取り・築年の枠（ペット以外）は pets=0 で外して確かめる
+  const g = parsePickFilters(new URLSearchParams("pets=0"), () => true, "rent");
+  assert.equal(matchesConditions(rentRow(), g, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ current_price: 150000 }), g, 2026, today), true, "15万円ちょうどはyes");
+  assert.equal(matchesConditions(rentRow({ current_price: 150001 }), g, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ area_sqm: 69.9 }), g, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ floor_plan: "2LDK" }), g, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ floor_plan: "3DK" }), g, 2026, today), false, "3DKは既定でno（dk=1 で含む）");
+  assert.equal(matchesConditions(rentRow({ building_year: 2000 }), g, 2026, today), false, "築26年はno");
   // 徒歩の指定が無いので、駅が遠い・駅情報が無い・バス便でも落とさない
-  assert.equal(matchesConditions(rentRow({ walk_minutes: 25 }), f, 2026, today), true);
-  assert.equal(matchesConditions(rentRow({ walk_minutes: null }), f, 2026, today), true);
-  assert.equal(matchesConditions(rentRow({ bus: 1, walk_minutes: null }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ walk_minutes: 25 }), g, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ walk_minutes: null }), g, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ bus: 1, walk_minutes: null }), g, 2026, today), true);
   // 売買の既定は変わっていない（回帰）
   assert.equal(DEFAULT_PICK_FILTERS.priceMaxMan, 4800);
   assert.equal(DEFAULT_PICK_FILTERS.walkMax, 10);
@@ -350,15 +356,17 @@ test("賃貸の既定条件: 家賃15万円以下・70㎡以上・3LDK以上・�
   assert.equal(DEFAULT_PICK_FILTERS.petsOnly, false);
 });
 
-test("ペット相談可トグル: 既定は絞らない・pets=1 で相談可だけ（sale では常に無効）", () => {
+test("ペット相談可トグル: 賃貸は既定 ON・pets=0 で外せる（sale では常に無効）", () => {
   const today = "2026-09-26";
-  const off = parsePickFilters(new URLSearchParams(""), () => true, "rent");
+  // 2026-09-26 に「良い物件の線引き＝①ペット可であること ②博多駅までの距離」と決まったので既定 ON
+  const off = parsePickFilters(new URLSearchParams("pets=0"), () => true, "rent");
   assert.equal(off.petsOnly, false);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 0 }), off, 2026, today), true);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), off, 2026, today), true);
 
-  const on = parsePickFilters(new URLSearchParams("pets=1"), () => true, "rent");
-  assert.equal(on.petsOnly, true);
+  const on = parsePickFilters(new URLSearchParams(""), () => true, "rent");
+  assert.equal(on.petsOnly, true, "引数なしの既定でペット可だけ");
+  assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true, "rent").petsOnly, true);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 1 }), on, 2026, today), true);
   assert.equal(matchesConditions(rentRow({ pets_allowed: 0 }), on, 2026, today), false);
   assert.equal(matchesConditions(rentRow({ pets_allowed: null }), on, 2026, today), false, "不明（NULL）は絞り込みで残さない。NULL はペット不可の意味ではない");
