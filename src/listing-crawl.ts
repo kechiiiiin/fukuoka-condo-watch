@@ -49,15 +49,18 @@ import {
   type IngestCursor,
   type IngestResponse,
   listingsMode,
+  listingUpsertRow,
   localOrigin,
   localStateKey,
   outcomeMessage,
   type PageOutcome,
+  type PagedIngestRequest,
   parseIngestRequest,
 } from "./listing-crawl-core";
+import { DEFAULT_RENT_PICK_FILTERS } from "./listing-grouping";
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
-import { ChintaiSource } from "./suumo-chintai";
+import { ChintaiSource, CHINTAI_SOURCE_ID } from "./suumo-chintai";
 import { ShinchikuSource } from "./suumo-shinchiku";
 import { SuumoSource } from "./suumo-source";
 
@@ -431,17 +434,90 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   }
 
   const db = env.DB;
+  // 詳細ページ（LDK の畳数）は一覧の周回とは別の流れ（カーソルも回も持たない・UPDATE だけ）
+  if (r.op === "detail_targets") return ingestJson(await detailTargets(db, r.limit));
+  if (r.op === "detail_results") return ingestJson(await detailResults(db, r.fetchedAt, r.results));
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
   if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
   if (r.kind === "chintai") return ingestKind(db, env, r, new ChintaiSource(), CHINTAI_STORE, now);
   if (r.kind === "chintai_pets") return ingestKind(db, env, r, new ChintaiSource({ pets: true }), CHINTAI_PETS_STORE, now);
+  if (r.kind === "chintai_maisonette") {
+    return ingestKind(db, env, r, new ChintaiSource({ maisonette: true }), CHINTAI_MAISONETTE_STORE, now);
+  }
   return ingestKind(db, env, r, new SuumoSource(), CHUKO_STORE, now);
+}
+
+// ---------------------------------------------------------------------------
+// 詳細ページ（LDK の畳数）。全条件を通った最終候補だけを取りに行く
+// ---------------------------------------------------------------------------
+
+/**
+ * 詳細ページを取る相手の条件（= /listings/picks の賃貸の既定条件のうち、D1 だけで判定できるもの）。
+ * ⚠️ **建物の階数は条件に入れない**（2026-09-26 の確認で「建物が 2 階建てなのは OK」になったため）。
+ * ⚠️ NULL は落とさない条件（ペット可・メゾネット）と、NULL を落とす条件（家賃・面積・間取り・築年）を取り違えないこと:
+ *    ペット可は既定 ON なので pets_allowed = 1 の行だけ、メゾネットは maisonette IS NOT 1（NULL は残す）。
+ * 定数は src/listing-grouping.ts の DEFAULT_RENT_PICK_FILTERS と合わせてある（片方だけ直さないこと）。
+ */
+const DETAIL_TARGETS_SQL = `
+SELECT external_id, url FROM listings
+WHERE source = ?1 AND kind = 'rent' AND delisted_on IS NULL
+  AND detail_fetched_at IS NULL
+  AND url IS NOT NULL
+  AND current_price <= ?2
+  AND area_sqm IS NOT NULL AND area_sqm >= ?3
+  AND floor_plan IS NOT NULL AND floor_plan LIKE '%L%'
+  AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
+  AND building_year IS NOT NULL AND building_year >= ?5
+  AND pets_allowed = 1
+  AND (maisonette IS NULL OR maisonette <> 1)
+ORDER BY first_seen DESC, external_id`;
+
+/** 詳細ページを取る相手（未取得の最終候補）を limit 件まで返す。残り件数も返す（持ち越しの確認用） */
+async function detailTargets(db: D1Database, limit: number): Promise<IngestResponse> {
+  const d = DEFAULT_RENT_PICK_FILTERS;
+  const nowYear = Number(jstToday().slice(0, 4));
+  const bind = [CHINTAI_SOURCE_ID, d.priceMaxMan * 10000, d.areaMin, d.planRoomsMin, nowYear - d.ageMax] as const;
+  const rows = await db
+    .prepare(`${DETAIL_TARGETS_SQL} LIMIT ?6`)
+    .bind(...bind, limit)
+    .all<{ external_id: string; url: string }>();
+  const total = await db
+    .prepare(`SELECT COUNT(*) AS n FROM (${DETAIL_TARGETS_SQL})`)
+    .bind(...bind)
+    .first<{ n: number }>();
+  return {
+    ok: true,
+    status: "running",
+    targets: rows.results.map((r) => ({ externalId: r.external_id, url: r.url })),
+    remaining: total?.n ?? rows.results.length,
+  };
+}
+
+/**
+ * 詳細ページから読めた LDK の畳数を反映する。**UPDATE だけ**（行は増やさない）。
+ * ⚠️ 畳数が読めなくても detail_fetched_at は入れる（同じ部屋を毎回取り直さないため）。
+ */
+const UPDATE_DETAIL = `
+UPDATE listings SET ldk_tatami = (
+    SELECT json_extract(j.value, '$.t') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ), detail_fetched_at = ?2
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
+
+async function detailResults(
+  db: D1Database,
+  fetchedAt: string,
+  results: { externalId: string; ldkTatami: number | null }[],
+): Promise<IngestResponse> {
+  if (results.length === 0) return { ok: true, status: "running", updated: 0 };
+  const json = JSON.stringify(results.map((r) => ({ id: r.externalId, t: r.ldkTatami })));
+  const res = await db.prepare(UPDATE_DETAIL).bind(CHINTAI_SOURCE_ID, fetchedAt, json).run();
+  return { ok: true, status: "running", updated: res.meta?.changes ?? results.length };
 }
 
 async function ingestKind<R extends AnyListingRecord>(
   db: D1Database,
   env: Env,
-  r: ReturnType<typeof parseIngestRequest>,
+  r: PagedIngestRequest,
   source: PagedSource<R>,
   store: ListingStore<R>,
   now: () => number,
@@ -553,21 +629,24 @@ async function cursorDone(
 /**
  * listings への 1 ページぶんの upsert。中古（kind='sale'）と賃貸（kind='rent'）で共通。
  * ?5 = listings.kind（取得元ごとに CRAWL_KINDS.listingKind で決まる。外からの値は入らない）。
- * 賃貸だけの列（admin_fee・deposit・key_money・pets_allowed・listed_on）は sale では常に NULL / 0 になる
- * （JSON に鍵が無ければ json_extract は NULL。pets は 0 を入れて渡す）。
+ * 賃貸だけの列（admin_fee・deposit・key_money・pets_allowed・listed_on・building_floors・room_floor・maisonette）は
+ * sale では常に NULL / 0 になる（JSON に鍵が無ければ json_extract は NULL。pets・mais は 0 を入れて渡す）。
+ *
+ * ⚠️ **ldk_tatami・detail_fetched_at はここで触らない**（詳細ページの周回が入れる値で、毎週の一覧クロールで消したくない）。
  */
 const UPSERT_LISTINGS = `
 INSERT INTO listings (source, external_id, kind, ward_code, building_name, building_year, built_month, area_sqm, floor_plan,
   line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
   price_cut_count, relisted_count, missed_runs, delisted_on, last_seen_run,
-  admin_fee, deposit, key_money, pets_allowed, listed_on)
+  admin_fee, deposit, key_money, pets_allowed, listed_on, building_floors, room_floor, maisonette)
 SELECT ?1, json_extract(j.value, '$.id'), ?5, json_extract(j.value, '$.ward'), json_extract(j.value, '$.name'),
   json_extract(j.value, '$.by'), json_extract(j.value, '$.bm'), json_extract(j.value, '$.area'), json_extract(j.value, '$.plan'),
   json_extract(j.value, '$.line'), json_extract(j.value, '$.st'), json_extract(j.value, '$.walk'), json_extract(j.value, '$.bus'),
   json_extract(j.value, '$.addr'), json_extract(j.value, '$.url'), ?2, ?2, json_extract(j.value, '$.price'),
   json_extract(j.value, '$.price'), 0, 0, 0, NULL, ?3,
   json_extract(j.value, '$.fee'), json_extract(j.value, '$.dep'), json_extract(j.value, '$.key'),
-  json_extract(j.value, '$.pets'), json_extract(j.value, '$.listed')
+  json_extract(j.value, '$.pets'), json_extract(j.value, '$.listed'),
+  json_extract(j.value, '$.bfl'), json_extract(j.value, '$.rfl'), json_extract(j.value, '$.mais')
 FROM json_each(?4) AS j WHERE true
 ON CONFLICT (source, external_id) DO UPDATE SET
   ward_code = excluded.ward_code, building_name = excluded.building_name, building_year = excluded.building_year,
@@ -576,6 +655,7 @@ ON CONFLICT (source, external_id) DO UPDATE SET
   bus = excluded.bus, address = excluded.address, url = excluded.url,
   admin_fee = excluded.admin_fee, deposit = excluded.deposit, key_money = excluded.key_money,
   pets_allowed = excluded.pets_allowed, listed_on = COALESCE(excluded.listed_on, listings.listed_on),
+  building_floors = excluded.building_floors, room_floor = excluded.room_floor, maisonette = excluded.maisonette,
   last_seen = excluded.last_seen,
   price_cut_count = listings.price_cut_count + (CASE WHEN excluded.current_price < listings.current_price THEN 1 ELSE 0 END),
   current_price = excluded.current_price,
@@ -640,28 +720,9 @@ function listingsStore(sourceId: string, listingKind: "sale" | "rent", minSeenRa
         history.push({ id: r.externalId, price: r.price });
       }
     }
-    const rows = [...byId.values()].map((r) => ({
-      id: r.externalId,
-      ward: r.wardCode ?? areaCode,
-      name: r.buildingName ?? null,
-      by: r.buildingYear ?? null,
-      bm: r.builtMonth ?? null,
-      area: r.areaSqm ?? null,
-      plan: r.floorPlan ?? null,
-      line: r.lineName ?? null,
-      st: r.stationName ?? null,
-      walk: r.walkMinutes ?? null,
-      bus: r.bus ? 1 : 0,
-      addr: r.address ?? null,
-      url: r.url ?? null,
-      price: r.price,
-      // 賃貸だけの項目（売買では undefined → NULL）。pets は「不明」を NULL で表すので 0 に倒さない
-      fee: r.adminFee ?? null,
-      dep: r.deposit ?? null,
-      key: r.keyMoney ?? null,
-      pets: r.petsAllowed === undefined ? null : r.petsAllowed ? 1 : 0,
-      listed: r.listedOn ?? null,
-    }));
+    // ⚠️ 鍵の対応は src/listing-crawl-core.ts の listingUpsertRow が正（UPSERT_LISTINGS の json_extract と 1:1）。
+    //    ここで写し忘れるとパーサの値が D1 まで届かないので、テスト（test/suumo-chintai.test.ts）で各段を見ている
+    const rows = [...byId.values()].map((r) => listingUpsertRow(r, areaCode));
     const stmts: D1PreparedStatement[] = [];
     // 履歴は listings を更新する前に（新規・価格変更の判定は上の prev で済ませてある）
     if (history.length) stmts.push(db.prepare(INSERT_HISTORY).bind(this.sourceId, date, JSON.stringify(history)));
@@ -698,6 +759,31 @@ const CHINTAI_PETS_STORE: ListingStore<ListingRecord> = {
     const stmts: D1PreparedStatement[] = [];
     if (ids.length) {
       stmts.push(db.prepare(UPDATE_PETS).bind(CRAWL_KINDS.chintai.sourceId, JSON.stringify(ids.map((id) => ({ id })))));
+    }
+    return { stmts, newCount: 0, changedCount: 0, rows: ids.length };
+  },
+};
+
+/**
+ * 賃貸のメゾネット（3 周目）。メゾネット絞り込み（/nj_113/）付きで取り直し、**見えた部屋にだけ** maisonette = 1 を立てる。
+ * ペットの 2 周目とまったく同じ手口: 行は入れず、1 周目 suumo:chintai が入れた行を UPDATE するだけ。
+ * 一覧のカードに「メゾネット」の表記が無いので、こうするしか取りようがない
+ * （階の表記が "1-2階" の部屋は 1 周目でも分かるが、"1階" と出るメゾネットもある。2026-09-26 の実ページで確認）。
+ * NULL = 不明（ワンフロアだと確かめたという意味ではない）。1 周目の upsert が毎回 NULL に戻すので、週ごとに付け直しになる。
+ */
+const UPDATE_MAISONETTE = `
+UPDATE listings SET maisonette = 1
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?2) AS j)`;
+
+const CHINTAI_MAISONETTE_STORE: ListingStore<ListingRecord> = {
+  sourceId: CRAWL_KINDS.chintai_maisonette.sourceId,
+  table: "listings",
+  minSeenRatio: 0,
+  async pageStatements(db, _runId, _date, _areaCode, records) {
+    const ids = [...new Set(records.map((r) => r.externalId))];
+    const stmts: D1PreparedStatement[] = [];
+    if (ids.length) {
+      stmts.push(db.prepare(UPDATE_MAISONETTE).bind(CRAWL_KINDS.chintai.sourceId, JSON.stringify(ids.map((id) => ({ id })))));
     }
     return { stmts, newCount: 0, changedCount: 0, rows: ids.length };
   },

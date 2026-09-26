@@ -50,11 +50,12 @@ interface Harness {
 function harness(search: string, payload: () => unknown): Harness {
   const ids = new Map<string, El>();
   const form = new El("form", "filters") as El & Record<string, El>;
-  for (const name of ["pmax", "amin", "plan", "age", "walk", "sort", "dk", "bus", "pets", "fresh"]) {
+  for (const name of ["pmax", "amin", "plan", "age", "walk", "tatami", "floors", "sort", "dk", "bus", "pets", "mais", "fresh"]) {
     (form as unknown as Record<string, El>)[name] = new El("input", name);
   }
   for (const id of [
     "tab-sale", "tab-rent", "title", "defaults-text", "lb-pmax", "lb-sort", "opt-retention", "lb-pets",
+    "lb-mais", "lb-tatami", "lb-floors",
     "muni-select", "asof", "notices", "coverage", "count", "cards", "cards-section", "footer",
   ]) {
     ids.set(id, new El("div", id));
@@ -133,6 +134,13 @@ const CARD = {
   keyMoneyMin: 0,
   petsAllowed: true,
   listedOn: null,
+  // 0007（2026-09-26）: 階数は情報として出すだけ・メゾネット / LDK 畳数は既定の絞り込みに使う
+  buildingFloors: 8,
+  roomFloorMin: 4,
+  roomFloorMax: 4,
+  maisonette: false,
+  ldkTatami: 16.4,
+  detailFetched: true,
 };
 
 const PAYLOAD = (kind: string) => ({
@@ -175,8 +183,13 @@ test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・
   assert.equal(h.ids.get("tab-sale")!.className, "");
   assert.ok(h.ids.get("title")!.textContent.includes("賃貸"));
   const defaults = h.ids.get("defaults-text")!.textContent;
-  for (const s of ["家賃 15万円以下", "70㎡以上", "3LDK以上", "築25年以内"]) assert.ok(defaults.includes(s), `既定条件に「${s}」`);
+  for (const s of ["家賃 15万円以下", "70㎡以上", "3LDK以上", "築25年以内", "メゾネットでない", "LDK 15畳以上", "建物の階数では絞りません"]) {
+    assert.ok(defaults.includes(s), `既定条件に「${s}」`);
+  }
   assert.equal(h.ids.get("lb-pets")!.className, "", "賃貸ではペットのトグルを出す");
+  assert.equal(h.ids.get("lb-mais")!.className, "", "賃貸ではメゾネット除外のトグルを出す");
+  assert.equal(h.ids.get("lb-tatami")!.className, "", "賃貸では LDK 畳数の入力を出す");
+  assert.equal(h.ids.get("lb-floors")!.className, "", "賃貸では建物の階数の入力を出す（既定は指定なし）");
   assert.equal(h.ids.get("opt-retention")!.removed, true, "賃貸では価格維持の並べ替えを消す");
   assert.equal(h.requestedUrls.length, 1);
   assert.ok(!h.requestedUrls[0]!.includes("kind=sale"), "既定は賃貸なので kind は付けない");
@@ -187,6 +200,11 @@ test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・
   assert.ok(cards.includes("敷金 125,000円"));
   assert.ok(cards.includes("礼金 0円"));
   assert.ok(cards.includes("ペット相談可"));
+  // 0007 で足した 4 項目（建物階数・部屋の階・メゾネット可否・LDK 畳数）がカードに出る
+  assert.ok(cards.includes("8階建"), "建物の階数");
+  assert.ok(cards.includes("4階"), "部屋の階");
+  assert.ok(cards.includes("メゾネット 不明"), "メゾネットは 1 か不明だけ（ワンフロアだと確かめた印は無い）");
+  assert.ok(cards.includes("LDK 16.4畳"), "LDK の畳数");
   assert.ok(cards.includes("初めて見た日 2026-09-20"), "SUUMO の掲載日は取れないので「初めて見た日」と出す");
   assert.ok(!cards.includes("情報公開日"));
   assert.ok(cards.includes("貸しやすさ"));

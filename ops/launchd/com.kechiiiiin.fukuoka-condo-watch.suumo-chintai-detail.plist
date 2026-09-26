@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  賃貸の詳細ページ（LDK の畳数・週 1 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
+  ~/Library/LaunchAgents/ に置き、launchctl bootstrap する。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/ops/launchd/run-suumo-detail.sh</string>
+  </array>
+  <key>WorkingDirectory</key> <string>__REPO__</string>
+
+  <!-- LDK の畳数を詳細ページから取る。毎週土曜 16:00。
+       **1 周目（06:00）・ペット（12:00）・メゾネット（14:00）の後**に走らせること
+       （取りに行くのは「それらの条件を全部通った最終候補」なので、印が付く前に走らせても対象が出ない）。
+       1 回 60 件まで × 61 秒 ≒ 1 時間。超えた分は次回へ持ち越し、取得済みは取り直さない。
+       他の 4 本と同じロックファイルなので、重なったら終わるまで待つ。 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key> <integer>6</integer>
+    <key>Hour</key>    <integer>16</integer>
+    <key>Minute</key>  <integer>0</integer>
+  </dict>
+  <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->
+  <key>RunAtLoad</key>        <false/>
+
+  <!-- launchd は PATH を継承しないので、install.sh が解決した node を渡す -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_BIN</key>       <string>__NODE_BIN__</string>
+    <key>PATH</key>           <string>__PATH__</string>
+  </dict>
+
+  <key>StandardOutPath</key>  <string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-chintai-detail.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/fukuoka-condo-watch/suumo-chintai-detail.err.log</string>
+
+  <!-- ⚠️ トークンは絶対にここへ書かない（launchctl print / ps から丸見えになる）。
+       ~/.config/fukuoka-condo-watch/env（chmod 600）からクローラ自身がファイルとして読む。 -->
+</dict>
+</plist>

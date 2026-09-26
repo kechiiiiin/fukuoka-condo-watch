@@ -119,7 +119,8 @@ export async function buildListingPicks(env: Env, url: URL) {
     env.DB.prepare(
       `SELECT source, external_id, ward_code, district_name, building_name, building_year, built_month, area_sqm, floor_plan,
               line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
-              price_cut_count, relisted_count, admin_fee, deposit, key_money, pets_allowed, listed_on
+              price_cut_count, relisted_count, admin_fee, deposit, key_money, pets_allowed, listed_on,
+              building_floors, room_floor, maisonette, ldk_tatami, detail_fetched_at
        FROM listings WHERE source = ? AND kind = ? AND delisted_on IS NULL`,
     )
       .bind(sourceId, kind)
@@ -168,6 +169,13 @@ export async function buildListingPicks(env: Env, url: URL) {
       depositMin: g.depositMin,
       keyMoneyMin: g.keyMoneyMin,
       petsAllowed: g.petsAllowed,
+      // 0007: 階数は情報として出すだけ（既定の絞り込みには使わない）。メゾネット・LDK 畳数は既定の絞り込みに使う
+      buildingFloors: g.buildingFloors,
+      roomFloorMin: g.roomFloorMin,
+      roomFloorMax: g.roomFloorMax,
+      maisonette: g.maisonette,
+      ldkTatami: g.ldkTatami,
+      detailFetched: g.detailFetched,
       listedOn: g.latestListedOn,
       earliestFirstSeen: g.earliestFirstSeen,
       latestFirstSeen: g.latestFirstSeen,
@@ -200,6 +208,9 @@ export async function buildListingPicks(env: Env, url: URL) {
       walk: filters.walkMax,
       bus: filters.includeBus,
       pets: filters.petsOnly,
+      mais: filters.excludeMaisonette,
+      tatami: filters.ldkTatamiMin,
+      floors: filters.buildingFloorsMin,
       muni: filters.municipalities,
       fresh: filters.freshOnly,
       freshDays: filters.freshDays,
@@ -231,6 +242,9 @@ const SALE_NOTES = [
 const RENT_NOTES = [
   "データは SUUMO の賃貸掲載（私的利用・週1回）。母数が大きいため、取得の時点で " + CHINTAI_QUERY_LABEL + " に絞っています。この範囲の外は画面の条件を広げても出てきません。",
   "ペット相談可は SUUMO の物件カードには出ないので、ペット絞り込み付きでもう一周して見えた部屋にだけ付けています。「ペット 不明」はペット不可という意味ではありません（その回に拾えなかっただけのことがあります）。条件（敷金の増額・種類・頭数）はリンク先で必ず確認してください。",
+  "メゾネット（室内が2層の住戸）は既定で除いています。SUUMO の物件カードにメゾネットの表記が無いので、メゾネット絞り込み（/nj_113/）付きでもう一周して見えた部屋と、一覧の階が「1-2階」のように2フロアにまたがる部屋に印を付けています。「メゾネット 不明」はワンフロアだと確かめたという意味ではありません。",
+  "LDK の畳数は SUUMO の一覧に出ないので、ここまでの条件を全部通った部屋だけ詳細ページを取って読んでいます（1回の実行で60件まで・60秒間隔）。「LDK畳数 未取得」はまだ詳細ページを取っていないだけで、15畳未満という意味ではありません（既定の絞り込みでも落としていません）。",
+  "建物の階数・部屋の階は情報として出しているだけで、既定の絞り込みには使っていません（2階建ての建物も出ます）。URL に floors=3 を足すと「3階建て以上」で絞れます。",
   "SUUMO の賃貸一覧には掲載日・情報公開日がありません。出しているのは「このウォッチが最初に見た日」です（掲載日数・値下げの追跡は売買だけ）。",
   "管理費・敷金・礼金が「—」の物件は、SUUMO の表記が「-」で、0 円なのか表記なしなのか一覧からは分かりません（0 円と決めつけていません）。",
   "同じ建物・同じ間取り・同じ築年で専有面積が近い部屋は 1 枚のカードにまとめています（複数業者の重複掲載をまとめる売買と同じ仕組み）。別の部屋がまとまることもあるので、部屋の特定はリンク先で。",

@@ -3,6 +3,8 @@
 //   - 新築（--kind shinchiku）   … 毎週日曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
 //   - 賃貸（--kind chintai）     … 毎週土曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai）
 //   - 賃貸のペット相談可（--kind chintai_pets）… 毎週土曜 12:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
+//   - 賃貸のメゾネット（--kind chintai_maisonette）… 毎週土曜 14:00（….suumo-chintai-maisonette）。1 周目の行に maisonette=1 を立てるだけ
+//   ※ LDK の畳数（詳細ページ）は別のスクリプト scripts/suumo-chintai-detail.ts（毎週土曜 16:00）
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ Mac か: Worker の cron から取ると 2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で即 503
@@ -33,164 +35,23 @@
 //   npm run crawl:local -- --kind shinchiku   # 新築（週 1 回・23 ページ ≒ 25 分）
 //   npm run crawl:local -- --kind chintai     # 賃貸（週 1 回・≒140 ページ。取得時に絞り込む）
 //   npm run crawl:local -- --kind chintai_pets # 賃貸のペット相談可（≒40 ページ。chintai の後に流すこと）
+//   npm run crawl:local -- --kind chintai_maisonette # 賃貸のメゾネット（少ない。chintai の後に流すこと）
 
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
 import {
   type AnyListingRecord,
-  CRAWL,
   CRAWL_KINDS,
   type CrawlKind,
   crawlSettings,
   fetchAndClassify,
-  type IngestRequest,
-  type IngestResponse,
   outcomeMessage,
   type PageOutcome,
 } from "../src/listing-crawl-core";
+// 設定・ロック・Worker への送信は詳細ページのクローラ（scripts/suumo-chintai-detail.ts）と共通
+import { acquireLock, type Config, ingest, loadConfig, log, sleep } from "./crawl-local-lib";
 import type { CrawlTarget } from "../src/listing-types";
 import { ChintaiSource } from "../src/suumo-chintai";
 import { ShinchikuSource } from "../src/suumo-shinchiku";
 import { SuumoSource } from "../src/suumo-source";
-
-const ENV_FILE = process.env.FCW_ENV_FILE || join(homedir(), ".config/fukuoka-condo-watch/env");
-const LOCK_FILE = process.env.FCW_LOCK_FILE || join(homedir(), ".local/state/fukuoka-condo-watch/suumo-crawl.lock");
-
-const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** KEY=VALUE の行だけ読む（シェルとして評価しない）。値は表示しない */
-function readEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const mode = statSync(path).mode & 0o777;
-  if (mode & 0o077) console.warn(`⚠️ ${path} の権限が ${mode.toString(8)} です。chmod 600 にしてください`);
-  const out: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && m[1]) out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "");
-  }
-  return out;
-}
-
-interface Config {
-  ingestUrl: string;
-  token: string;
-  env: Record<string, string | undefined>;
-}
-
-function loadConfig(): Config {
-  const env: Record<string, string | undefined> = { ...readEnvFile(ENV_FILE), ...process.env };
-  const ingestUrl = env.LISTINGS_INGEST_URL?.trim() ?? "";
-  const token = env.LISTINGS_INGEST_TOKEN?.trim() ?? "";
-  if (!ingestUrl || !token) {
-    console.error(`LISTINGS_INGEST_URL と LISTINGS_INGEST_TOKEN が要ります（${ENV_FILE} か環境変数）`);
-    process.exit(1);
-  }
-  let u: URL;
-  try {
-    u = new URL(ingestUrl);
-  } catch {
-    console.error("LISTINGS_INGEST_URL が URL ではありません");
-    process.exit(1);
-  }
-  // トークンを平文で流さない（http はローカルの wrangler dev だけ）
-  const local = u.hostname === "127.0.0.1" || u.hostname === "localhost";
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
-    console.error("LISTINGS_INGEST_URL は https にしてください（http は localhost だけ）");
-    process.exit(1);
-  }
-  return { ingestUrl: u.toString(), token, env };
-}
-
-/**
- * 多重起動よけ（中古・新築で共通）。中身は PID。PID が生きていなければ前回の残骸として取り直す。
- * 生きている別の実行が持っていたら、60 秒おきに見に行って最大 CRAWL.localLockWaitMs 待つ（待ちきれなければ何もせず終わる）
- */
-async function acquireLock(): Promise<() => void> {
-  mkdirSync(dirname(LOCK_FILE), { recursive: true });
-  const deadline = Date.now() + CRAWL.localLockWaitMs;
-  let announced = false;
-  for (;;) {
-    const r = tryLock();
-    if (r.release) return r.release;
-    if (Date.now() > deadline) {
-      log(`別のクロールが ${Math.round(CRAWL.localLockWaitMs / 3600_000)} 時間たっても終わらない（PID ${r.holder}・${LOCK_FILE}）。今回は何もしない`);
-      process.exit(0);
-    }
-    if (!announced) {
-      log(`別のクロールが実行中（PID ${r.holder}）。終わるまで待つ（同時に SUUMO を叩かない）`);
-      announced = true;
-    }
-    await sleep(60_000);
-  }
-}
-
-function tryLock(): { release?: () => void; holder?: number } {
-  for (let i = 0; i < 2; i++) {
-    try {
-      const fd = openSync(LOCK_FILE, "wx", 0o600);
-      writeSync(fd, String(process.pid));
-      closeSync(fd);
-      return {
-        release: () => {
-          try {
-            unlinkSync(LOCK_FILE);
-          } catch {
-            /* 既に無い */
-          }
-        },
-      };
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      const pid = Number(readFileSync(LOCK_FILE, "utf8").trim());
-      let alive = false;
-      if (Number.isInteger(pid) && pid > 0) {
-        try {
-          process.kill(pid, 0);
-          alive = true;
-        } catch (err) {
-          alive = (err as NodeJS.ErrnoException).code === "EPERM";
-        }
-      }
-      if (alive) return { holder: pid };
-      log(`前回のロックが残っていた（PID ${pid} は終了済み）。取り直す`);
-      unlinkSync(LOCK_FILE);
-    }
-  }
-  throw new Error("ロックを取れなかった");
-}
-
-/** Worker に送る。通信失敗・5xx は SUUMO に取り直しに行かずに同じ内容を再送する（Worker 側は二重計上しない） */
-async function ingest(cfg: Config, body: IngestRequest): Promise<IngestResponse> {
-  const waits = [5_000, 30_000, 120_000];
-  for (let attempt = 0; ; attempt++) {
-    let status = 0;
-    let text = "";
-    try {
-      const res = await fetch(cfg.ingestUrl, {
-        method: "POST",
-        headers: { authorization: `Bearer ${cfg.token}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60_000),
-      });
-      status = res.status;
-      text = await res.text();
-      if (res.ok) return JSON.parse(text) as IngestResponse;
-      // 4xx は再送しても変わらない（401 = トークン違い、409 = LISTINGS_ENABLED が external でない）
-      if (status >= 400 && status < 500) throw new FatalIngestError(`取り込み ${body.op} が HTTP ${status}: ${text.slice(0, 300)}`);
-    } catch (e) {
-      if (e instanceof FatalIngestError) throw e;
-      text = String(e);
-    }
-    const wait = waits[attempt];
-    if (wait === undefined) throw new Error(`取り込み ${body.op} に失敗（HTTP ${status || "-"}）: ${text.slice(0, 300)}`);
-    log(`取り込み ${body.op} 失敗（HTTP ${status || "-"}）。${wait / 1000} 秒後に再送`);
-    await sleep(wait);
-  }
-}
-
-class FatalIngestError extends Error {}
 
 /** 種類ごとの取得先（取得・ブロック判定・解析は src/ の同じ部品） */
 interface KindSource {
@@ -205,8 +66,13 @@ function sourceFor(kind: CrawlKind, s: ReturnType<typeof crawlSettings>): KindSo
     const src = new ShinchikuSource({ origin: s.origin, userAgent: s.userAgent });
     return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
   }
-  if (kind === "chintai" || kind === "chintai_pets") {
-    const src = new ChintaiSource({ origin: s.origin, userAgent: s.userAgent, pets: kind === "chintai_pets" });
+  if (kind === "chintai" || kind === "chintai_pets" || kind === "chintai_maisonette") {
+    const src = new ChintaiSource({
+      origin: s.origin,
+      userAgent: s.userAgent,
+      pets: kind === "chintai_pets",
+      maisonette: kind === "chintai_maisonette",
+    });
     return { origin: src.origin, pageUrl: (t, p) => src.pageUrl(t, p), fetch: (t, p, u) => fetchAndClassify(f, src, t, p, u) };
   }
   const src = new SuumoSource({ origin: s.origin, userAgent: s.userAgent, minIntervalMs: s.intervalMs });
@@ -217,14 +83,14 @@ function parseKindArg(): CrawlKind | null {
   const i = process.argv.indexOf("--kind");
   if (i < 0) return "chuko";
   const v = process.argv[i + 1];
-  return v === "chuko" || v === "shinchiku" || v === "chintai" || v === "chintai_pets" ? v : null;
+  return v === "chuko" || v === "shinchiku" || v === "chintai" || v === "chintai_pets" || v === "chintai_maisonette" ? v : null;
 }
 
 async function main(): Promise<number> {
   const dryRun = process.argv.includes("--dry-run");
   const kind = parseKindArg();
   if (!kind) {
-    console.error("--kind には chuko / shinchiku / chintai / chintai_pets のいずれかを");
+    console.error("--kind には chuko / shinchiku / chintai / chintai_pets / chintai_maisonette のいずれかを");
     return 1;
   }
   const limits = CRAWL_KINDS[kind];

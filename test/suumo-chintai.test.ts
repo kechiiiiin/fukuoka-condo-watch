@@ -8,24 +8,40 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fakeChintaiBuildings, renderFakeChintaiPage } from "../scripts/fake-suumo-server.ts";
-import { classifyResponse, CRAWL_KINDS, listingKindOf, parseCrawlKind, parseIngestRequest } from "../src/listing-crawl-core.ts";
+import { fakeChintaiBuildings, renderFakeChintaiDetail, renderFakeChintaiPage } from "../scripts/fake-suumo-server.ts";
+import {
+  CHINTAI_DETAIL_MAX_PER_RUN,
+  classifyResponse,
+  CRAWL_KINDS,
+  listingKindOf,
+  listingUpsertRow,
+  parseCrawlKind,
+  parseIngestRequest,
+} from "../src/listing-crawl-core.ts";
 import { districtNameFromAddress } from "../src/listing-grouping.ts";
 import { SUUMO_SLUGS } from "../src/suumo.ts";
 import {
+  CHINTAI_MAISONETTE_PATH,
+  CHINTAI_MAISONETTE_SOURCE_ID,
   CHINTAI_PETS_PARAM,
   CHINTAI_PETS_SOURCE_ID,
   CHINTAI_QUERY,
   CHINTAI_SOURCE_ID,
   ChintaiSource,
+  chintaiDetailUrl,
   chintaiSearchUrl,
+  hasChintaiDetailStructure,
   hasChintaiListStructure,
   parseBuildingAge,
   parseBuildingFloors,
+  parseChintaiDetailPage,
   parseChintaiListPage,
   parseChintaiStation,
   parseDepositYen,
+  parseDetailFloors,
   parseFeeYen,
+  parseLdkTatami,
+  parseRoomFloor,
   parseYen,
   toRentListingRecord,
 } from "../src/suumo-chintai.ts";
@@ -33,6 +49,9 @@ import {
 const PROBE = join(process.env.LISTING_PROBE_DIR ?? join(homedir(), "work/_experiments/listing-probe"), "chintai");
 const probe = (name: string) => readFileSync(join(PROBE, `${name}.html`), "utf8");
 const hasProbe = (name: string) => existsSync(join(PROBE, `${name}.html`));
+/** 詳細ページの実データ（~/work/_experiments/listing-probe/chintai/detail/。無ければ skip） */
+const detailProbe = (name: string) => readFileSync(join(PROBE, "detail", `${name}.html`), "utf8");
+const hasDetailProbe = (name: string) => existsSync(join(PROBE, "detail", `${name}.html`));
 
 test("賃料・管理費の表記 → 円（'-' は不明・NULL）", () => {
   assert.equal(parseYen("16万円"), 160000);
@@ -79,7 +98,7 @@ test("検索 URL は絞り込みクエリ付き・sort は付けない・ペッ�
   assert.ok(u.includes("ct=20.0") && u.includes("mb=60") && u.includes("md=10"));
   assert.ok(!u.includes("tc="), "1 周目はペット絞り込みを付けない");
   assert.ok(chintaiSearchUrl("kasuga", 3).endsWith("&page=3"));
-  const pets = chintaiSearchUrl("fukuokashichuo", 1, undefined, true);
+  const pets = chintaiSearchUrl("fukuokashichuo", 1, undefined, "pets");
   assert.ok(pets.includes(`${CHINTAI_PETS_PARAM[0]}=${CHINTAI_PETS_PARAM[1]}`));
   assert.equal(CHINTAI_QUERY.filter(([k]) => k === "md").length, 7, "3K〜5K以上の 7 つ");
   // 対象は中古・新築と同じ 23 市区町村（SUUMO_SLUGS）。2 周目も同じ
@@ -88,6 +107,51 @@ test("検索 URL は絞り込みクエリ付き・sort は付けない・ペッ�
   assert.equal(new ChintaiSource().id, CHINTAI_SOURCE_ID);
   assert.equal(new ChintaiSource({ pets: true }).id, CHINTAI_PETS_SOURCE_ID);
   assert.equal(new ChintaiSource().pageCountFromLinks, true, "件数からページ数を出せないのでページャを正にする");
+});
+
+test("部屋の階の表記 → 階数と室内 2 層（メゾネット）", () => {
+  assert.deepEqual(parseRoomFloor("4階"), { floor: 4, multiLevel: false });
+  assert.deepEqual(parseRoomFloor("14階"), { floor: 14, multiLevel: false });
+  // 実ページに出る "1-2階" は住戸が 2 フロアにまたがっている = メゾネット。階は一番下を採る
+  assert.deepEqual(parseRoomFloor("1-2階"), { floor: 1, multiLevel: true });
+  assert.deepEqual(parseRoomFloor("２-３階"), { floor: 2, multiLevel: true }, "全角も読む");
+  assert.deepEqual(parseRoomFloor("-"), { floor: null, multiLevel: false }, "'-' は不明");
+  assert.deepEqual(parseRoomFloor(null), { floor: null, multiLevel: false });
+  assert.deepEqual(parseRoomFloor("地下1階"), { floor: null, multiLevel: false }, "地下は地上の階数として使わない");
+});
+
+test("メゾネットの 3 周目はパス（nj_113）・取得元 ID も別", () => {
+  assert.equal(CHINTAI_MAISONETTE_PATH, "nj_113");
+  const u = chintaiSearchUrl("fukuokashichuo", 1, undefined, "maisonette");
+  assert.ok(u.startsWith("https://suumo.jp/chintai/fukuoka/sc_fukuokashichuo/nj_113/?"), u);
+  assert.ok(u.includes("ct=20.0") && u.includes("md=10"), "絞り込みクエリはパスの上に載る");
+  assert.ok(!u.includes("tc="), "メゾネットはチェックボックス（tc）では絞れない");
+  assert.ok(chintaiSearchUrl("kasuga", 2, undefined, "maisonette").endsWith("&page=2"));
+  const src = new ChintaiSource({ maisonette: true });
+  assert.equal(src.id, CHINTAI_MAISONETTE_SOURCE_ID);
+  assert.equal(src.round, "maisonette");
+  assert.deepEqual(src.targets(), new ChintaiSource().targets());
+  assert.equal(CRAWL_KINDS.chintai_maisonette.sourceId, CHINTAI_MAISONETTE_SOURCE_ID);
+  assert.equal(listingKindOf("chintai_maisonette"), "rent");
+  assert.equal(parseCrawlKind("chintai_maisonette"), "chintai_maisonette");
+  // 周回は 1 つずつ（ペットとメゾネットを同時に付けない）
+  assert.throws(() => new ChintaiSource({ pets: true, maisonette: true }));
+});
+
+test("間取り詳細 → LDK の畳数 / 階建 → 部屋の階・建物の階数", () => {
+  // ⚠️ SUUMO は「畳」の字を書かない。"LDK16.4" の形で出る
+  assert.equal(parseLdkTatami("和6 洋7 洋5.2 LDK16.4"), 16.4);
+  assert.equal(parseLdkTatami("洋10.8 洋6.7 洋4.7 LDK17.6"), 17.6);
+  assert.equal(parseLdkTatami("和4.5 洋6 洋6 洋5 LDK18"), 18);
+  assert.equal(parseLdkTatami("洋8 洋6 DK7"), null, "L を含まない間取りには LDK 畳数を作らない");
+  assert.equal(parseLdkTatami("洋8 LD14 K4"), 14, "LD も L を含むので拾う");
+  assert.equal(parseLdkTatami(null), null);
+  assert.equal(parseLdkTatami("-"), null);
+  assert.deepEqual(parseDetailFloors("4階/8階建"), { roomFloor: 4, buildingFloors: 8 });
+  assert.deepEqual(parseDetailFloors("1階/地上3階建"), { roomFloor: 1, buildingFloors: 3 });
+  assert.deepEqual(parseDetailFloors(null), { roomFloor: null, buildingFloors: null });
+  assert.equal(chintaiDetailUrl("000109723289", "100437646092"), "https://suumo.jp/chintai/jnc_000109723289/?bc=100437646092");
+  assert.equal(CHINTAI_DETAIL_MAX_PER_RUN, 60, "1 回の実行で取る詳細ページの上限（60 秒間隔なので ≒1 時間）");
 });
 
 test("架空ページ: 建物→部屋・ページャ・ペット絞り込みの 2 周目", () => {
@@ -243,6 +307,118 @@ test("1 部屋 → ListingRecord（賃料が読めない部屋は捨てる・掲
   assert.equal(toRentListingRecord(b, { ...b.rooms[0]!, rentYen: 0 }), null);
 });
 
+/**
+ * ⚠️ 取りこぼしの回帰テスト（2026-09-26 に address で実際に起きた・e1c26b3）。
+ * パーサが値を持っていても、**記録（toRentListingRecord）→ 取り込みの検証（parseIngestRequest）→ D1 に渡す行（listingUpsertRow）**の
+ * どこかで写し忘れると D1 まで届かない。建物の階数・部屋の階・メゾネットの 3 つを各段で追いかける。
+ */
+test("階数・メゾネットが パーサ → 記録 → 取り込みの検証 → D1 の行 の各段で生きている", () => {
+  const page = parseChintaiListPage(renderFakeChintaiPage("fukuokashichuo", 1, 1).html, "40133", 2026);
+  const b = page.buildings[0]!;
+  assert.notEqual(b.buildingFloors, null, "① パーサ: 建物の階数");
+  const room = b.rooms.find((r) => r.roomFloor !== null)!;
+  assert.ok(room, "① パーサ: 階の読める部屋がある");
+
+  // ② 記録に写る（建物側の階数が全部屋に配られる）
+  const rec = toRentListingRecord(b, room)!;
+  assert.equal(rec.buildingFloors, b.buildingFloors, "② 記録: 建物の階数");
+  assert.equal(rec.roomFloor, room.roomFloor, "② 記録: 部屋の階");
+
+  // ③ 取り込み要求の検証を通っても落ちない（JSON を往復させる）
+  const runId = `${CHINTAI_SOURCE_ID}:2026-09-26`;
+  const req = parseIngestRequest(
+    JSON.parse(
+      JSON.stringify({
+        op: "page", kind: "chintai", runId, areaCode: "40133", page: 1,
+        url: "https://suumo.jp/chintai/fukuoka/sc_fukuokashichuo/", fetchedAt: "2026-09-26T00:00:00.000Z",
+        outcome: { kind: "parsed", page: { totalHits: 1, zeroHits: false, maxPageLinked: 1, skipped: 0, records: [rec] } },
+      }),
+    ),
+  );
+  assert.equal(req.op, "page");
+  const got = req.op === "page" && req.outcome.kind === "parsed" ? (req.outcome.page.records[0] as typeof rec) : null;
+  assert.ok(got);
+  assert.equal(got.buildingFloors, b.buildingFloors, "③ 取り込みの検証: 建物の階数");
+  assert.equal(got.roomFloor, room.roomFloor, "③ 取り込みの検証: 部屋の階");
+
+  // ④ D1 の UPSERT に渡す行（鍵は UPSERT_LISTINGS の json_extract と 1:1）
+  const row = listingUpsertRow(got, "40133");
+  assert.equal(row.bfl, b.buildingFloors, "④ D1 の行: building_floors");
+  assert.equal(row.rfl, room.roomFloor, "④ D1 の行: room_floor");
+  assert.equal(row.addr, rec.address, "④ D1 の行: address（2026-09-26 に落ちていた項目）");
+
+  // メゾネット（室内 2 層）は "1-2階" の部屋で立つ。**立たない部屋は 0 ではなく NULL（不明）**
+  const multi = page.buildings.flatMap((x) => x.rooms.map((r) => [x, r] as const)).find(([, r]) => r.multiLevel);
+  assert.ok(multi, "架空ページに室内 2 層（1-2階）の部屋がある");
+  const mRec = toRentListingRecord(multi[0], multi[1])!;
+  assert.equal(mRec.maisonette, true, "② 記録: 階が範囲表記ならメゾネット");
+  assert.equal(listingUpsertRow(mRec, "40133").mais, 1, "④ D1 の行: maisonette = 1");
+  assert.equal(rec.maisonette, undefined, "単独の階の部屋にはメゾネットの印を立てない（不明のまま）");
+  assert.equal(listingUpsertRow(rec, "40133").mais, null, "④ D1 の行: 不明は NULL（0 を入れない）");
+});
+
+test("架空ページ: メゾネットの 3 周目（nj_113）は見えた部屋に maisonette を立てるだけ", () => {
+  const src = new ChintaiSource({ maisonette: true, origin: "http://127.0.0.1:8790" });
+  const t = { areaCode: "40133", key: "fukuokashichuo" };
+  assert.ok(src.pageUrl(t, 1).includes("/nj_113/"));
+  const page = renderFakeChintaiPage("fukuokashichuo", 1, 1, "maisonette");
+  assert.equal(page.status, 200);
+  const recs = src.parsePage(page.html, t);
+  assert.ok(recs.records.length > 0);
+  assert.equal(recs.records.every((r) => r.maisonette === true), true, "3 周目で見えた部屋は全部メゾネット");
+  // 1 周目は「階が範囲表記の部屋」だけに印が付き、それ以外は不明のまま（3 周目の方が拾える）
+  const plain = new ChintaiSource().parsePage(renderFakeChintaiPage("fukuokashichuo", 1, 1).html, t);
+  assert.ok(plain.records.some((r) => r.maisonette === undefined), "1 周目には不明のままの部屋がある");
+  assert.ok(
+    recs.records.length >= plain.records.filter((r) => r.maisonette).length,
+    "3 周目は 1 周目の範囲表記だけより多く拾える",
+  );
+  // 取り込み要求としても通る（rent だけ・runId は 3 周目の取得元）
+  const req = parseIngestRequest(
+    JSON.parse(
+      JSON.stringify({
+        op: "page", kind: "chintai_maisonette", runId: `${CHINTAI_MAISONETTE_SOURCE_ID}:2026-09-26`, areaCode: "40133",
+        page: 1, url: src.pageUrl(t, 1), fetchedAt: "2026-09-26T00:00:00.000Z",
+        outcome: { kind: "parsed", page: { totalHits: 1, zeroHits: false, maxPageLinked: 1, skipped: 0, records: recs.records } },
+      }),
+    ),
+  );
+  assert.equal(req.op, "page");
+  // kind と取得元が食い違う要求は受けない（runId の頭が取得元 ID と一致しないと弾く）
+  assert.throws(
+    () => parseIngestRequest({ ...JSON.parse(JSON.stringify(req)), runId: `${CHINTAI_SOURCE_ID}:2026-09-26` }),
+    /runId と kind が合わない/,
+  );
+});
+
+test("架空ページ: 詳細ページから LDK の畳数が読める・取り込み要求（detail_*）の検証", () => {
+  const room = fakeChintaiBuildings("fukuokashichuo", 1)[0]!.rooms[0]!;
+  const d = renderFakeChintaiDetail(room.id, 1);
+  assert.equal(d.status, 200);
+  assert.equal(hasChintaiDetailStructure(d.html), true);
+  const parsed = parseChintaiDetailPage(d.html);
+  assert.equal(parsed.ldkTatami, room.ldkTatami);
+  assert.notEqual(parsed.buildingFloors, null);
+  assert.equal(renderFakeChintaiDetail("999999999999", 1).status, 404);
+
+  // 取り込み要求: 対象をもらう → 結果を返す。どちらも kind=chintai だけ
+  const t = parseIngestRequest({ op: "detail_targets", kind: "chintai", limit: 60 });
+  assert.equal(t.op, "detail_targets");
+  assert.throws(() => parseIngestRequest({ op: "detail_targets", kind: "chintai", limit: CHINTAI_DETAIL_MAX_PER_RUN + 1 }));
+  assert.throws(() => parseIngestRequest({ op: "detail_targets", kind: "chintai_pets", limit: 10 }), /kind=chintai だけ/);
+  const r = parseIngestRequest({
+    op: "detail_results", kind: "chintai", fetchedAt: "2026-09-26T00:00:00.000Z",
+    results: [{ externalId: room.id, ldkTatami: 16.4 }, { externalId: "100000000001", ldkTatami: null }],
+  });
+  assert.equal(r.op, "detail_results");
+  // ⚠️ 読めなかった部屋（null）も送る = 「取った」印になり、次回また取りに行かない
+  if (r.op === "detail_results") assert.deepEqual(r.results[1], { externalId: "100000000001", ldkTatami: null });
+  assert.throws(() => parseIngestRequest({
+    op: "detail_results", kind: "chintai", fetchedAt: "2026-09-26T00:00:00.000Z",
+    results: [{ externalId: room.id, ldkTatami: 0 }],
+  }), /ldkTatami が不正/);
+});
+
 // ---------------------------------------------------------------- 実データ（無ければ skip）
 
 test("実データ: 福岡市中央区 1 ページ目（2026-09-26）", { skip: !hasProbe("chuo_p1") && "listing-probe/chintai が無い" }, () => {
@@ -365,6 +541,91 @@ test("実データ: ペット絞り込みの 2 周目（tc=0401102）", { skip: 
   const recs = new ChintaiSource({ pets: true }).parsePage(probe("chuo_p1_pets"), { areaCode: "40133", key: "fukuokashichuo" });
   assert.ok(recs.records.length > 0);
   assert.equal(recs.records.every((r) => r.petsAllowed === true), true);
+});
+
+/**
+ * 2026-09-26 に本番で取った実ページ。一覧の階の表記は "1階"〜"14階"・"1-2階"・"-" しか出なかった。
+ * building_floors / room_floor が実データでちゃんと埋まること（＝画面に出せること）を見る。
+ */
+test("実データ: 建物の階数・部屋の階が取れる（記録と D1 の行まで通る）", { skip: !hasProbe("chuo_p1") && "listing-probe/chintai が無い" }, () => {
+  const p = parseChintaiListPage(probe("chuo_p1"), "40133", 2026);
+  assert.equal(p.buildings.filter((b) => b.buildingFloors === null).length, 0, "20 建物すべてで階建が読める");
+  const rooms = p.buildings.flatMap((b) => b.rooms);
+  assert.ok(rooms.filter((r) => r.roomFloor !== null).length >= rooms.length * 0.9, "ほとんどの部屋で階が読める");
+  assert.equal(rooms[0]!.roomFloor, 4, "先頭の部屋は 4階");
+  assert.equal(rooms[0]!.multiLevel, false);
+
+  // 記録 → D1 の行まで落ちない
+  const recs = new ChintaiSource().parsePage(probe("chuo_p1"), { areaCode: "40133", key: "fukuokashichuo" });
+  assert.equal(recs.records.filter((r) => r.buildingFloors === undefined).length, 0, "建物の階数が全件に付く");
+  const rows = recs.records.map((r) => listingUpsertRow(r, "40133"));
+  assert.equal(rows.filter((r) => r.bfl === null).length, 0, "D1 の行でも building_floors が埋まる");
+  assert.ok(rows.filter((r) => r.rfl !== null).length >= rows.length * 0.9);
+});
+
+test("実データ: メゾネット絞り込み（/nj_113/）の 3 周目", { skip: !hasProbe("chuo_p1_maisonette") && "listing-probe/chintai が無い" }, () => {
+  const m = parseChintaiListPage(probe("chuo_p1_maisonette"), "40133", 2026);
+  const plain = parseChintaiListPage(probe("chuo_p1"), "40133", 2026);
+  // 2026-09-26 の実ページ: 中央区 734 件 → メゾネットだけだと 37 件・1 ページ
+  assert.equal(m.totalHits, 37, "メゾネットだけに絞ると件数が減る（734 → 37）");
+  assert.equal(m.maxPageLinked, 1, "1 ページで収まる（1 周目は 8 ページ）");
+  assert.ok((m.totalHits ?? 0) < (plain.totalHits ?? 0));
+  const rooms = m.buildings.flatMap((b) => b.rooms);
+  assert.ok(rooms.length > 0);
+  // ⚠️ ここが肝心: 一覧の階が "1階"（単独）のメゾネットが実在する。
+  //    だから「階が 1-2階 なら」の判定だけでは足りず、3 周目（nj_113）が要る
+  assert.ok(rooms.some((r) => r.multiLevel), "階が範囲表記（1-2階）の部屋がある");
+  assert.ok(rooms.some((r) => !r.multiLevel && r.roomFloor !== null), "階が単独表記のメゾネットもある");
+
+  const recs = new ChintaiSource({ maisonette: true }).parsePage(probe("chuo_p1_maisonette"), { areaCode: "40133", key: "fukuokashichuo" });
+  assert.ok(recs.records.length > 0);
+  assert.equal(recs.records.every((r) => r.maisonette === true), true, "3 周目で見えた部屋は全部メゾネット");
+  // 取得時の絞り込みクエリ（賃料・面積・間取り）はパスの上でも効いている（3LDK 以上・60㎡ 以上しか返らない）
+  assert.equal(rooms.filter((r) => (r.areaSqm ?? 0) < 60).length, 0);
+  assert.equal(rooms.filter((r) => !/^[3-9]/.test(r.floorPlan ?? "")).length, 0);
+});
+
+/**
+ * 詳細ページの実データ（2026-09-26 に本番で 3 ページ取った）。
+ * ⚠️ **「畳」の字は 1 回も出てこない**。畳数は「間取り詳細」の "LDK16.4" の形で書かれている。
+ */
+test("実データ: 詳細ページの間取り詳細 → LDK の畳数", { skip: !hasDetailProbe("detail_1") && "listing-probe/chintai/detail が無い" }, () => {
+  const h = detailProbe("detail_1");
+  assert.equal(h.includes("畳"), false, "SUUMO は「畳」の字を書かない（単位が省略されている）");
+  assert.equal(hasChintaiDetailStructure(h), true);
+  const d = parseChintaiDetailPage(h);
+  assert.equal(d.layoutDetail, "和6 洋7 洋5.2 LDK16.4");
+  assert.equal(d.ldkTatami, 16.4);
+  assert.deepEqual({ r: d.roomFloor, b: d.buildingFloors }, { r: 4, b: 8 }, "階建は 4階/8階建");
+  assert.equal(d.maisonette, false, "メゾネットのタグが無い");
+
+  if (hasDetailProbe("detail_2_maisonette")) {
+    const m = parseChintaiDetailPage(detailProbe("detail_2_maisonette"));
+    assert.equal(m.ldkTatami, 17.6);
+    assert.deepEqual({ r: m.roomFloor, b: m.buildingFloors }, { r: 1, b: 3 }, "「1階/地上3階建」も読む");
+    // ⚠️ この部屋は一覧では "1階"（単独）なのにメゾネット。範囲表記だけの判定では取りこぼす
+    assert.equal(m.maisonette, true, "特徴のタグに「メゾネット」がある");
+  }
+  if (hasDetailProbe("detail_3")) {
+    const d3 = parseChintaiDetailPage(detailProbe("detail_3"));
+    assert.equal(d3.ldkTatami, 18);
+    assert.equal(d3.layoutDetail, "和4.5 洋6 洋6 洋5 LDK18");
+  }
+});
+
+/**
+ * 管理費・敷金・礼金の "-" について（README にも書いた）。
+ * **詳細ページでも "-" のまま**なので、「0 円」なのか「表記なし」なのかは詳細ページを取っても判別できない。
+ * 一覧と同じく不明（NULL）のままにする、という 0006 の判断は詳細ページを見ても変わらない。
+ */
+test("実データ: 管理費の '-' は詳細ページでも '-'（0 円か表記なしか判別できない）", { skip: !hasDetailProbe("detail_1") && "listing-probe/chintai/detail が無い" }, () => {
+  const text = detailProbe("detail_1").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ");
+  assert.match(text, /管理費・共益費:\s*-/, "詳細ページの管理費も '-'");
+  // 一覧の同じ部屋も '-' だった（chuo_p1 の先頭の部屋）
+  if (hasProbe("chuo_p1")) {
+    const room = parseChintaiListPage(probe("chuo_p1"), "40133", 2026).buildings[0]!.rooms[0]!;
+    assert.equal(room.adminFeeYen, null, "一覧でも不明（0 円と決めつけない）");
+  }
 });
 
 test("実データ: 0 件ページ（条件にあう物件がありません）", { skip: !hasProbe("zerohits") && "listing-probe/chintai が無い" }, () => {

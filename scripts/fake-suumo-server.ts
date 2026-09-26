@@ -266,6 +266,10 @@ export interface FakeChintaiRoom {
   area: number;
   /** ペット相談可（一覧には出ない。絞り込み付きのページに出すかどうかの判定にだけ使う） */
   pets: boolean;
+  /** メゾネット（一覧には出ない。/nj_113/ の絞り込みページに出すかどうかと、詳細ページのタグに使う） */
+  maisonette: boolean;
+  /** LDK の畳数（一覧には出ない。詳細ページの「間取り詳細」にだけ出る） */
+  ldkTatami: number;
   newArrival: boolean;
 }
 
@@ -295,7 +299,8 @@ export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuil
       const man = Math.round(rent * 10) / 10;
       rooms.push({
         id: String(100000000000 + idx * 100000 + i * 100 + j),
-        floor: j % 4 === 3 ? "-" : `${2 + j}階`,
+        // 4 部屋に 1 つは "-"（階が読めない）、5 つに 1 つは "1-2階"（室内 2 層 = メゾネット）
+        floor: j % 4 === 3 ? "-" : (i + j) % 5 === 1 ? "1-2階" : `${2 + j}階`,
         rentMan: man,
         admin: j % 3 === 2 ? "-" : `${3000 + j * 1000}円`,
         deposit: j % 3 === 0 ? "-" : j % 3 === 1 ? `${man}万円` : "1ヶ月",
@@ -304,6 +309,9 @@ export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuil
         area: 70.5 + ((i * 5 + j * 3) % 30),
         // 久山町はペット相談可なし（ペット絞り込みの 0 件ページを試せるように）
         pets: slug !== "kasuyagunhisayama" && (i + j) % 3 === 0,
+        // 実ページと同じく、一覧の階が "1階" でもメゾネットのことがある（(i+j)%7===2 の分）
+        maisonette: (i + j) % 5 === 1 || (i + j) % 7 === 2,
+        ldkTatami: 12 + ((i * 3 + j * 2) % 9),
         newArrival: j === 0 && i % 2 === 0,
       });
     }
@@ -312,7 +320,7 @@ export function fakeChintaiBuildings(slug: string, day: number): FakeChintaiBuil
   if (day >= 2) {
     out.push({
       name: `新着ハイツ${idx}`, age: 3, floors: 10, walk: 4,
-      rooms: [{ id: String(199000000000 + idx), floor: "7階", rentMan: 12.5, admin: "6000円", deposit: "12.5万円", gratuity: "1ヶ月", madori: "3LDK", area: 75.2, pets: true, newArrival: true }],
+      rooms: [{ id: String(199000000000 + idx), floor: "7階", rentMan: 12.5, admin: "6000円", deposit: "12.5万円", gratuity: "1ヶ月", madori: "3LDK", area: 75.2, pets: true, maisonette: false, ldkTatami: 16.4, newArrival: true }],
     });
   }
   return out;
@@ -375,12 +383,20 @@ ${b.rooms.map((r) => `<tbody>${chintaiRoomRow(r)}</tbody>`).join("\n")}
  * ⚠️ 件数表示（掲載の数）は一覧に出る行数と一致しない（実ページでは中央区 734 件に対し 8 ページ × 26〜36 行）ので、
  *    偽サーバでも「行数 × 3」を件数として返し、ページ数はページャの番号でだけ分かるようにしてある。
  */
-export function renderFakeChintaiPage(slug: string, page: number, day: number, pets = false): { status: number; html: string } {
+export function renderFakeChintaiPage(
+  slug: string,
+  page: number,
+  day: number,
+  round: "plain" | "pets" | "maisonette" | boolean = "plain",
+): { status: number; html: string } {
+  // 旧い呼び方（pets = true / false）も受ける
+  const r: "plain" | "pets" | "maisonette" = round === true ? "pets" : round === false ? "plain" : round;
   if (!SLUGS.includes(slug)) return { status: 404, html: "<html><body>not found</body></html>" };
   let all = fakeChintaiBuildings(slug, day);
-  if (pets) {
+  if (r !== "plain") {
+    const keep = (room: FakeChintaiRoom) => (r === "pets" ? room.pets : room.maisonette);
     all = all
-      .map((b) => ({ ...b, rooms: b.rooms.filter((r) => r.pets) }))
+      .map((b) => ({ ...b, rooms: b.rooms.filter(keep) }))
       .filter((b) => b.rooms.length > 0);
   }
   if (all.length === 0) {
@@ -396,12 +412,14 @@ export function renderFakeChintaiPage(slug: string, page: number, day: number, p
   if (page > pages) return { status: 404, html: "<html><body>not found</body></html>" };
   const items = all.slice((page - 1) * pageSize, page * pageSize);
   const rooms = all.reduce((n, b) => n + b.rooms.length, 0);
-  const q = pets ? "?tc=0401102&" : "?";
+  const q = r === "pets" ? "?tc=0401102&" : "?";
+  // メゾネットだけはクエリではなくパス（実ページと同じ /nj_113/）
+  const base = r === "maisonette" ? `/chintai/fukuoka/sc_${slug}/nj_113/` : `/chintai/fukuoka/sc_${slug}/`;
   const pager = Array.from({ length: pages }, (_, i) => i + 1)
     .map((p) =>
       p === page
         ? `<li class="pagination-current">${p}</li>`
-        : `<li class=""><a href="/chintai/fukuoka/sc_${slug}/${q}page=${p}">${p}</a></li>`,
+        : `<li class=""><a href="${base}${q}page=${p}">${p}</a></li>`,
     )
     .join("<li>&nbsp;</li>");
   return {
@@ -415,6 +433,39 @@ export function renderFakeChintaiPage(slug: string, page: number, day: number, p
 ${items.map((b) => `<li>${chintaiBuilding(slug, b)}</li>`).join("\n")}
 </ul></div></body></html>`,
   };
+}
+
+/**
+ * 掲載の詳細ページ（/chintai/jnc_<掲載 ID>/?bc=<部屋 ID>）。骨格は 2026-09-26 に本番で取った 3 ページに合わせてある
+ * （~/work/_experiments/listing-probe/chintai/detail/。**リポジトリには入れない**）:
+ *   <table class="data_table table_gaiyou"><tr><th class="data_01" scope="cols">間取り詳細</th><td>和6 洋7 洋5.2 LDK16.4</td>…
+ *   <th class="data_01" scope="cols">階建</th><td>4階/8階建</td>
+ * ⚠️ **「畳」の字は出てこない**（畳数は「LDK16.4」の形）。メゾネットは「特徴」のタグ一覧（読点区切り）に出る。
+ */
+export function renderFakeChintaiDetail(bc: string, day: number): { status: number; html: string } {
+  for (const slug of SLUGS) {
+    for (const b of fakeChintaiBuildings(slug, day)) {
+      const room = b.rooms.find((x) => x.id === bc);
+      if (!room) continue;
+      const floorNum = /^(\d+)/.exec(room.floor)?.[1] ?? "1";
+      const tags = ["バストイレ別", "エアコン", room.pets ? "ペット相談" : "室内洗濯置", ...(room.maisonette ? ["メゾネット"] : []), "都市ガス"];
+      return {
+        status: 200,
+        html: `<!doctype html><html><head><meta charset="utf-8"><title>【SUUMO】${b.name}</title></head><body>
+<div class="property_view_note"><span class="property_view_note-emphasis">${room.rentMan}万円</span>
+<div class="property_view_note-list"><span>管理費・共益費:&nbsp;${room.admin}</span></div>
+<div class="property_view_note-list"><span>敷金:&nbsp;${room.deposit}</span><span>礼金:&nbsp;${room.gratuity}</span><span>保証金:&nbsp;-</span></div></div>
+<table cellspacing="0" class="data_table table_gaiyou">
+<tr><th class="data_01" scope="cols">間取り詳細</th><td>
+		和6 洋7 洋5.2 LDK${room.ldkTatami}</td><th class="data_02" scope="cols">構造</th><td>鉄筋コン</td></tr>
+<tr><th class="data_01" scope="cols">階建</th><td>${floorNum}階/${b.floors}階建</td><th class="data_02" scope="cols">築年月</th><td>${2026 - b.age}年11月</td></tr>
+</table>
+<ul class="inline_list"><li>${tags.join("、")}</li></ul>
+</body></html>`,
+      };
+    }
+  }
+  return { status: 404, html: "<html><body>not found</body></html>" };
 }
 
 function main(): void {
@@ -437,9 +488,18 @@ function main(): void {
       return send(200, JSON.stringify({ mode }), "application/json");
     }
     if (u.pathname === "/__stats") return send(200, JSON.stringify({ day, mode, hits }), "application/json");
+    // 賃貸の詳細ページ（LDK の畳数）
+    const detail = /^\/chintai\/jnc_\d+\/$/.exec(u.pathname);
+    if (detail) {
+      hits++;
+      if (mode === "403") return send(403, "forbidden");
+      if (mode === "429") return send(429, "too many requests");
+      const d = renderFakeChintaiDetail(u.searchParams.get("bc") ?? "", day);
+      return send(d.status, d.html);
+    }
     const m =
       /^\/ms\/(chuko|shinchiku)\/fukuoka\/sc_([a-z]+)\/$/.exec(u.pathname) ??
-      /^\/(chintai)\/fukuoka\/sc_([a-z]+)\/$/.exec(u.pathname);
+      /^\/(chintai)\/fukuoka\/sc_([a-z]+)\/(?:(nj_\d+)\/)?$/.exec(u.pathname);
     if (!m || !m[1] || !m[2]) return send(404, "not found");
     hits++;
     if (mode === "403") return send(403, "forbidden");
@@ -447,11 +507,12 @@ function main(): void {
     if (mode === "captcha") return send(200, "<html><body><div class='g-recaptcha'></div>アクセスが集中しています</body></html>");
     if (mode === "broken") return send(200, "<html><body>maintenance</body></html>");
     const pageNo = Number(u.searchParams.get("page") ?? 1);
+    const round = m[3] === "nj_113" ? "maisonette" : u.searchParams.get("tc") === "0401102" ? "pets" : "plain";
     const r =
       m[1] === "shinchiku"
         ? renderFakeShinchikuPage(m[2], pageNo, day)
         : m[1] === "chintai"
-          ? renderFakeChintaiPage(m[2], pageNo, day, u.searchParams.get("tc") === "0401102")
+          ? renderFakeChintaiPage(m[2], pageNo, day, round)
           : renderFakePage(m[2], pageNo, day);
     return send(r.status, r.html);
   });

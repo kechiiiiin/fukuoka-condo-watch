@@ -6,6 +6,7 @@
     "test": "node --import tsx --test test/*.test.ts",
     "fake-suumo": "tsx scripts/fake-suumo-server.ts",
     "crawl:local": "tsx scripts/suumo-crawl-local.ts",
+    "crawl:detail": "tsx scripts/suumo-chintai-detail.ts",
     "access-app": "tsx scripts/access-app.ts",
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",

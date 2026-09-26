@@ -376,6 +376,82 @@ test("ペット相談可トグル: 賃貸は既定 ON・pets=0 で外せる（sa
   assert.equal(parsePickFilters(new URLSearchParams("pets=1"), () => true).petsOnly, false, "kind 省略は従来どおり売買");
 });
 
+/**
+ * 2026-09-26 に足した「理想条件」。
+ * ⚠️ **建物の階数では絞らない**（本人に確認して「2 階建ての建物は嫌ではない」となった）。
+ *    既定は buildingFloorsMin = null で、URL の floors= を付けたときだけ効く任意の絞り込み。
+ */
+test("賃貸の既定: メゾネットを除く・LDK 15畳以上。建物の階数では絞らない", () => {
+  const today = "2026-09-26";
+  const f = parsePickFilters(new URLSearchParams(""), () => true, "rent");
+  assert.equal(f.excludeMaisonette, true);
+  assert.equal(f.ldkTatamiMin, 15);
+  assert.equal(f.buildingFloorsMin, null, "建物の階数は既定では絞らない");
+
+  const base = { pets_allowed: 1 } as const;
+  // メゾネット: 1 は落とす・**NULL（不明）は落とさない**
+  assert.equal(matchesConditions(rentRow({ ...base, maisonette: null, ldk_tatami: 16 }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ ...base, maisonette: 1, ldk_tatami: 16 }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ ...base, ldk_tatami: 16 }), f, 2026, today), true, "列が無い行も落とさない");
+
+  // LDK の畳数: 15 未満は落とす・ちょうど 15 は残す・**NULL（未取得）は落とさない**
+  assert.equal(matchesConditions(rentRow({ ...base, ldk_tatami: 15 }), f, 2026, today), true, "15畳ちょうどはyes");
+  assert.equal(matchesConditions(rentRow({ ...base, ldk_tatami: 14.9 }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ ...base, ldk_tatami: null }), f, 2026, today), true, "未取得は落とさない（15畳未満の意味ではない）");
+
+  // 建物の階数: 2 階建てでも既定では残る
+  assert.equal(matchesConditions(rentRow({ ...base, building_floors: 2, ldk_tatami: 16 }), f, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ ...base, building_floors: null, ldk_tatami: 16 }), f, 2026, today), true);
+});
+
+test("賃貸: 既定の絞り込みは URL で外せる（mais=0 / tatami=0 / floors=N）", () => {
+  const today = "2026-09-26";
+  const noMais = parsePickFilters(new URLSearchParams("mais=0"), () => true, "rent");
+  assert.equal(noMais.excludeMaisonette, false);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, maisonette: 1, ldk_tatami: 16 }), noMais, 2026, today), true);
+
+  const noTatami = parsePickFilters(new URLSearchParams("tatami=0"), () => true, "rent");
+  assert.equal(noTatami.ldkTatamiMin, null, "0 以下は「絞らない」の意味");
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, ldk_tatami: 8 }), noTatami, 2026, today), true);
+  assert.equal(parsePickFilters(new URLSearchParams("tatami=18"), () => true, "rent").ldkTatamiMin, 18);
+
+  // 建物の階数は「既定は無効・指定したときだけ効く」。⚠️ 不明（NULL）は落とさない
+  const floors3 = parsePickFilters(new URLSearchParams("floors=3"), () => true, "rent");
+  assert.equal(floors3.buildingFloorsMin, 3);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, ldk_tatami: 16, building_floors: 3 }), floors3, 2026, today), true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, ldk_tatami: 16, building_floors: 2 }), floors3, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, ldk_tatami: 16, building_floors: null }), floors3, 2026, today), true, "階数不明は落とさない");
+
+  // 売買では賃貸だけの条件は効かない
+  const sale = parsePickFilters(new URLSearchParams("mais=1&tatami=20&floors=5"), () => true, "sale");
+  assert.deepEqual(
+    { m: sale.excludeMaisonette, t: sale.ldkTatamiMin, f: sale.buildingFloorsMin },
+    { m: false, t: null, f: null },
+  );
+});
+
+test("賃貸のグルーピング: 階数・メゾネット・LDK 畳数をまとめる", () => {
+  const g = groupListings([
+    rentRow({ external_id: "jnc_1", building_floors: 8, room_floor: 4, maisonette: null, ldk_tatami: 16.4, detail_fetched_at: "2026-09-26T00:00:00Z" }),
+    rentRow({ external_id: "jnc_2", current_price: 128000, building_floors: 8, room_floor: 6, maisonette: null, ldk_tatami: 18, detail_fetched_at: null }),
+  ])[0]!;
+  assert.equal(g.buildingFloors, 8);
+  assert.equal(g.roomFloorMin, 4);
+  assert.equal(g.roomFloorMax, 6, "同条件の部屋が複数なら幅で出す");
+  assert.equal(g.maisonette, false, "印が無ければ false（＝不明。ワンフロアだと確かめた意味ではない）");
+  assert.equal(g.ldkTatami, 16.4, "畳数は一番小さいもの（控えめに出す）");
+  assert.equal(g.detailFetched, true, "1 件でも詳細を取っていれば true");
+
+  const mais = groupListings([rentRow({ maisonette: 1 })])[0]!;
+  assert.equal(mais.maisonette, true);
+  // 売買のグループでは 0007 の項目も空（回帰）
+  const sale = groupListings([row()])[0]!;
+  assert.deepEqual(
+    { b: sale.buildingFloors, r: sale.roomFloorMin, m: sale.maisonette, t: sale.ldkTatami, d: sale.detailFetched },
+    { b: null, r: null, m: false, t: null, d: false },
+  );
+});
+
 // ⚠️ listed_on は SUUMO 賃貸では常に NULL（一覧に掲載日が無い）。ここで値を入れているのは
 //    listings の汎用の列としてのまとめ方（最新を採る）を確かめるため
 test("賃貸のグルーピング: 敷礼・管理費・ペット・掲載日をまとめる", () => {

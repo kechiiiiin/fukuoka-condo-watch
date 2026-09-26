@@ -20,8 +20,9 @@ const SALE_DEFAULTS_TEXT =
   `既定の条件: ${D.priceMaxMan.toLocaleString("ja-JP")}万円以下・${D.areaMin}㎡以上・${D.planRoomsMin}LDK以上・` +
   `築${D.ageMax}年以内・駅徒歩${D.walkMax}分以内（バス便は除く）。空欄の項目は既定の値で絞ります。`;
 const RENT_DEFAULTS_TEXT =
-  `既定の条件: 家賃 ${R.priceMaxMan}万円以下・${R.areaMin}㎡以上・${R.planRoomsMin}LDK以上・築${R.ageMax}年以内` +
-  `（徒歩分は指定なし・バス便も含む）。空欄の項目は既定の値で絞ります。`;
+  `既定の条件: 家賃 ${R.priceMaxMan}万円以下・${R.areaMin}㎡以上・${R.planRoomsMin}LDK以上・築${R.ageMax}年以内・` +
+  `ペット相談可・メゾネットでない・LDK ${R.ldkTatamiMin}畳以上（徒歩分は指定なし・バス便も含む・建物の階数では絞りません）。` +
+  `メゾネット不明・LDK畳数 未取得のものは落としていません。空欄の項目は既定の値で絞ります。`;
 
 const HTML = `<!doctype html>
 <html lang="ja">
@@ -73,6 +74,7 @@ const HTML = `<!doctype html>
   nav.tabs a { display: inline-block; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; font-size: .85rem; color: var(--muted); background: var(--card); }
   nav.tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   .badge.pets { background: color-mix(in srgb, var(--good) 20%, transparent); }
+  .badge.warnbadge { background: color-mix(in srgb, var(--warn) 22%, transparent); }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -94,11 +96,14 @@ const HTML = `<!doctype html>
       <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>
       <label>築年数 上限(年)<input type="number" name="age" min="0" step="1" placeholder="${D.ageMax}"></label>
       <label>徒歩 上限(分)<input type="number" name="walk" min="0" step="1" placeholder="${D.walkMax}"></label>
+      <label id="lb-tatami" class="hidden">LDK 畳数 下限<input type="number" name="tatami" min="0" step="0.5" placeholder="${R.ldkTatamiMin}"></label>
+      <label id="lb-floors" class="hidden">建物 階数下限<input type="number" name="floors" min="0" step="1" placeholder="指定なし"></label>
       <label id="lb-sort">並べ替え<select name="sort"><option value="newest">新着順</option><option value="retention" id="opt-retention">価格維持の高い順</option></select></label>
       <div class="toggles">
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
         <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1" checked> ペット相談可のみ（不明は除く）</label>
+        <label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1" checked> メゾネットを除く（不明は残す）</label>
         <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
@@ -158,6 +163,10 @@ const HTML = `<!doctype html>
     if (IS_RENT) {
       f.pmax.step = "1";
       document.getElementById("lb-pmax").firstChild.nodeValue = "家賃 上限(万円/月)";
+      // 賃貸だけの絞り込み（LDK 畳数・建物の階数・メゾネット除外）を出す
+      document.getElementById("lb-tatami").className = "";
+      document.getElementById("lb-floors").className = "";
+      ph("tatami", D.ldkTatamiMin);
       // 価格維持は売買の指標なので賃貸では出さない
       document.getElementById("opt-retention").remove();
       f.bus.checked = true;
@@ -166,6 +175,7 @@ const HTML = `<!doctype html>
         '売買の指標（売りやすさ・売出/成約比・価格維持）は賃貸では出していません。';
     } else {
       document.getElementById("lb-pets").className = "checks hidden";
+      document.getElementById("lb-mais").className = "checks hidden";
     }
   })();
 
@@ -180,6 +190,7 @@ const HTML = `<!doctype html>
       var f = document.getElementById("filters");
       var data = {
         pmax: f.pmax.value, amin: f.amin.value, plan: f.plan.value, age: f.age.value, walk: f.walk.value,
+        tatami: f.tatami.value, floors: f.floors.value, mais: f.mais.checked,
         dk: f.dk.checked, bus: f.bus.checked, pets: f.pets.checked, fresh: f.fresh.checked, sort: f.sort.value,
         muni: Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; }),
       };
@@ -194,6 +205,9 @@ const HTML = `<!doctype html>
     if (saved.plan) f.plan.value = saved.plan;
     if (saved.age) f.age.value = saved.age;
     if (saved.walk) f.walk.value = saved.walk;
+    if (saved.tatami) f.tatami.value = saved.tatami;
+    if (saved.floors) f.floors.value = saved.floors;
+    f.mais.checked = saved.mais === undefined ? IS_RENT : !!saved.mais;
     f.dk.checked = !!saved.dk;
     f.bus.checked = !!saved.bus;
     f.pets.checked = saved.pets === undefined ? IS_RENT : !!saved.pets;
@@ -219,6 +233,13 @@ const HTML = `<!doctype html>
     if (IS_RENT) { if (!f.bus.checked) p.set("bus", "0"); } else if (f.bus.checked) p.set("bus", "1");
     // ペット相談可は賃貸の既定が ON なので、外したときに 0 を明示する（2026-09-26 の線引き）
     if (IS_RENT && !f.pets.checked) p.set("pets", "0");
+    if (IS_RENT) {
+      // LDK 畳数・建物の階数は空欄なら既定（畳数 15・階数は指定なし）。0 を入れると「絞らない」
+      if (f.tatami.value) p.set("tatami", f.tatami.value);
+      if (f.floors.value) p.set("floors", f.floors.value);
+      // メゾネット除外は既定 ON なので、外したときに 0 を明示する
+      if (!f.mais.checked) p.set("mais", "0");
+    }
     if (f.fresh.checked) p.set("fresh", "1");
     if (f.sort.value === "retention" && !IS_RENT) p.set("sort", "retention");
     var munis = Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; });
@@ -251,14 +272,26 @@ const HTML = `<!doctype html>
     var fee = it.adminFeeMin === null || it.adminFeeMin === undefined ? "管理費 不明"
       : (it.adminFeeMin === it.adminFeeMax ? "管理費 " + yen(it.adminFeeMin) : "管理費 " + yen(it.adminFeeMin) + "〜" + yen(it.adminFeeMax));
     var urls = it.urls.map(function (u, i) { return '<li><a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">SUUMO で見る' + (it.urls.length > 1 ? "（" + (i + 1) + "）" : "") + "</a></li>"; }).join("");
+    // 建物の階数・部屋の階は**情報として出すだけ**（既定の絞り込みには使っていない）。読めなければ「不明」
+    var floors = it.buildingFloors === null || it.buildingFloors === undefined ? "階建 不明" : (it.buildingFloors + "階建");
+    var roomFloor = it.roomFloorMin === null || it.roomFloorMin === undefined ? "部屋の階 不明"
+      : (it.roomFloorMin === it.roomFloorMax ? it.roomFloorMin + "階" : it.roomFloorMin + "〜" + it.roomFloorMax + "階");
+    // メゾネットは 1 か不明だけ（「ワンフロアだと確かめた」という印は無い）
+    var maisBadge = it.maisonette ? '<span class="badge warnbadge">メゾネット</span>' : '<span class="badge">メゾネット 不明</span>';
+    // LDK の畳数は詳細ページを取れた部屋にだけ付く。未取得は「15畳未満」ではない
+    var tatami = it.ldkTatami === null || it.ldkTatami === undefined
+      ? '<span class="meta">LDK畳数 未取得' + (it.detailFetched ? "（詳細ページに記載なし）" : "") + "</span>"
+      : "LDK " + n(it.ldkTatami, 1) + "畳";
     return '' +
       '<div class="card">' +
       '<h3>' + esc(it.buildingName) + (it.count > 1 ? '<span class="badge">同条件の部屋 ' + it.count + '件</span>' : '') +
       (it.isFresh ? '<span class="badge fresh">新着</span>' : '') +
-      (it.petsAllowed ? '<span class="badge pets">ペット相談可</span>' : '<span class="badge">ペット 不明</span>') + '</h3>' +
+      (it.petsAllowed ? '<span class="badge pets">ペット相談可</span>' : '<span class="badge">ペット 不明</span>') +
+      maisBadge + '</h3>' +
       '<div class="meta">' + esc(addr) + '</div>' +
       '<div class="row">' + station + '</div>' +
       '<div class="row">' + esc(it.floorPlan || "—") + ' ・ ' + n(it.areaSqm, 1) + '㎡ ・ 築' + age + '</div>' +
+      '<div class="row">' + tatami + ' ・ ' + roomFloor + '／' + floors + '</div>' +
       '<div class="price">' + rent + '<span class="unit">/月 ・ ' + fee + '</span></div>' +
       '<div class="row">敷金 ' + yen(it.depositMin) + ' ・ 礼金 ' + yen(it.keyMoneyMin) + '</div>' +
       // SUUMO の賃貸一覧には掲載日が無いので、出せるのは「このウォッチが最初に見た日」だけ

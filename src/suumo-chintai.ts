@@ -52,6 +52,12 @@ import { DEFAULT_USER_AGENT } from "./suumo-source";
 export const CHINTAI_SOURCE_ID = "suumo:chintai";
 /** ペット相談可の 2 周目（tc=0401102）。同じ listings の行に pets_allowed = 1 を立てるだけ */
 export const CHINTAI_PETS_SOURCE_ID = "suumo:chintai-pets";
+/**
+ * メゾネットタイプの 3 周目（/nj_113/）。同じ listings の行に maisonette = 1 を立てるだけ（行は増やさない）。
+ * 2026-09-26 に実ページのサイドバー（「こだわり条件から探す」）で確認: メゾネットは **tc= のチェックボックスには無く**、
+ * `/chintai/fukuoka/sc_<slug>/nj_113/` というパスでしか絞れない（CHINTAI_MAISONETTE_PATH に根拠）。
+ */
+export const CHINTAI_MAISONETTE_SOURCE_ID = "suumo:chintai-maisonette";
 /** 一覧 1 ページの建物数（2026-09-26 の実ページで 20 件）。ページ数の計算には使わない（pageCountFromLinks） */
 export const CHINTAI_PAGE_SIZE = 20;
 export const CHINTAI_PATH_PREFIX = "/chintai/";
@@ -82,13 +88,39 @@ export const CHINTAI_QUERY: readonly [string, string][] = [
 /** ペット相談可の絞り込み（一覧の絞り込みチェックボックス name="tc" value="0401102"。2026-09-26 に実ページで確認） */
 export const CHINTAI_PETS_PARAM: readonly [string, string] = ["tc", "0401102"];
 
+/**
+ * メゾネットタイプの絞り込み。**クエリではなくパスの一部**（`/chintai/fukuoka/sc_<slug>/nj_113/`）。
+ *
+ * 2026-09-26 に実ページ（~/work/_experiments/listing-probe/chintai/chuo_p1.html）で確認した根拠:
+ *   - サイドバーに `<a href="/chintai/fukuoka/sc_fukuokashichuo/nj_113/">メゾネットタイプ</a>` がある
+ *   - 同じ並びの `nj_103` は「ペット可・相談OK」で、これは絞り込みチェックボックス `tc=0401102` と同じ条件。
+ *     つまり nj_* は tc 等の条件の「パス表現」で、値の対応が取れている
+ *   - 一覧に出る `name="tc"` のチェックボックスは 12 個（0400101 2階以上住戸 / 0400301 バス・トイレ別 /
+ *     0400501 室内洗濯機置場 / 0400503 フローリング / 0400601 エアコン付 / 0400801 オートロック /
+ *     0400901 駐車場あり / 0401102 ペット相談 / 0401106 定期借家を含まない / 0401301 間取り図付 /
+ *     0401305 物件動画付き / 0401307 パノラマ付き）で、**メゾネットに当たる tc の値はページのどこにも出てこない**
+ *   - 保存 HTML 全体で「メゾネット」の出現はこの 1 か所だけ（他に表記が無いので一覧カードからは判定できない）
+ *   - robots.txt（2026-09-14 取得の保存分）の Disallow に nj_ で始まるパス（/chintai/<県>/sc_x/nj_NNN/）は無い
+ */
+export const CHINTAI_MAISONETTE_PATH = "nj_113";
+
 /** 絞り込みの説明（画面の注記に出す） */
 export const CHINTAI_QUERY_LABEL = "賃料 20万円以下・専有面積 60㎡以上・間取り 3K〜5K以上（取得時の絞り込み）";
 
-export function chintaiSearchUrl(slug: string, page: number, origin = SUUMO_ORIGIN, pets = false): string {
-  const q = [...CHINTAI_QUERY, ...(pets ? [CHINTAI_PETS_PARAM] : [])].map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
+/** 一覧の周回。plain = 1 周目 / pets = ペット相談可（tc=0401102） / maisonette = メゾネットタイプ（nj_113） */
+export type ChintaiRound = "plain" | "pets" | "maisonette";
+
+export function chintaiSearchUrl(slug: string, page: number, origin = SUUMO_ORIGIN, round: ChintaiRound = "plain"): string {
+  const q = [...CHINTAI_QUERY, ...(round === "pets" ? [CHINTAI_PETS_PARAM] : [])].map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
   if (page > 1) q.push(`page=${page}`);
-  return `${origin}/chintai/fukuoka/sc_${slug}/?${q.join("&")}`;
+  // メゾネットだけはクエリではなくパス（nj_113）。賃料・面積・間取りの絞り込みクエリはその上に載せる
+  const path = round === "maisonette" ? `sc_${slug}/${CHINTAI_MAISONETTE_PATH}` : `sc_${slug}`;
+  return `${origin}/chintai/fukuoka/${path}/?${q.join("&")}`;
+}
+
+/** 掲載の詳細ページ（LDK の畳数を取る先）。一覧のリンクと同じ形（/chintai/jnc_<掲載 ID>/?bc=<部屋 ID>） */
+export function chintaiDetailUrl(jnc: string, bc: string, origin = SUUMO_ORIGIN): string {
+  return `${origin}/chintai/jnc_${jnc}/?bc=${bc}`;
 }
 
 // ---------------------------------------------------------------- 正規化
@@ -146,6 +178,29 @@ export function parseBuildingFloors(raw: string): number | null {
   const s = toHalfWidth(decodeEntities(raw));
   const m = /(?:地上)?(\d+)\s*階建/.exec(s);
   return m ? Number(m[1]) : null;
+}
+
+/**
+ * 部屋の階の表記（一覧の `<td>`）→ 階数と「室内が 2 層か」。
+ *
+ * 2026-09-26 の実ページ（中央区 1・2 ページ目／春日市／久山町）に出た表記は
+ * "1階"〜"14階"（単独）と **"1-2階"（4 件）** と "-"（不明）だけだった。
+ * "1-2階" は**その住戸が 1 階と 2 階の 2 フロアにまたがっている**ということなので、そのままメゾネット（室内 2 層）。
+ * 階（floor）は**一番下の階**を入れる（「何階の部屋か」は下の階で言うのが普通）。
+ *
+ * "-"・空・読めないものは floor = null（不明）。multiLevel は**範囲表記だと分かったときだけ true**にし、
+ * 単独表記でも false ではなく「不明ではない（= 1 層）」の意味で false を返す。
+ * 地下（"地下1階"）は floor = null（地上何階かではないので数として使わない）。
+ */
+export function parseRoomFloor(raw: string | null | undefined): { floor: number | null; multiLevel: boolean } {
+  const s = toHalfWidth(decodeEntities(raw ?? "")).replace(/\s/g, "");
+  if (s === "" || s === "-") return { floor: null, multiLevel: false };
+  if (/地下/.test(s)) return { floor: null, multiLevel: false };
+  const range = /^(\d+)[-‐－―~〜](\d+)階$/.exec(s);
+  if (range) return { floor: Number(range[1]), multiLevel: true };
+  const one = /^(\d+)階$/.exec(s);
+  if (one) return { floor: Number(one[1]), multiLevel: false };
+  return { floor: null, multiLevel: false };
 }
 
 /**
@@ -208,8 +263,12 @@ export interface ChintaiRoom {
   keyMoneyYen: number | null;
   floorPlan: string | null;
   areaSqm: number | null;
-  /** 部屋の階（"4階"）。参考情報（DB には入れない） */
+  /** 部屋の階の表記そのまま（"4階"・"1-2階"・"-"） */
   floorText: string | null;
+  /** 部屋の階（"4階" → 4・"1-2階" → 1。読めなければ null）。0007 の listings.room_floor */
+  roomFloor: number | null;
+  /** 室内が 2 層（"1-2階" のような範囲表記）= メゾネット。0007 の listings.maisonette */
+  multiLevel: boolean;
 }
 
 export interface ChintaiBuilding {
@@ -224,7 +283,7 @@ export interface ChintaiBuilding {
   traffic: string[];
   buildingAge: number | null;
   buildingYear: number | null;
-  /** 建物の階数（参考。DB には入れない） */
+  /** 建物の階数（"8階建" → 8）。0007 の listings.building_floors */
   buildingFloors: number | null;
   rooms: ChintaiRoom[];
 }
@@ -298,7 +357,11 @@ export function parseChintaiListPage(html: string, fallbackCode: string | null =
           return v ? toHalfWidth(v) : null;
         })(),
         areaSqm: parseAreaSqm(pickClass(row, "cassetteitem_menseki") ?? ""),
-        floorText: /<td[^>]*>\s*((?:地下)?[\d-]+階)\s*<\/td>/.exec(row)?.[1] ?? null,
+        ...(() => {
+          const floorText = /<td[^>]*>\s*((?:地下)?[\d-]+階)\s*<\/td>/.exec(row)?.[1] ?? null;
+          const f = parseRoomFloor(floorText);
+          return { floorText, roomFloor: f.floor, multiLevel: f.multiLevel };
+        })(),
       });
     }
     if (rooms.length === 0) continue;
@@ -324,8 +387,17 @@ export function parseChintaiListPage(html: string, fallbackCode: string | null =
 /**
  * 1 部屋 → 取り込み用の 1 件（金額は円・price = 月額賃料）。賃料が読めなければ null（捨てる）。
  * petsAllowed はペット絞り込みの 2 周目でだけ true を立てる（1 周目は undefined = 不明のまま）。
+ * maisonette も同じで、3 周目（nj_113）では常に true。1 周目でも階の表記が "1-2階" のような範囲なら true。
+ *
+ * ⚠️ **パーサが持っている値をここで写し忘れると D1 まで届かない**（2026-09-26 に address で実際に起きた・e1c26b3）。
+ *    建物側の値（住所・築年・**階数**）は部屋の行に無いので、全部屋に配ること。
  */
-export function toRentListingRecord(b: ChintaiBuilding, room: ChintaiRoom, petsAllowed = false): ListingRecord | null {
+export function toRentListingRecord(
+  b: ChintaiBuilding,
+  room: ChintaiRoom,
+  petsAllowed = false,
+  maisonette = false,
+): ListingRecord | null {
   if (room.rentYen === null || room.rentYen <= 0) return null;
   const r: ListingRecord = { externalId: room.externalId, kind: "rent", price: room.rentYen };
   if (room.url) r.url = room.url;
@@ -346,7 +418,100 @@ export function toRentListingRecord(b: ChintaiBuilding, room: ChintaiRoom, petsA
   if (room.depositYen !== null) r.deposit = room.depositYen;
   if (room.keyMoneyYen !== null) r.keyMoney = room.keyMoneyYen;
   if (petsAllowed) r.petsAllowed = true;
+  // ⚠️ 階数は**建物側**（cassetteitem_detail-col3）、部屋の階は**部屋の行**（<td>）。どちらも写し忘れると D1 に届かない
+  if (b.buildingFloors !== null) r.buildingFloors = b.buildingFloors;
+  if (room.roomFloor !== null) r.roomFloor = room.roomFloor;
+  // メゾネット: 3 周目（nj_113）で見えた or 一覧の階が "1-2階" のような範囲表記（室内 2 層）。
+  // 「メゾネットでない」は入れない（NULL = 不明のまま。取りこぼしで落とさないため）
+  if (maisonette || room.multiLevel) r.maisonette = true;
   return r;
+}
+
+// ---------------------------------------------------------------- 詳細ページ（LDK の畳数）
+
+/**
+ * 掲載の詳細ページ（/chintai/jnc_<掲載 ID>/?bc=<部屋 ID>）から読める項目。
+ *
+ * 2026-09-26 に本番で 3 ページ取って確認した（保存先 ~/work/_experiments/listing-probe/chintai/detail/。
+ * **リポジトリには入れない**）。要るのは「物件概要」の表（table.data_table.table_gaiyou）の中:
+ *
+ *   <th class="data_01" scope="cols">間取り詳細</th><td>和6 洋7 洋5.2 LDK16.4</td>
+ *   <th class="data_01" scope="cols">階建</th><td>4階/8階建</td>
+ *
+ * ⚠️ **「畳」という字はページのどこにも出てこない**（一覧も詳細も 0 回）。畳数は「LDK16.4」のように
+ *    部屋の種類の直後の数字で書かれている（単位は省略）。和室は「和6」、洋室は「洋7」、納戸は「S」。
+ * ⚠️ メゾネットは「特徴」のタグ一覧（読点区切り）に「メゾネット」として出る。
+ *    一覧の階が "1階" でもメゾネットのことがある（detail_2_maisonette.html が実例）ので、
+ *    一覧の範囲表記だけには頼らない。
+ * ⚠️ **管理費・敷金・礼金の "-" は詳細ページでも "-" のまま**（「管理費・共益費:&nbsp;-」）。
+ *    詳細ページを取っても「0 円」か「表記なし」かは判別できない（README に記録）。
+ */
+export interface ChintaiDetail {
+  /** 「間取り詳細」の表記そのまま（"和6 洋7 洋5.2 LDK16.4"）。無ければ null */
+  layoutDetail: string | null;
+  /** LDK（L を含む部屋）の畳数。"LDK16.4" → 16.4。L を含む部屋が無ければ null */
+  ldkTatami: number | null;
+  /** 部屋の階（"4階/8階建" → 4）。読めなければ null */
+  roomFloor: number | null;
+  /** 建物の階数（"4階/8階建" → 8・"1階/地上3階建" → 3）。読めなければ null */
+  buildingFloors: number | null;
+  /** 特徴のタグに「メゾネット」があれば true（無いことは「メゾネットでない」の証拠にはしない） */
+  maisonette: boolean;
+}
+
+/** 物件概要の表から `<th>見出し</th><td>値</td>` の値を取る */
+function gaiyouValue(html: string, header: string): string | null {
+  const re = new RegExp(`<th[^>]*>\\s*${header}\\s*<\\/th>\\s*<td[^>]*>([\\s\\S]{0,400}?)<\\/td>`);
+  const m = re.exec(html);
+  if (!m) return null;
+  const v = textOf(m[1] ?? "");
+  return v === "" || v === "-" ? null : v;
+}
+
+/**
+ * 「間取り詳細」→ LDK の畳数。
+ * 部屋は「和6」「洋7」「LDK16.4」「S3」のように 種類 + 数字 で並ぶ。
+ * **L を含む種類（LDK・LD・L・SLDK）の数字**を返す（複数あれば一番大きいもの）。無ければ null。
+ */
+export function parseLdkTatami(layoutDetail: string | null | undefined): number | null {
+  if (!layoutDetail) return null;
+  const s = toHalfWidth(decodeEntities(layoutDetail)).toUpperCase();
+  let best: number | null = null;
+  for (const m of s.matchAll(/([A-Z]{1,4})\s*(\d+(?:\.\d+)?)/g)) {
+    const label = m[1] ?? "";
+    if (!label.includes("L")) continue;
+    const v = Number(m[2]);
+    if (!Number.isFinite(v) || v <= 0 || v > 200) continue;
+    if (best === null || v > best) best = v;
+  }
+  return best;
+}
+
+/** "4階/8階建" → { roomFloor: 4, buildingFloors: 8 } / "1階/地上3階建" → { 1, 3 } */
+export function parseDetailFloors(raw: string | null | undefined): { roomFloor: number | null; buildingFloors: number | null } {
+  if (!raw) return { roomFloor: null, buildingFloors: null };
+  const s = toHalfWidth(decodeEntities(raw));
+  const room = parseRoomFloor(/^([^/]*?階)\s*\//.exec(s)?.[1] ?? null);
+  return { roomFloor: room.floor, buildingFloors: parseBuildingFloors(s) };
+}
+
+export function parseChintaiDetailPage(html: string): ChintaiDetail {
+  const layoutDetail = gaiyouValue(html, "間取り詳細");
+  const floors = parseDetailFloors(gaiyouValue(html, "階建"));
+  return {
+    layoutDetail,
+    ldkTatami: parseLdkTatami(layoutDetail),
+    roomFloor: floors.roomFloor,
+    buildingFloors: floors.buildingFloors,
+    // 特徴のタグ一覧（読点区切り）に出る。ページ全体で探すと「メゾネットタイプで探す」のような
+    // 誘導文言まで拾ってしまうので、**読点の直後で、かつ後ろにカタカナが続かない**ものに限る
+    maisonette: /[、,]\s*メゾネット(?![ァ-ヴー])/.test(decodeEntities(html.replace(/<[^>]*>/g, " "))),
+  };
+}
+
+/** 賃貸の詳細ページらしい構造があるか（captcha・メンテ・構造変更の判定に使う） */
+export function hasChintaiDetailStructure(html: string): boolean {
+  return /class="[^"]*\btable_gaiyou\b/.test(html) || /間取り詳細/.test(html) || /property_view_note/.test(html);
 }
 
 /** 賃貸一覧らしい構造があるか（captcha・メンテ・構造変更の判定に使う） */
@@ -364,11 +529,13 @@ export interface ChintaiSourceOptions {
   userAgent?: string;
   /** true ならペット相談可の絞り込み付き（2 周目）。取れた部屋に pets_allowed = 1 を立てるためだけに使う */
   pets?: boolean;
+  /** true ならメゾネットタイプの絞り込み付き（3 周目・nj_113）。取れた部屋に maisonette = 1 を立てるためだけに使う */
+  maisonette?: boolean;
 }
 
 /**
  * SUUMO 賃貸検索（市区町村ごと）。対象は中古・新築と同じ SUUMO_SLUGS（福岡市 7 区 + 近郊 16 市町）。
- * pets = true はペット相談可の絞り込みを足した 2 周目（取得元 ID も別）。
+ * pets = true はペット相談可の絞り込みを足した 2 周目、maisonette = true はメゾネットの 3 周目（取得元 ID も別）。
  */
 export class ChintaiSource implements PagedSource<ListingRecord> {
   readonly id: string;
@@ -381,10 +548,15 @@ export class ChintaiSource implements PagedSource<ListingRecord> {
   readonly origin: string;
   readonly userAgent: string;
   readonly pets: boolean;
+  readonly maisonette: boolean;
+  readonly round: ChintaiRound;
 
   constructor(opts: ChintaiSourceOptions = {}) {
     this.pets = opts.pets ?? false;
-    this.id = this.pets ? CHINTAI_PETS_SOURCE_ID : CHINTAI_SOURCE_ID;
+    this.maisonette = opts.maisonette ?? false;
+    if (this.pets && this.maisonette) throw new Error("pets と maisonette は同時に指定しない（周回は 1 つずつ）");
+    this.round = this.pets ? "pets" : this.maisonette ? "maisonette" : "plain";
+    this.id = this.pets ? CHINTAI_PETS_SOURCE_ID : this.maisonette ? CHINTAI_MAISONETTE_SOURCE_ID : CHINTAI_SOURCE_ID;
     this.origin = opts.origin ?? SUUMO_ORIGIN;
     this.userAgent = opts.userAgent ?? DEFAULT_USER_AGENT;
   }
@@ -394,7 +566,7 @@ export class ChintaiSource implements PagedSource<ListingRecord> {
   }
 
   pageUrl(target: CrawlTarget, page: number): string {
-    return chintaiSearchUrl(target.key, page, this.origin, this.pets);
+    return chintaiSearchUrl(target.key, page, this.origin, this.round);
   }
 
   parsePage(html: string, target: CrawlTarget): ParsedListPage<ListingRecord> {
@@ -403,7 +575,7 @@ export class ChintaiSource implements PagedSource<ListingRecord> {
     let skipped = 0;
     for (const b of p.buildings) {
       for (const room of b.rooms) {
-        const r = toRentListingRecord(b, room, this.pets);
+        const r = toRentListingRecord(b, room, this.pets, this.maisonette);
         if (r) records.push(r);
         else skipped++;
       }

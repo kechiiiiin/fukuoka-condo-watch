@@ -10,7 +10,7 @@
 
 import type { CrawlTarget, ListingRecord, NewListingRecord, PagedSource, ParsedListPage } from "./listing-types";
 import { SUUMO_SOURCE_ID } from "./suumo";
-import { CHINTAI_PETS_SOURCE_ID, CHINTAI_SOURCE_ID } from "./suumo-chintai";
+import { CHINTAI_MAISONETTE_SOURCE_ID, CHINTAI_PETS_SOURCE_ID, CHINTAI_SOURCE_ID } from "./suumo-chintai";
 import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
 
 /**
@@ -18,7 +18,7 @@ import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
  * D1 のクロール状態（runs・cursor・state・events）は取得元 ID で分かれるので同じ表を使い、掲載の表だけ分ける
  * （中古・賃貸 = listings（listings.kind で分かれる）・新築 = new_listings）。
  */
-export type CrawlKind = "chuko" | "shinchiku" | "chintai" | "chintai_pets";
+export type CrawlKind = "chuko" | "shinchiku" | "chintai" | "chintai_pets" | "chintai_maisonette";
 
 /**
  * 種類ごとの取得元。
@@ -49,11 +49,23 @@ export const CRAWL_KINDS: Record<CrawlKind, CrawlKindInfo> = {
     localMaxPagesPerRun: 120,
     localMaxRunMs: 3 * 3600_000,
   },
+  /**
+   * メゾネットタイプの 3 周目（/nj_113/）。1 周目の行に maisonette = 1 を立てるだけ（行は増やさない）。
+   * メゾネットは全体のごく一部（実ページの一覧で階が "1-2階" の部屋は 4/89 行）なので 1 周目よりずっと少ない。
+   * ペットの 2 周目（120 ページ）と同じ上限にしておく。
+   */
+  chintai_maisonette: {
+    sourceId: CHINTAI_MAISONETTE_SOURCE_ID,
+    label: "賃貸（メゾネット）",
+    listingKind: "rent",
+    localMaxPagesPerRun: 120,
+    localMaxRunMs: 3 * 3600_000,
+  },
 };
 
 export function parseCrawlKind(v: unknown): CrawlKind {
   if (v === undefined || v === null || v === "chuko") return "chuko";
-  if (v === "shinchiku" || v === "chintai" || v === "chintai_pets") return v;
+  if (v === "shinchiku" || v === "chintai" || v === "chintai_pets" || v === "chintai_maisonette") return v;
   throw new Error("kind が不正");
 }
 
@@ -251,6 +263,12 @@ export function localStateKey(kind: CrawlKind): string {
   return `${CRAWL_KINDS[kind].sourceId}${LOCAL_FETCHER_SUFFIX}`;
 }
 
+/**
+ * 詳細ページ（LDK の畳数）を 1 回の実行で取る上限。
+ * 60 秒間隔なので 60 件 ≒ 1 時間。超えた分は次回に持ち越す（取得済みは取り直さない）。
+ */
+export const CHINTAI_DETAIL_MAX_PER_RUN = 60;
+
 /** 取り込みで受け取る 1 件（中古 = ListingRecord・新築 = NewListingRecord。kind で決まる） */
 export type AnyListingRecord = ListingRecord | NewListingRecord;
 
@@ -270,7 +288,88 @@ export type IngestRequest =
       outcome: PageOutcome<AnyListingRecord>;
     }
   /** 実行の終わり（借りを返し、結果を記録する） */
-  | { op: "end"; kind: CrawlKind; runId: string; summary: { status: string; pages: number; detail?: string } };
+  | { op: "end"; kind: CrawlKind; runId: string; summary: { status: string; pages: number; detail?: string } }
+  /**
+   * 詳細ページ（LDK の畳数）を取る相手をもらう。**全条件を通った最終候補だけ**を Worker 側が選ぶ
+   * （家賃・面積・間取り・築年・ペット可・メゾネットでない）。既に取ったもの（detail_fetched_at IS NOT NULL）は返らない。
+   */
+  | { op: "detail_targets"; kind: CrawlKind; limit: number }
+  /** 詳細ページから読めた LDK の畳数を反映する（行は増やさない・UPDATE だけ）。読めなくても送る（取り直さないため） */
+  | {
+      op: "detail_results";
+      kind: CrawlKind;
+      fetchedAt: string;
+      results: { externalId: string; ldkTatami: number | null }[];
+    };
+
+/**
+ * listings への UPSERT（src/listing-crawl.ts の UPSERT_LISTINGS）に渡す JSON 1 行ぶん。
+ * **鍵の名前は SQL の json_extract(j.value, '$.<鍵>') と 1:1 で対応している**ので、片方だけ直さないこと。
+ *
+ * ⚠️ ここに写し忘れると、パーサが値を持っていても D1 まで届かない（2026-09-26 に address で実際に起きた・e1c26b3）。
+ *    test/suumo-chintai.test.ts が「パーサ → 記録 → 取り込みの検証 → この行」の各段で値が生きていることを見ている。
+ */
+export interface ListingUpsertRow {
+  id: string;
+  ward: string | null;
+  name: string | null;
+  by: number | null;
+  bm: number | null;
+  area: number | null;
+  plan: string | null;
+  line: string | null;
+  st: string | null;
+  walk: number | null;
+  bus: 0 | 1;
+  addr: string | null;
+  url: string | null;
+  price: number;
+  // ---- 賃貸だけ（売買では null）----
+  fee: number | null;
+  dep: number | null;
+  key: number | null;
+  /** 1 = ペット相談可 / null = 不明（0 は入れない） */
+  pets: number | null;
+  listed: string | null;
+  /** 建物の階数（情報として出すだけ） */
+  bfl: number | null;
+  /** 部屋の階（情報として出すだけ） */
+  rfl: number | null;
+  /** 1 = メゾネット / null = 不明（**0 は入れない**。ワンフロアだと確かめたことにしないため） */
+  mais: number | null;
+}
+
+/** ListingRecord → UPSERT に渡す 1 行。ward が無ければクロール中の市区町村コードを入れる */
+export function listingUpsertRow(r: ListingRecord, areaCode: string): ListingUpsertRow {
+  return {
+    id: r.externalId,
+    ward: r.wardCode ?? areaCode,
+    name: r.buildingName ?? null,
+    by: r.buildingYear ?? null,
+    bm: r.builtMonth ?? null,
+    area: r.areaSqm ?? null,
+    plan: r.floorPlan ?? null,
+    line: r.lineName ?? null,
+    st: r.stationName ?? null,
+    walk: r.walkMinutes ?? null,
+    bus: r.bus ? 1 : 0,
+    addr: r.address ?? null,
+    url: r.url ?? null,
+    price: r.price,
+    // 賃貸だけの項目（売買では undefined → NULL）。pets は「不明」を NULL で表すので 0 に倒さない
+    fee: r.adminFee ?? null,
+    dep: r.deposit ?? null,
+    key: r.keyMoney ?? null,
+    pets: r.petsAllowed === undefined ? null : r.petsAllowed ? 1 : 0,
+    listed: r.listedOn ?? null,
+    bfl: r.buildingFloors ?? null,
+    rfl: r.roomFloor ?? null,
+    mais: r.maisonette ? 1 : null,
+  };
+}
+
+/** 一覧の周回（カーソル・回を持つ）の要求だけ。詳細ページ（detail_*）は別の流れなので含まない */
+export type PagedIngestRequest = Extract<IngestRequest, { op: "begin" | "page" | "end" }>;
 
 export interface IngestCursor {
   areaCode: string;
@@ -288,6 +387,12 @@ export interface IngestResponse {
   lastFetchAt?: string | null;
   /** 送ったページが既に反映済み・別の位置だった（二重送信）。next から続ける */
   stale?: boolean;
+  /** op = "detail_targets" の答え。詳細ページを取る相手（全条件を通った最終候補のうち未取得のもの） */
+  targets?: { externalId: string; url: string }[];
+  /** op = "detail_targets" で、まだ取っていない候補が全部で何件あるか（上限で切る前の数） */
+  remaining?: number;
+  /** op = "detail_results" で実際に更新した件数 */
+  updated?: number;
   detail?: string;
   error?: string;
 }
@@ -347,7 +452,7 @@ function parseRecord(v: unknown, expectedKind: "sale" | "rent"): ListingRecord {
   if (v.bus !== undefined) r.bus = v.bus as boolean;
 
   // ---- 賃貸だけの項目（売買の要求に混ざっていたら弾く）----
-  const rentOnly = ["adminFee", "deposit", "keyMoney", "petsAllowed", "listedOn"] as const;
+  const rentOnly = ["adminFee", "deposit", "keyMoney", "petsAllowed", "listedOn", "buildingFloors", "roomFloor", "maisonette"] as const;
   if (expectedKind !== "rent") {
     for (const k of rentOnly) if (v[k] !== undefined) throw new Error(`${k} は賃貸だけの項目`);
     return r;
@@ -357,9 +462,16 @@ function parseRecord(v: unknown, expectedKind: "sale" | "rent"): ListingRecord {
     if (x !== undefined && (x < 0 || x > 1e11)) throw new Error(`${k} が不正`);
     if (x !== undefined) r[k] = x;
   }
-  if (v.petsAllowed !== undefined) {
-    if (typeof v.petsAllowed !== "boolean") throw new Error("petsAllowed が不正");
-    r.petsAllowed = v.petsAllowed;
+  // 建物の階数・部屋の階（0007）。情報として出すだけだが、取りこぼすと画面に出ないので必ず通す
+  for (const k of ["buildingFloors", "roomFloor"] as const) {
+    const x = optNum(v[k]);
+    if (x !== undefined && (!Number.isInteger(x) || x < 0 || x > 300)) throw new Error(`${k} が不正`);
+    if (x !== undefined) r[k] = x;
+  }
+  for (const k of ["petsAllowed", "maisonette"] as const) {
+    if (v[k] === undefined) continue;
+    if (typeof v[k] !== "boolean") throw new Error(`${k} が不正`);
+    r[k] = v[k] as boolean;
   }
   const listedOn = optStr(v.listedOn, 10);
   if (listedOn !== undefined) {
@@ -477,6 +589,27 @@ export function parseIngestRequest(body: unknown): IngestRequest {
       const fetchedAt = body.fetchedAt;
       if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
       return { op: "page", kind, runId, areaCode, page: int(body.page, 1, 100_000), url, fetchedAt, outcome: parseOutcome(body.outcome, kind) };
+    }
+    case "detail_targets": {
+      // 詳細ページは 1 周目（suumo:chintai）の行に対してだけ。周回の種類を持たないので kind は chintai 固定
+      if (kind !== "chintai") throw new Error("detail_targets は kind=chintai だけ");
+      return { op: "detail_targets", kind, limit: int(body.limit, 1, CHINTAI_DETAIL_MAX_PER_RUN) };
+    }
+    case "detail_results": {
+      if (kind !== "chintai") throw new Error("detail_results は kind=chintai だけ");
+      const fetchedAt = body.fetchedAt;
+      if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
+      if (!Array.isArray(body.results) || body.results.length > CHINTAI_DETAIL_MAX_PER_RUN) throw new Error("results が不正");
+      const results = body.results.map((x) => {
+        if (!isObj(x)) throw new Error("results の要素が不正");
+        const externalId = x.externalId;
+        if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
+        const t = x.ldkTatami;
+        if (t === undefined || t === null) return { externalId, ldkTatami: null };
+        if (typeof t !== "number" || !Number.isFinite(t) || t <= 0 || t > 200) throw new Error("ldkTatami が不正");
+        return { externalId, ldkTatami: t };
+      });
+      return { op: "detail_results", kind, fetchedAt, results };
     }
     case "end": {
       const runId = runOfKind(body.runId);

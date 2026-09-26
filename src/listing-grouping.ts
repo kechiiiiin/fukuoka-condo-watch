@@ -38,6 +38,17 @@ export interface ListingPickRow {
   /** 1 = ペット相談可 */
   pets_allowed?: number | null;
   listed_on?: string | null;
+  // ---- 0007 で足した列（賃貸だけ）----
+  /** 建物の階数。**情報として出すだけで既定の絞り込みには使わない** */
+  building_floors?: number | null;
+  /** 部屋の階（「1-2階」は一番下の階） */
+  room_floor?: number | null;
+  /** 1 = メゾネット（室内2層）/ NULL = 不明（ワンフロアだと確かめたわけではない） */
+  maisonette?: number | null;
+  /** LDK の畳数。NULL = 未取得（15 畳未満という意味ではない） */
+  ldk_tatami?: number | null;
+  /** 詳細ページを取った時刻。NULL = 未取得 */
+  detail_fetched_at?: string | null;
 }
 
 /**
@@ -84,6 +95,22 @@ export interface PickFilters {
   includeBus: boolean;
   /** true ならペット相談可の物件だけ（賃貸のみ。既定 false = 絞らない） */
   petsOnly: boolean;
+  /**
+   * true ならメゾネット（maisonette = 1）を除く（賃貸の既定 true）。
+   * ⚠️ **不明（NULL）は落とさない** — 3 周目で拾えなかっただけのことがあるため。
+   */
+  excludeMaisonette: boolean;
+  /**
+   * LDK の畳数の下限（賃貸の既定 15）。null = 絞らない。
+   * ⚠️ **未取得（NULL）は落とさない** — 詳細ページをまだ取っていないだけのことがあるため。
+   */
+  ldkTatamiMin: number | null;
+  /**
+   * 建物の階数の下限。**既定は null（絞らない）**。
+   * 2026-09-26 に「建物が 2 階建てなのは嫌ではない」と確認が取れたので既定では使わない。
+   * URL パラメータ（floors=3）でだけ効く任意の絞り込み。⚠️ 不明（NULL）は落とさない。
+   */
+  buildingFloorsMin: number | null;
   /** 対象の市区町村コード（null = すべて） */
   municipalities: string[] | null;
   /** true なら新着（first_seen が直近 freshDays 日以内）だけ */
@@ -112,6 +139,10 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
   walkMax: 10,
   includeBus: false,
   petsOnly: false,
+  // 賃貸だけの条件（売買では使わない）
+  excludeMaisonette: false,
+  ldkTatamiMin: null,
+  buildingFloorsMin: null,
   municipalities: null,
   freshOnly: false,
   freshDays: 7,
@@ -122,6 +153,12 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
  * 徒歩分は指定なし（依頼に無い条件で勝手に狭めない）・バス便も含める。
  * **ペット相談可は既定 ON**（2026-09-26 に「良い物件の線引き＝①ペット可であること ②博多駅までの距離」と決まったため。
  * ⚠️ pets_allowed はペット絞り込みの 2 周目で見えた部屋にしか付かない下限値なので、OFF にすると印の無いものも出る）。
+ *
+ * 2026-09-26 に足した「理想条件」:
+ *   - **メゾネット（室内 2 層）を除く**（excludeMaisonette = true）。不明（NULL）は落とさない
+ *   - **LDK 15 畳以上**（ldkTatamiMin = 15）。未取得（NULL）は落とさない
+ *   - 建物の階数では絞らない（buildingFloorsMin = null）。本人に確認して「2 階建ての建物は嫌ではない」となったため。
+ *     階数は画面に情報として出すだけ（URL の floors= でだけ任意に絞れる）
  */
 export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
   priceMaxMan: 15,
@@ -132,6 +169,9 @@ export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { 
   walkMax: null,
   includeBus: true,
   petsOnly: true,
+  excludeMaisonette: true,
+  ldkTatamiMin: 15,
+  buildingFloorsMin: null,
   municipalities: null,
   freshOnly: false,
   freshDays: 7,
@@ -147,6 +187,11 @@ function num(params: URLSearchParams, key: string): number | null {
   if (v === null || v.trim() === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/** 0 以下は「絞らない」（null）の意味にする。画面から既定の絞り込みを外すのに使う */
+function nonPositiveToNull(v: number | null): number | null {
+  return v !== null && v > 0 ? v : null;
 }
 
 function bool(params: URLSearchParams, key: string, dflt: boolean): boolean {
@@ -178,6 +223,12 @@ export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string
     walkMax: num(params, "walk") ?? d.walkMax,
     includeBus: bool(params, "bus", d.includeBus),
     petsOnly: kind === "rent" ? bool(params, "pets", d.petsOnly) : false,
+    // メゾネット除外（賃貸だけ・既定 ON）。mais=0 で外す
+    excludeMaisonette: kind === "rent" ? bool(params, "mais", d.excludeMaisonette) : false,
+    // LDK の畳数の下限（賃貸だけ・既定 15）。tatami=0 で外す（0 以下は「絞らない」の意味にする）
+    ldkTatamiMin: kind === "rent" ? nonPositiveToNull(num(params, "tatami") ?? d.ldkTatamiMin) : null,
+    // 建物の階数の下限。**既定は絞らない**。floors=3 のように指定したときだけ効く
+    buildingFloorsMin: kind === "rent" ? nonPositiveToNull(num(params, "floors") ?? d.buildingFloorsMin) : null,
     municipalities: parseMunicipalities(params, isAreaCode),
     freshOnly: bool(params, "fresh", d.freshOnly),
     freshDays: d.freshDays,
@@ -210,6 +261,24 @@ export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: 
 
   // ペット相談可（賃貸のみ。sale の行は pets_allowed が 0 / undefined なので、トグル ON なら残らない）
   if (f.petsOnly && !row.pets_allowed) return false;
+
+  // メゾネット（室内 2 層）を除く。⚠️ **不明（NULL / undefined）は落とさない**（3 周目で拾えなかっただけのことがある）
+  if (f.excludeMaisonette && row.maisonette === 1) return false;
+
+  // LDK の畳数。⚠️ **未取得（NULL / undefined）は落とさない**（詳細ページをまだ取っていないだけのことがある）
+  if (f.ldkTatamiMin !== null && row.ldk_tatami !== null && row.ldk_tatami !== undefined && row.ldk_tatami < f.ldkTatamiMin) {
+    return false;
+  }
+
+  // 建物の階数（既定では null = 絞らない）。⚠️ 不明（NULL）は落とさない
+  if (
+    f.buildingFloorsMin !== null &&
+    row.building_floors !== null &&
+    row.building_floors !== undefined &&
+    row.building_floors < f.buildingFloorsMin
+  ) {
+    return false;
+  }
 
   if (f.municipalities && (!row.ward_code || !f.municipalities.includes(row.ward_code))) return false;
 
@@ -255,6 +324,17 @@ export interface ListingGroup {
   keyMoneyMin: number | null;
   /** グループの中に 1 件でもペット相談可があれば true */
   petsAllowed: boolean;
+  /** 建物の階数（情報として出すだけ）。読めた行が無ければ null */
+  buildingFloors: number | null;
+  /** 部屋の階（同条件でまとまった部屋が複数あれば一番下）。読めた行が無ければ null */
+  roomFloorMin: number | null;
+  roomFloorMax: number | null;
+  /** グループの中に 1 件でもメゾネットがあれば true（**false は「ワンフロアだと確かめた」ではなく「不明」**） */
+  maisonette: boolean;
+  /** LDK の畳数（複数の部屋がまとまっていれば一番小さいもの）。null = 未取得 */
+  ldkTatami: number | null;
+  /** グループの中に 1 件でも詳細ページを取った部屋があるか（「未取得」と出し分けるため） */
+  detailFetched: boolean;
   /** 一番新しい情報公開日（読めたときだけ） */
   latestListedOn: string | null;
   /** 一番早い first_seen（この部屋が最初に見えた日） */
@@ -370,6 +450,12 @@ function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
     depositMin: minOf(items.map((r) => r.deposit ?? null)),
     keyMoneyMin: minOf(items.map((r) => r.key_money ?? null)),
     petsAllowed: items.some((r) => !!r.pets_allowed),
+    buildingFloors: maxOf(items.map((r) => r.building_floors ?? null)),
+    roomFloorMin: minOf(items.map((r) => r.room_floor ?? null)),
+    roomFloorMax: maxOf(items.map((r) => r.room_floor ?? null)),
+    maisonette: items.some((r) => r.maisonette === 1),
+    ldkTatami: minOf(items.map((r) => r.ldk_tatami ?? null)),
+    detailFetched: items.some((r) => !!r.detail_fetched_at),
     latestListedOn: items.map((r) => r.listed_on ?? null).filter((v): v is string => !!v).sort().slice(-1)[0] ?? null,
     earliestFirstSeen: items.map((r) => r.first_seen).sort()[0]!,
     latestFirstSeen: items.map((r) => r.first_seen).sort().slice(-1)[0]!,

@@ -30,6 +30,12 @@ export interface ListingRecord {
   keyMoney?: number;
   /** ペット相談可（一覧の文言から。判定できなければ false） */
   petsAllowed?: boolean;
+  /** 建物の階数（「8階建」→ 8）。**情報として出すだけで既定の絞り込みには使わない**（2026-09-26 の確認） */
+  buildingFloors?: number;
+  /** 部屋の階（「4階」→ 4）。「1-2階」のような範囲表記は一番下の階 */
+  roomFloor?: number;
+  /** メゾネット（室内が 2 層）。true = メゾネット。省略 = 不明（メゾネットでないという意味ではない） */
+  maisonette?: boolean;
   /** 情報公開日・掲載日 "YYYY-MM-DD"（一覧から読めたときだけ。first_seen とは別） */
   listedOn?: string;
 }
