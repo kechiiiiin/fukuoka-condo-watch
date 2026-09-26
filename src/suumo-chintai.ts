@@ -330,6 +330,10 @@ export function toRentListingRecord(b: ChintaiBuilding, room: ChintaiRoom, petsA
   const r: ListingRecord = { externalId: room.externalId, kind: "rent", price: room.rentYen };
   if (room.url) r.url = room.url;
   if (b.municipalityCode) r.wardCode = b.municipalityCode;
+  // ⚠️ 所在地は**建物側**（cassetteitem_detail-col1）にしかない。部屋の行には無いので、建物の住所を全部屋に配る。
+  //    ここを落とすと listings.address が NULL になり、住所から町名を起こす districtNameFromAddress も効かなくなる
+  //    （/listings/picks の地区・地区の中古相場との比較が丸ごと外れる）。2026-09-26 の取りこぼしの直し。
+  if (b.address) r.address = b.address.slice(0, 300);
   if (b.buildingName) r.buildingName = b.buildingName.slice(0, 300);
   if (b.buildingYear !== null) r.buildingYear = b.buildingYear;
   if (room.areaSqm !== null) r.areaSqm = room.areaSqm;

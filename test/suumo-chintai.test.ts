@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fakeChintaiBuildings, renderFakeChintaiPage } from "../scripts/fake-suumo-server.ts";
 import { classifyResponse, CRAWL_KINDS, listingKindOf, parseCrawlKind, parseIngestRequest } from "../src/listing-crawl-core.ts";
+import { districtNameFromAddress } from "../src/listing-grouping.ts";
 import { SUUMO_SLUGS } from "../src/suumo.ts";
 import {
   CHINTAI_PETS_PARAM,
@@ -192,12 +193,48 @@ test("取り込み要求: chintai / chintai_pets は rent だけ通す・chuko �
   assert.throws(() => parseIngestRequest(reqFor("chintai_pets", CHINTAI_SOURCE_ID, rentRec)));
 });
 
+/**
+ * 賃料の取り違えが起きないこと（2026-09-26 の外れ値の調査から）。
+ * 建物 1 件に複数の部屋があるとき、各行の 賃料・管理費・敷金・礼金・面積 は**その行のもの**で、
+ * 隣の行や管理費の欄が賃料に混ざらない。実ページの 129 個の賃料表記には幅（"9.3万円〜13.3万円"）も
+ * 月数表記も無く、1 行 1 値だった（parseYen が幅の下限だけ拾う筋は実ページには無い）。
+ */
+test("架空ページ: 同じ建物の部屋どうしで賃料・管理費が混ざらない", () => {
+  for (const slug of ["fukuokashichuo", "kasuga", "onojo"]) {
+    const src = new Map(fakeChintaiBuildings(slug, 1).map((b) => [b.name, b] as const));
+    // 1 ページに収まらない建物があるので、名前で突き合わせる（ページ分割の都合で件数は一致しないことがある）
+    const parsed = parseChintaiListPage(renderFakeChintaiPage(slug, 1, 1).html, "40133", 2026);
+    assert.ok(parsed.buildings.length > 0, `${slug}: 建物が 1 件以上`);
+    for (const [i, b] of parsed.buildings.entries()) {
+      assert.ok(src.has(b.buildingName ?? ""), `${slug}[${i}]: 建物名 ${b.buildingName} が架空データにある`);
+      const want = src.get(b.buildingName ?? "")!;
+      assert.equal(b.rooms.length, want.rooms.length, `${slug}[${i}]: 部屋の数`);
+      for (const [j, room] of b.rooms.entries()) {
+        const w = want.rooms[j]!;
+        assert.equal(room.externalId, w.id, `${slug}[${i}][${j}]: 部屋 ID`);
+        assert.equal(room.rentYen, Math.round(w.rentMan * 10000), `${slug}[${i}][${j}]: 賃料はその行のもの`);
+        assert.equal(room.areaSqm, w.area, `${slug}[${i}][${j}]: 面積はその行のもの`);
+        assert.equal(room.floorPlan, w.madori, `${slug}[${i}][${j}]: 間取りはその行のもの`);
+        // 管理費（"-" は不明）を賃料に取り違えない
+        assert.equal(room.adminFeeYen, w.admin === "-" ? null : Number(w.admin.replace("円", "")), `${slug}[${i}][${j}]: 管理費`);
+        assert.notEqual(room.rentYen, room.adminFeeYen, `${slug}[${i}][${j}]: 賃料に管理費を入れない`);
+      }
+      // 同じ建物で賃料が全部同じになる（＝1 行目の値を配ってしまう）ことが無い
+      const rents = new Set(b.rooms.map((r) => r.rentYen));
+      if (new Set(want.rooms.map((r) => r.rentMan)).size > 1) assert.ok(rents.size > 1, `${slug}[${i}]: 部屋ごとに賃料が違う`);
+    }
+  }
+});
+
 test("1 部屋 → ListingRecord（賃料が読めない部屋は捨てる・掲載日は入れない）", () => {
   const b = parseChintaiListPage(renderFakeChintaiPage("onojo", 1, 1).html, "40219", 2026).buildings[0]!;
   const r = toRentListingRecord(b, b.rooms[0]!)!;
   assert.equal(r.kind, "rent");
   assert.equal(r.price, b.rooms[0]!.rentYen);
   assert.equal(r.wardCode, "40219");
+  // ⚠️ 所在地は建物側にしかない。部屋の行に配らないと listings.address が全件 NULL になる（2026-09-26 の回帰）
+  assert.equal(r.address, b.address);
+  assert.ok(r.address, "住所が空のまま取り込まない");
   assert.equal(r.buildingYear, b.buildingYear);
   assert.equal(r.petsAllowed, undefined, "1 周目はペット可否が分からない");
   assert.equal(r.listedOn, undefined, "掲載日・情報公開日は一覧に無い（賃貸では常に NULL）");
@@ -274,6 +311,44 @@ test("実データ: 2 ページ目・近郊（春日市）・件数の少ない�
   assert.equal(hisayama.maxPageLinked, 1, "1 ページだけの市区町村");
   assert.equal(hisayama.zeroHits, false);
   assert.ok(hisayama.buildings.length > 0);
+});
+
+/**
+ * 2026-09-26 の不具合の回帰テスト。本番 D1 で listings.address が 2291 件すべて NULL だった。
+ * 原因はパーサではなく toRentListingRecord が建物の住所を部屋の記録に写していなかったこと
+ * （住所は建物単位の cassetteitem_detail-col1 にあり、部屋の <tr class="js-cassette_link"> には無い）。
+ * 住所が入らないと /listings/picks が住所から起こす町名（districtNameFromAddress）も丸ごと効かなくなる。
+ */
+test("実データ: 建物の住所が部屋ごとの記録に付く → 市区町村コードと町名が起こせる", { skip: !hasProbe("chuo_p1") && "listing-probe/chintai が無い" }, () => {
+  for (const [name, code] of [["chuo_p1", "40133"], ["chuo_p1_pets", "40133"], ["chuo_p2", "40133"], ["kasuga_p1", "40218"], ["hisayama_p1", "40348"]] as const) {
+    if (!hasProbe(name)) continue;
+    const p = parseChintaiListPage(probe(name), code, 2026);
+    // 建物 → 部屋の紐づけ: 同じ建物の部屋は全部その建物の住所を持つ
+    for (const b of p.buildings) {
+      assert.ok(b.address, `${name}: 建物の住所`);
+      for (const room of b.rooms) {
+        const r = toRentListingRecord(b, room)!;
+        assert.equal(r.address, b.address, `${name}: 部屋 ${room.externalId} に建物の住所が付く`);
+      }
+    }
+    // 取り込む記録として見ても、住所・市区町村コード・住所から起こす町名が全件そろう
+    // （fallbackCode ではなく住所から出ていることを見るため、わざと違う市区町村コードを渡す）
+    const recs = new ChintaiSource().parsePage(probe(name), { areaCode: "40999", key: "dummy" });
+    assert.ok(recs.records.length > 0, `${name}: 記録が 1 件以上`);
+    assert.equal(recs.records.filter((r) => !r.address).length, 0, `${name}: 住所が NULL の記録は 0 件`);
+    assert.equal(recs.records.filter((r) => r.wardCode !== code).length, 0, `${name}: 住所から市区町村コードが出る（fallback を使っていない）`);
+    assert.equal(recs.records.filter((r) => !districtNameFromAddress(r.address)).length, 0, `${name}: 住所から町名（district_name）が起こせる`);
+  }
+
+  // 具体例（中央区 1 ページ目の先頭の建物）: 住所・町名・市区町村コード
+  const first = parseChintaiListPage(probe("chuo_p1"), "40133", 2026).buildings[0]!;
+  const rec = toRentListingRecord(first, first.rooms[0]!)!;
+  assert.equal(rec.address, "福岡県福岡市中央区地行４");
+  assert.equal(rec.wardCode, "40133");
+  assert.equal(districtNameFromAddress(rec.address), "地行");
+  // 建物に 2 部屋以上あるときも、2 つ目以降に同じ住所が付く（部屋の行の外を見ている）
+  assert.ok(first.rooms.length > 1);
+  assert.equal(toRentListingRecord(first, first.rooms[1]!)!.address, rec.address);
 });
 
 test("実データ: ペット絞り込みの 2 周目（tc=0401102）", { skip: !hasProbe("chuo_p1_pets") && "listing-probe/chintai が無い" }, () => {
