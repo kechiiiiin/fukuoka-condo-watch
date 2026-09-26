@@ -401,7 +401,7 @@ export function listingUpsertRow(r: ListingRecord, areaCode: string): ListingUps
  * ⚠️ **building_floors / room_floor も詳細で補った値を毎週消さない**: 一覧に値があれば一覧を正にし、
  *    一覧が NULL のときだけ今ある値（詳細由来）を残す（COALESCE(excluded, listings)。2026-09-27）。
  * ⚠️ **maisonette は毎週 0 に戻す**（二値・0008）。3 周目（nj_113）が同じ日に走って 1 を立て直す前提。
- *    割り切り: **3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke 了解済み・2026-09-27）。
+ *    割り切り: **3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke に伝えたうえでの割り切り・未返答・2026-09-27）。
  *    どの回まで 3 周目が完走したかは listing_crawl_runs（source = suumo:chintai-maisonette・status='complete'）で追える。
  */
 export const UPSERT_LISTINGS_SQL = `
