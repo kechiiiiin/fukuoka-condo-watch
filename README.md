@@ -22,7 +22,7 @@
 | `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・種類 `CRAWL_KINDS`・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST・賃貸は土曜 06:00 / 12:00（`chintai_pets`）/ 14:00（`chintai_maisonette`） |
-| `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎週土曜 16:00 |
+| `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎日 16:00 |
 | `scripts/crawl-local-lib.ts` | 上の 2 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
 | `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット相談可・メゾネットでない・LDK15畳以上（建物の階数では絞らない）。ペット可否とメゾネットは 2・3 周目、LDK 畳数は詳細ページで取る） |
@@ -308,7 +308,7 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
   - ⚠️ メゾネットは**タグが見つかったときだけ 1**。見つからないことは証拠にしないので 0 は書かない
 - `ldk_tatami` の **NULL は「未取得」であって「15 畳未満」ではない**。既定の絞り込みでも落とさない。
   1 周目の upsert は `ldk_tatami` / `detail_fetched_at` を触らず、**詳細で補った階も消さない**（`COALESCE(excluded, listings)`）ので、毎週のクロールで消えない
-- スクリプトは `scripts/suumo-chintai-detail.ts`（`npm run crawl:detail`）。launchd は**毎週土曜 16:00**
+- スクリプトは `scripts/suumo-chintai-detail.ts`（`npm run crawl:detail`）。launchd は**毎日 16:00**（2026-09-27 に週 1 回から変更。未取得が無い日は SUUMO にアクセスせず即終了する）
 
 #### 一覧から取れないもの（賃貸）
 
