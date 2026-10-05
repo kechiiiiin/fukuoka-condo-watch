@@ -1,10 +1,10 @@
 // SUUMO 掲載のクロール（Mac 側）。launchd（ops/launchd/）から起動する:
 //   - 中古（既定・--kind chuko）… 毎日 01:00（com.kechiiiiin.fukuoka-condo-watch.suumo）
 //   - 新築（--kind shinchiku）   … 毎週日曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
-//   - 賃貸（--kind chintai）     … 毎週土曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai）
-//   - 賃貸のペット相談可（--kind chintai_pets）… 毎週土曜 12:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
-//   - 賃貸のメゾネット（--kind chintai_maisonette）… 毎週土曜 14:00（….suumo-chintai-maisonette）。1 周目の行に maisonette=1 を立てるだけ
-//   ※ LDK の畳数（詳細ページ）は別のスクリプト scripts/suumo-chintai-detail.ts（毎週土曜 16:00）
+//   - 賃貸（--kind chintai）     … 毎日 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai・2026-10-05〜）
+//   - 賃貸のペット相談可（--kind chintai_pets）… 毎日 12:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
+//   - 賃貸のメゾネット（--kind chintai_maisonette）… 毎日 14:00（….suumo-chintai-maisonette）。1 周目の行に maisonette=1 を立てるだけ
+//   ※ LDK の畳数（詳細ページ）は別のスクリプト scripts/suumo-chintai-detail.ts（毎日 16:00）
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ Mac か: Worker の cron から取ると 2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で即 503
@@ -33,7 +33,7 @@
 //   npm run crawl:local -- --dry-run    # 設定の確認だけ（SUUMO にも Worker にもアクセスしない）
 //   npm run crawl:local -- --max-pages 2  # 試し走り（2 ページで切り上げ。続きは次回カーソルから）
 //   npm run crawl:local -- --kind shinchiku   # 新築（週 1 回・23 ページ ≒ 25 分）
-//   npm run crawl:local -- --kind chintai     # 賃貸（週 1 回・≒140 ページ。取得時に絞り込む）
+//   npm run crawl:local -- --kind chintai     # 賃貸（毎日・≒140 ページ。取得時に絞り込む）
 //   npm run crawl:local -- --kind chintai_pets # 賃貸のペット相談可（≒40 ページ。chintai の後に流すこと）
 //   npm run crawl:local -- --kind chintai_maisonette # 賃貸のメゾネット（少ない。chintai の後に流すこと）
 

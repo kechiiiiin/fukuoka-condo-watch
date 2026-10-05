@@ -9,7 +9,7 @@
 // 送信元 IP が違うので、Worker の IP が受けたクールダウンで Mac を止めない（逆も同じ）。
 //
 // 種類（kind）: 中古（chuko・毎日・listings.kind='sale'）・新築（shinchiku・週 1 回・new_listings。2026-09-22〜）・
-// 賃貸（chintai・週 1 回・listings.kind='rent'。2026-09-26〜）。取得元ごとに許す kind は CRAWL_KINDS.listingKind が正。
+// 賃貸（chintai・毎日（2026-10-05〜）・listings.kind='rent'。2026-09-26〜）。取得元ごとに許す kind は CRAWL_KINDS.listingKind が正。
 // クロールの状態の表（runs・cursor・state・events・snapshots）は取得元 ID（suumo:ms-chuko / suumo:ms-shinchiku）で分かれるので共用し、
 // 掲載を入れる表と 1 ページの反映文だけを ListingStore で差し替える（カーソル・止まり方・掲載終了の判定は 1 つの実装）。
 // Mac の取得元は中古・新築で別キー（suumo:ms-chuko@mac / suumo:ms-shinchiku@mac）だが、送信元 IP は同じ Mac なので

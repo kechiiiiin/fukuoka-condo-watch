@@ -14,7 +14,7 @@ import { CHINTAI_MAISONETTE_SOURCE_ID, CHINTAI_PETS_SOURCE_ID, CHINTAI_SOURCE_ID
 import { SHINCHIKU_SOURCE_ID } from "./suumo-shinchiku";
 
 /**
- * 取る種類。中古（/ms/chuko/・毎日）・新築（/ms/shinchiku/・週 1 回）・賃貸（/chintai/・週 1 回。2026-09-26〜）。
+ * 取る種類。中古（/ms/chuko/・毎日）・新築（/ms/shinchiku/・週 1 回）・賃貸（/chintai/・毎日。2026-09-26〜・2026-10-05 に毎日へ）。
  * D1 のクロール状態（runs・cursor・state・events）は取得元 ID で分かれるので同じ表を使い、掲載の表だけ分ける
  * （中古・賃貸 = listings（listings.kind で分かれる）・新築 = new_listings）。
  */

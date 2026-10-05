@@ -2,9 +2,9 @@
 # SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。6 本:
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo           … 中古・毎日 01:00
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku … 新築・毎週日曜 06:00（2026-09-22〜）
-#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai   … 賃貸・毎週土曜 06:00（2026-09-26〜）
-#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets … 賃貸のペット相談可（2 周目）・毎週土曜 12:00
-#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette … 賃貸のメゾネット（3 周目）・毎週土曜 14:00
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai   … 賃貸・毎日 06:00（2026-09-26〜・2026-10-05 に毎週土曜から毎日へ）
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets … 賃貸のペット相談可（2 周目）・毎日 12:00
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette … 賃貸のメゾネット（3 周目）・毎日 14:00
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail … 賃貸の詳細ページ（LDK 畳数・階・メゾネット）・毎日 16:00
 # ⚠️ 賃貸の 2〜4 本目は 1 周目（06:00）より後でなければならない（1 周目の upsert が印を上書きするため）。
 # 6 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
@@ -108,10 +108,10 @@ for LABEL in "${LABELS[@]}"; do
   launchctl bootstrap "gui/$(id -u)" "$DEST"
   case "$LABEL" in
     *.suumo-shinchiku) WHEN="毎週日曜 06:00"; LOG="suumo-shinchiku-crawl.out.log" ;;
-    *.suumo-chintai-pets) WHEN="毎週土曜 12:00"; LOG="suumo-chintai-pets-crawl.out.log" ;;
-    *.suumo-chintai-maisonette) WHEN="毎週土曜 14:00"; LOG="suumo-chintai-maisonette-crawl.out.log" ;;
+    *.suumo-chintai-pets) WHEN="毎日 12:00"; LOG="suumo-chintai-pets-crawl.out.log" ;;
+    *.suumo-chintai-maisonette) WHEN="毎日 14:00"; LOG="suumo-chintai-maisonette-crawl.out.log" ;;
     *.suumo-chintai-detail) WHEN="毎日 16:00"; LOG="suumo-chintai-detail.out.log" ;;
-    *.suumo-chintai)   WHEN="毎週土曜 06:00"; LOG="suumo-chintai-crawl.out.log" ;;
+    *.suumo-chintai)   WHEN="毎日 06:00"; LOG="suumo-chintai-crawl.out.log" ;;
     *) WHEN="毎日 01:00"; LOG="suumo-crawl.out.log" ;;
   esac
   echo "✓ 登録しました: $DEST（$WHEN）"
