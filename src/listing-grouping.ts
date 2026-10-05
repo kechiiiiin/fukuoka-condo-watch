@@ -96,8 +96,9 @@ export interface PickFilters {
   /** true ならペット相談可の物件だけ（賃貸のみ。既定 false = 絞らない） */
   petsOnly: boolean;
   /**
-   * true ならメゾネット（maisonette = 1）を除く（賃貸の既定 true）。
-   * 0008 で maisonette は二値になったので、残るのは 0（と移行前の NULL）の行。
+   * true ならメゾネット（maisonette = 1）を除く（賃貸の既定 false。2026-10-05「メゾネットは許容する」に変更）。
+   * 既定では除外せず、メゾネットの行にはバッジを付けて並べる（画面側 src/listings-picks-dashboard.ts）。
+   * 0008 で maisonette は二値になったので、絞ったときに残るのは 0（と移行前の NULL）の行。
    */
   excludeMaisonette: boolean;
   /**
@@ -155,10 +156,12 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
  * ⚠️ pets_allowed はペット絞り込みの 2 周目で見えた部屋にしか付かない下限値なので、OFF にすると印の無いものも出る）。
  *
  * 2026-09-26 に足した「理想条件」:
- *   - **メゾネット（室内 2 層）を除く**（excludeMaisonette = true）。不明（NULL）は落とさない
  *   - **LDK 15 畳以上**（ldkTatamiMin = 15）。未取得（NULL）は落とさない
  *   - 建物の階数では絞らない（buildingFloorsMin = null）。本人に確認して「2 階建ての建物は嫌ではない」となったため。
  *     階数は画面に情報として出すだけ（URL の floors= でだけ任意に絞れる）
+ *
+ * 2026-10-05: **メゾネットは既定で除外しない**（excludeMaisonette = false。本人が「メゾネットは許容する」と決めたため）。
+ * メゾネットの行には画面上でバッジを出す（除くかどうかは URL の mais=1 / 画面のチェックボックスで任意に絞れる）
  */
 export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
   priceMaxMan: 15,
@@ -169,7 +172,7 @@ export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { 
   walkMax: null,
   includeBus: true,
   petsOnly: true,
-  excludeMaisonette: true,
+  excludeMaisonette: false,
   ldkTatamiMin: 15,
   buildingFloorsMin: null,
   municipalities: null,
@@ -223,7 +226,7 @@ export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string
     walkMax: num(params, "walk") ?? d.walkMax,
     includeBus: bool(params, "bus", d.includeBus),
     petsOnly: kind === "rent" ? bool(params, "pets", d.petsOnly) : false,
-    // メゾネット除外（賃貸だけ・既定 ON）。mais=0 で外す
+    // メゾネット除外（賃貸だけ・既定 OFF＝除外しない）。mais=1 で絞る
     excludeMaisonette: kind === "rent" ? bool(params, "mais", d.excludeMaisonette) : false,
     // LDK の畳数の下限（賃貸だけ・既定 15）。tatami=0 で外す（0 以下は「絞らない」の意味にする）
     ldkTatamiMin: kind === "rent" ? nonPositiveToNull(num(params, "tatami") ?? d.ldkTatamiMin) : null,

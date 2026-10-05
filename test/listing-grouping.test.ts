@@ -381,17 +381,17 @@ test("ペット相談可トグル: 賃貸は既定 ON・pets=0 で外せる（sa
  * ⚠️ **建物の階数では絞らない**（本人に確認して「2 階建ての建物は嫌ではない」となった）。
  *    既定は buildingFloorsMin = null で、URL の floors= を付けたときだけ効く任意の絞り込み。
  */
-test("賃貸の既定: メゾネットを除く・LDK 15畳以上。建物の階数では絞らない", () => {
+test("賃貸の既定: メゾネットは除かない（2026-10-05〜）・LDK 15畳以上。建物の階数では絞らない", () => {
   const today = "2026-09-26";
   const f = parsePickFilters(new URLSearchParams(""), () => true, "rent");
-  assert.equal(f.excludeMaisonette, true);
+  assert.equal(f.excludeMaisonette, false, "2026-10-05「メゾネットは許容する」で既定 OFF に変更");
   assert.equal(f.ldkTatamiMin, 15);
   assert.equal(f.buildingFloorsMin, null, "建物の階数は既定では絞らない");
 
   const base = { pets_allowed: 1 } as const;
-  // メゾネット: 1 は落とす・**NULL（不明）は落とさない**
+  // メゾネット: 既定では 1 でも NULL でも落とさない（画面ではバッジで示す）
   assert.equal(matchesConditions(rentRow({ ...base, maisonette: null, ldk_tatami: 16 }), f, 2026, today), true);
-  assert.equal(matchesConditions(rentRow({ ...base, maisonette: 1, ldk_tatami: 16 }), f, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ ...base, maisonette: 1, ldk_tatami: 16 }), f, 2026, today), true, "賃貸の既定でメゾネットが残る");
   assert.equal(matchesConditions(rentRow({ ...base, ldk_tatami: 16 }), f, 2026, today), true, "列が無い行も落とさない");
 
   // LDK の畳数: 15 未満は落とす・ちょうど 15 は残す・**NULL（未取得）は落とさない**
@@ -404,11 +404,12 @@ test("賃貸の既定: メゾネットを除く・LDK 15畳以上。建物の階
   assert.equal(matchesConditions(rentRow({ ...base, building_floors: null, ldk_tatami: 16 }), f, 2026, today), true);
 });
 
-test("賃貸: 既定の絞り込みは URL で外せる（mais=0 / tatami=0 / floors=N）", () => {
+test("賃貸: メゾネットは URL（mais=1）で絞り込める・tatami=0 / floors=N も既定を外せる", () => {
   const today = "2026-09-26";
-  const noMais = parsePickFilters(new URLSearchParams("mais=0"), () => true, "rent");
-  assert.equal(noMais.excludeMaisonette, false);
-  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, maisonette: 1, ldk_tatami: 16 }), noMais, 2026, today), true);
+  const withMais = parsePickFilters(new URLSearchParams("mais=1"), () => true, "rent");
+  assert.equal(withMais.excludeMaisonette, true);
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, maisonette: 1, ldk_tatami: 16 }), withMais, 2026, today), false, "mais=1 ならメゾネットを除く");
+  assert.equal(matchesConditions(rentRow({ pets_allowed: 1, maisonette: null, ldk_tatami: 16 }), withMais, 2026, today), true, "不明は落とさない");
 
   const noTatami = parsePickFilters(new URLSearchParams("tatami=0"), () => true, "rent");
   assert.equal(noTatami.ldkTatamiMin, null, "0 以下は「絞らない」の意味");

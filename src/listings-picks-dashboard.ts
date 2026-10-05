@@ -21,7 +21,8 @@ const SALE_DEFAULTS_TEXT =
   `築${D.ageMax}年以内・駅徒歩${D.walkMax}分以内（バス便は除く）。空欄の項目は既定の値で絞ります。`;
 const RENT_DEFAULTS_TEXT =
   `既定の条件: 家賃 ${R.priceMaxMan}万円以下・${R.areaMin}㎡以上・${R.planRoomsMin}LDK以上・築${R.ageMax}年以内・` +
-  `ペット相談可・メゾネットでない・LDK ${R.ldkTatamiMin}畳以上（徒歩分は指定なし・バス便も含む・建物の階数では絞りません）。` +
+  `ペット相談可・LDK ${R.ldkTatamiMin}畳以上（徒歩分は指定なし・バス便も含む・建物の階数では絞りません）。` +
+  `メゾネットも含みます（バッジで表示。除きたいときはチェックを入れてください）。` +
   `LDK畳数 未取得のものは落としていません。空欄の項目は既定の値で絞ります。`;
 
 const HTML = `<!doctype html>
@@ -103,7 +104,7 @@ const HTML = `<!doctype html>
         <label class="checks"><input type="checkbox" name="dk" value="1"> DK・Kタイプも含める</label>
         <label class="checks"><input type="checkbox" name="bus" value="1"> バス便も含める</label>
         <label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1" checked> ペット相談可のみ（不明は除く）</label>
-        <label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1" checked> メゾネットを除く</label>
+        <label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1"> メゾネットを除く</label>
         <label class="checks"><input type="checkbox" name="fresh" value="1"> 新着のみ（${D.freshDays}日以内）</label>
       </div>
       <details class="adv full">
@@ -207,7 +208,8 @@ const HTML = `<!doctype html>
     if (saved.walk) f.walk.value = saved.walk;
     if (saved.tatami) f.tatami.value = saved.tatami;
     if (saved.floors) f.floors.value = saved.floors;
-    f.mais.checked = saved.mais === undefined ? IS_RENT : !!saved.mais;
+    // メゾネット除外は既定 OFF（2026-10-05・メゾネットも含む方針）。未保存なら外す
+    f.mais.checked = saved.mais === undefined ? false : !!saved.mais;
     f.dk.checked = !!saved.dk;
     f.bus.checked = !!saved.bus;
     f.pets.checked = saved.pets === undefined ? IS_RENT : !!saved.pets;
@@ -237,8 +239,8 @@ const HTML = `<!doctype html>
       // LDK 畳数・建物の階数は空欄なら既定（畳数 15・階数は指定なし）。0 を入れると「絞らない」
       if (f.tatami.value) p.set("tatami", f.tatami.value);
       if (f.floors.value) p.set("floors", f.floors.value);
-      // メゾネット除外は既定 ON なので、外したときに 0 を明示する
-      if (!f.mais.checked) p.set("mais", "0");
+      // メゾネット除外は既定 OFF（除外しない）なので、チェックしたときだけ 1 を明示する
+      if (f.mais.checked) p.set("mais", "1");
     }
     if (f.fresh.checked) p.set("fresh", "1");
     if (f.sort.value === "retention" && !IS_RENT) p.set("sort", "retention");

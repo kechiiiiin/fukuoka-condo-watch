@@ -157,6 +157,17 @@ const PAYLOAD = (kind: string) => ({
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+test("画面: メゾネット除外のチェックボックスは既定 OFF（2026-10-05〜。ペット相談可は既定 ON のまま）", () => {
+  const html = renderListingsPicksDashboard();
+  assert.match(html, /<label class="checks" id="lb-mais"><input type="checkbox" name="mais" value="1">/, "メゾネットのチェックボックスに checked を付けない");
+  assert.doesNotMatch(
+    html.match(/id="lb-mais"[^<]*<input[^>]*>/)![0],
+    /checked/,
+    "メゾネットのチェックボックス自体には checked が付いていない",
+  );
+  assert.match(html, /<label class="checks" id="lb-pets"><input type="checkbox" name="pets" value="1" checked>/, "ペット相談可は既定 ON のまま");
+});
+
 test("画面（売買）: ?kind=sale でカードが描ける・タブは売買が選択・ペットのトグルは隠す", async () => {
   const h = harness("?kind=sale", () => PAYLOAD("sale"));
   h.run();
@@ -183,9 +194,11 @@ test("画面（賃貸・既定）: 引数なしで賃貸タブ・既定条件・
   assert.equal(h.ids.get("tab-sale")!.className, "");
   assert.ok(h.ids.get("title")!.textContent.includes("賃貸"));
   const defaults = h.ids.get("defaults-text")!.textContent;
-  for (const s of ["家賃 15万円以下", "70㎡以上", "3LDK以上", "築25年以内", "メゾネットでない", "LDK 15畳以上", "建物の階数では絞りません"]) {
+  for (const s of ["家賃 15万円以下", "70㎡以上", "3LDK以上", "築25年以内", "LDK 15畳以上", "建物の階数では絞りません"]) {
     assert.ok(defaults.includes(s), `既定条件に「${s}」`);
   }
+  assert.ok(defaults.includes("メゾネットも含みます"), "2026-10-05〜 既定ではメゾネットを除かない旨を出す");
+  assert.ok(!defaults.includes("メゾネットでない"), "既定条件の説明文から外した（除かなくなったため）");
   assert.equal(h.ids.get("lb-pets")!.className, "", "賃貸ではペットのトグルを出す");
   assert.equal(h.ids.get("lb-mais")!.className, "", "賃貸ではメゾネット除外のトグルを出す");
   assert.equal(h.ids.get("lb-tatami")!.className, "", "賃貸では LDK 畳数の入力を出す");
@@ -222,4 +235,15 @@ test("画面（賃貸）: メゾネットの部屋にはバッジが出る", asy
   const cards = h.ids.get("cards")!.innerHTML;
   assert.ok(cards.includes('<span class="badge warnbadge">メゾネット</span>'), "メゾネットのバッジ");
   assert.ok(!cards.includes("メゾネット 不明"), "「不明」バッジは廃止した");
+});
+
+// 2026-10-05: 「メゾネットは許容する」に決まったので、賃貸の既定（チェックボックス未操作）ではメゾネットの行も
+// mais パラメータを付けずにそのまま残る（バッジで示すだけ・除外しない）
+test("画面（賃貸・既定）: メゾネットのチェックを入れなければ mais パラメータを付けず、メゾネットの部屋も残る", async () => {
+  const h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, maisonette: true }] }));
+  h.run();
+  await flush();
+  assert.ok(!h.requestedUrls[0]!.includes("mais="), "メゾネット除外のチェックを入れていなければ mais は付けない（既定で除外しない）");
+  const cards = h.ids.get("cards")!.innerHTML;
+  assert.ok(cards.includes('<span class="badge warnbadge">メゾネット</span>'), "既定でもメゾネットの部屋はバッジ付きで残る");
 });

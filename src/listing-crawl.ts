@@ -460,8 +460,13 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
  * ⚠️ **建物の階数は条件に入れない**（2026-09-26 の確認で「建物が 2 階建てなのは OK」になったため）。
  * ⚠️ NULL を落とす条件（家賃・面積・間取り・築年）と、そうでない条件を取り違えないこと:
  *    ペット可は既定 ON なので pets_allowed = 1 の行だけ（NULL = 不明は取りに行かない）。
- *    メゾネットは二値（0008）なので 0 の行だけ。移行前の NULL が残っていても落とさないよう COALESCE で 0 と同じに扱う。
+ *    メゾネットは画面の既定の絞り込みではなくなった（2026-10-05）が、ここでは「メゾネット周回（nj_113・3周目）で
+ *    すでに maisonette = 1 と分かっている行」を外すだけ（二重に詳細ページを取りに行かないため）。
  * 定数は src/listing-grouping.ts の DEFAULT_RENT_PICK_FILTERS と合わせてある（片方だけ直さないこと）。
+ * ⚠️ **ORDER BY は first_seen ASC**（古い候補を先に）。1 回 60 件の上限があるため、DESC（新着優先）だと
+ *    候補が 60 件を超えて積み残るたびに古い候補がずっと後回しになり、二度と詳細ページを取れない「判定漏れ」になる
+ *    （2026-10-05・ル・プラシード昭南A棟 bc=100505166592 で確認。first_seen 2026-09-26 のまま detail_fetched_at NULL、
+ *    当時の未取得候補は 83 件で 60 件の上限を超えていた）。ASC なら取り残しが無くなるまで必ず先頭から埋まる。
  */
 const DETAIL_TARGETS_SQL = `
 SELECT external_id, url FROM listings
@@ -475,7 +480,7 @@ WHERE source = ?1 AND kind = 'rent' AND delisted_on IS NULL
   AND building_year IS NOT NULL AND building_year >= ?5
   AND pets_allowed = 1
   AND COALESCE(maisonette, 0) = 0
-ORDER BY first_seen DESC, external_id`;
+ORDER BY first_seen ASC, external_id`;
 
 /** 詳細ページを取る相手（未取得の最終候補）を limit 件まで返す。残り件数も返す（持ち越しの確認用） */
 async function detailTargets(db: D1Database, limit: number): Promise<IngestResponse> {
