@@ -247,3 +247,62 @@ test("画面（賃貸・既定）: メゾネットのチェックを入れなけ
   const cards = h.ids.get("cards")!.innerHTML;
   assert.ok(cards.includes('<span class="badge warnbadge">メゾネット</span>'), "既定でもメゾネットの部屋はバッジ付きで残る");
 });
+
+// 2026-10-20: 賃貸は注意事項を <details> で折りたたむ（既定は閉じる）。売買は今までどおり常に開く
+test("画面（賃貸）: 注意事項は <details> で折りたたまれ、件数が summary に出る", async () => {
+  const h = harness("", () => PAYLOAD("rent"));
+  h.run();
+  await flush();
+  const notices = h.ids.get("notices")!.innerHTML;
+  assert.match(notices, /<details class="notices-details"><summary>注意事項（1件）<\/summary>/, "summary に件数が出る");
+  assert.ok(notices.includes('<div class="notice">テストの注記</div>'), "本文はこれまでどおり notice として入る");
+  assert.ok(!/<details[^>]*\bopen\b/.test(notices), "既定は閉じた状態（open 属性を付けない）");
+});
+
+test("画面（売買）: 注意事項は折りたたまず、これまでどおりそのまま表示する", async () => {
+  const h = harness("?kind=sale", () => PAYLOAD("sale"));
+  h.run();
+  await flush();
+  const notices = h.ids.get("notices")!.innerHTML;
+  assert.ok(!notices.includes("<details"), "売買では <details> を使わない");
+  assert.equal(notices, '<div class="notice">テストの注記</div>', "売買は従来どおりの表示");
+});
+
+// 読み込み失敗時のエラー notice は賃貸でも折りたたまない（引き続き即見える状態にする）
+test("画面（賃貸）: 読み込み失敗時のエラー notice は折りたたまない", async () => {
+  const ids = new Map<string, El>();
+  const form = new El("form", "filters") as El & Record<string, El>;
+  for (const name of ["pmax", "amin", "plan", "age", "walk", "tatami", "floors", "sort", "dk", "bus", "pets", "mais", "fresh"]) {
+    (form as unknown as Record<string, El>)[name] = new El("input", name);
+  }
+  for (const id of [
+    "tab-sale", "tab-rent", "title", "defaults-text", "lb-pmax", "lb-sort", "opt-retention", "lb-pets",
+    "lb-mais", "lb-tatami", "lb-floors",
+    "muni-select", "asof", "notices", "coverage", "count", "cards", "cards-section", "footer",
+  ]) {
+    ids.set(id, new El("div", id));
+  }
+  ids.set("filters", form);
+  const g = globalThis as unknown as Record<string, unknown>;
+  g.document = {
+    title: "",
+    getElementById: (id: string) => ids.get(id) ?? null,
+    createElement: (tag: string) => new El(tag),
+  };
+  g.location = { search: "" };
+  const store = new Map<string, string>();
+  g.localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+  };
+  g.fetch = () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve(null) });
+
+  const html = renderListingsPicksDashboard();
+  const script = /<script>\n([\s\S]*?)<\/script>/.exec(html);
+  assert.ok(script && script[1], "埋め込みスクリプトが見つからない");
+  new Function(script[1]!)();
+  await flush();
+  const notices = ids.get("notices")!.innerHTML;
+  assert.ok(notices.includes("読み込み失敗"), "エラー文言が出る");
+  assert.ok(!notices.includes("<details"), "エラーは <details> で包まない");
+});

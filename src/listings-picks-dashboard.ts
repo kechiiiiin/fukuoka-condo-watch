@@ -53,6 +53,8 @@ const HTML = `<!doctype html>
   button { background: var(--accent); color: #fff; border: none; font-weight: 600; cursor: pointer; }
   select[multiple] { min-height: 7.5em; }
   details.adv summary { cursor: pointer; font-size: .85rem; color: var(--accent); margin-bottom: 6px; }
+  details.notices-details summary { cursor: pointer; font-size: .85rem; color: var(--muted); padding: 6px 2px; margin: 2px 0; }
+  details.notices-details .notice { margin: 6px 0 0; }
   .toggles { display: flex; flex-wrap: wrap; gap: 10px 14px; grid-column: 1 / -1; }
   .count { color: var(--muted); font-size: .85rem; margin: 4px 0 10px; }
   .cards { display: flex; flex-direction: column; gap: 10px; }
@@ -342,7 +344,11 @@ const HTML = `<!doctype html>
       document.getElementById("asof").textContent = "データ取得 " + esc(d.today) + "時点。" +
         (d.coverage && d.coverage.lastCompleteAt ? "最終の完走クロール: " + esc(d.coverage.lastCompleteAt) : "完走したクロールはまだありません") +
         (d.coverage && d.coverage.latestRun ? "（直近の起動: " + esc(d.coverage.latestRun.crawlDate) + " " + esc(d.coverage.latestRun.status) + "）" : "");
-      document.getElementById("notices").innerHTML = (d.notes || []).map(function (t) { return '<div class="notice">' + esc(t) + "</div>"; }).join("");
+      var notesHtml = (d.notes || []).map(function (t) { return '<div class="notice">' + esc(t) + "</div>"; }).join("");
+      // 賃貸だけ注意事項を折りたたむ（既定は閉じる）。売買は今までどおり常に開いたまま表示
+      document.getElementById("notices").innerHTML = (IS_RENT && d.notes && d.notes.length)
+        ? '<details class="notices-details"><summary>注意事項（' + d.notes.length + '件）</summary>' + notesHtml + '</details>'
+        : notesHtml;
       if (d.coverage && d.coverage.areas && d.coverage.areas.length) {
         var missing = d.coverage.areas.filter(function (a) { return a.status !== "done"; });
         document.getElementById("coverage").innerHTML = missing.length === 0
