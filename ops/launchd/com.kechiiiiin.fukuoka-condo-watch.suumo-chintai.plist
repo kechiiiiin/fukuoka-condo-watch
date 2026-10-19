@@ -17,13 +17,14 @@
   </array>
   <key>WorkingDirectory</key> <string>__REPO__</string>
 
-  <!-- 賃貸（/chintai/）を毎日 06:00（Mac のタイムゾーン = JST）。中古の日次（01:00〜≒05:00）とも
-       新築（日曜 06:00）とも重ならない時刻。取得時に絞り込む（src/suumo-chintai.ts の CHINTAI_QUERY）ので
+  <!-- 賃貸（/chintai/）を毎日 01:00（Mac のタイムゾーン = JST）。中古の日次（04:15〜≒08:15）とも
+       新築（日曜 09:00）とも重ならない時刻。取得時に絞り込む（src/suumo-chintai.ts の CHINTAI_QUERY）ので
        1 回 ≒ 数十〜200 ページ × 61 秒。中古・新築と同じロックファイルを使うので、重なったら終わるまで待つ。
-       スリープしていた間に過ぎたら、起きたあと 1 回だけ走る。取れなかった週は翌週（カーソルは日付ごとの回）。 -->
+       スリープしていた間に過ぎたら、起きたあと 1 回だけ走る。取れなかった週は翌週（カーソルは日付ごとの回）。
+       2026-10-20 賃貸を先に（朝に賃貸が取り終わっているように）。 -->
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Hour</key>    <integer>6</integer>
+    <key>Hour</key>    <integer>1</integer>
     <key>Minute</key>  <integer>0</integer>
   </dict>
   <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->

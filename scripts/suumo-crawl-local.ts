@@ -1,10 +1,11 @@
 // SUUMO 掲載のクロール（Mac 側）。launchd（ops/launchd/）から起動する:
-//   - 中古（既定・--kind chuko）… 毎日 01:00（com.kechiiiiin.fukuoka-condo-watch.suumo）
-//   - 新築（--kind shinchiku）   … 毎週日曜 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
-//   - 賃貸（--kind chintai）     … 毎日 06:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai・2026-10-05〜）
-//   - 賃貸のペット相談可（--kind chintai_pets）… 毎日 12:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
-//   - 賃貸のメゾネット（--kind chintai_maisonette）… 毎日 14:00（….suumo-chintai-maisonette）。1 周目の行に maisonette=1 を立てるだけ
+//   - 中古（既定・--kind chuko）… 毎日 04:15（com.kechiiiiin.fukuoka-condo-watch.suumo）
+//   - 新築（--kind shinchiku）   … 毎週日曜 09:00（com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku）
+//   - 賃貸（--kind chintai）     … 毎日 01:00（com.kechiiiiin.fukuoka-condo-watch.suumo-chintai・2026-10-05〜）
+//   - 賃貸のペット相談可（--kind chintai_pets）… 毎日 03:00（….suumo-chintai-pets）。1 周目の行に pets_allowed=1 を立てるだけ
+//   - 賃貸のメゾネット（--kind chintai_maisonette）… 毎日 03:45（….suumo-chintai-maisonette）。1 周目の行に maisonette=1 を立てるだけ
 //   ※ LDK の畳数（詳細ページ）は別のスクリプト scripts/suumo-chintai-detail.ts（毎日 16:00）
+//   2026-10-20 賃貸を先に（朝に賃貸が取り終わっているように）
 // ⚠️ 私的・非商用の個人利用に限る（README「掲載情報（SUUMO）」）。
 //
 // なぜ Mac か: Worker の cron から取ると 2026-09-14 に 43 ページ目で 503、9/17・9/20 は 1 ページ目で即 503

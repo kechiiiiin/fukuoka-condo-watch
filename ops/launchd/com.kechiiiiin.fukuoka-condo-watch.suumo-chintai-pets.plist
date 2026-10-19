@@ -17,12 +17,13 @@
   </array>
   <key>WorkingDirectory</key> <string>__REPO__</string>
 
-  <!-- ペット相談可の 2 周目（tc=0401102）を毎日 12:00。**1 周目（06:00・≒2.4 時間）の後**に走らせること
+  <!-- ペット相談可の 2 周目（tc=0401102）を毎日 03:00。**1 周目（01:00・≒100 分）の後**に走らせること
        （1 周目の upsert が pets_allowed を NULL に戻すので、順番が逆だと不明のままになる）。
-       1 回 ≒ 40 ページ × 61 秒 ≒ 40 分。中古・新築・賃貸と同じロックファイルなので、重なったら終わるまで待つ。 -->
+       1 回 ≒ 40 ページ × 61 秒 ≒ 40 分。中古・新築・賃貸と同じロックファイルなので、重なったら終わるまで待つ。
+       2026-10-20 賃貸を先に（朝に賃貸が取り終わっているように）。 -->
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Hour</key>    <integer>12</integer>
+    <key>Hour</key>    <integer>3</integer>
     <key>Minute</key>  <integer>0</integer>
   </dict>
   <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->

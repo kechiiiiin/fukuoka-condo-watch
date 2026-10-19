@@ -217,7 +217,7 @@ const HTML = `<!doctype html>
       var last = runs[0];
       document.getElementById("crawl").textContent = last
         ? "直近のクロール: " + last.crawl_date + " " + last.status + "（" + last.pages_fetched + " ページ・見えた " + last.listings_seen + " 件・新着 " + last.new_count + "・価格変化 " + last.price_change_count + "・掲載終了 " + last.gone_count + "）"
-        : "新築のクロールはまだ一度も走っていません（毎週日曜 06:00・Mac の launchd）";
+        : "新築のクロールはまだ一度も走っていません（毎週日曜 09:00・Mac の launchd）";
       document.getElementById("notices").innerHTML = (d.notes || []).map(function (t) { return '<div class="notice">' + esc(t) + "</div>"; }).join("");
       var pb = d.premiumBasis;
       document.getElementById("count").textContent = d.matched + " 件" + (d.filters.all ? "（全件表示）" : "") +

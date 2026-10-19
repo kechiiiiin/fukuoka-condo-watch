@@ -21,7 +21,7 @@
 | `src/listing-crawl.ts` | 掲載クロールの D1 側。Mac からの取り込み口 `POST /api/ingest/listings`（`external`）と Worker cron での取得（`on`）が同じ関数でカーソルを進める・止められたら停止・完走回だけ掲載終了。種類（中古 `listings` / 新築 `new_listings`）は `ListingStore` で差し替える |
 | `src/listing-crawl-core.ts` | Worker と Mac で共有する部品（`LISTINGS_ENABLED` の解釈・種類 `CRAWL_KINDS`・ページ間隔・1 ページ取って振り分け・取り込み要求の検証）。D1 に依存しない |
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
-| `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から中古は毎日 01:00・新築（`--kind shinchiku`）は毎週日曜 06:00 JST・賃貸は土曜 06:00 / 12:00（`chintai_pets`）/ 14:00（`chintai_maisonette`） |
+| `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から賃貸は毎日 01:00 / 03:00（`chintai_pets`）/ 03:45（`chintai_maisonette`）・中古は毎日 04:15・新築（`--kind shinchiku`）は毎週日曜 09:00 JST |
 | `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎日 16:00 |
 | `scripts/crawl-local-lib.ts` | 上の 2 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
@@ -141,7 +141,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は push / PR で型チェック�
 |---|---|---|
 | `off`（コードの既定・不明な値） | 誰も取らない | cron は D1 にも触らず即 return、取り込み口は 409 |
 | `on` | Worker の cron（`*/15 16-20 * * *`） | 2026-09-14〜09-22 の方式。下の経緯でやめた |
-| **`external`（本番・2026-09-22〜）** | **Keisuke の Mac（launchd・毎日 01:00 JST）** | cron は取らない。Mac が 1 ページ取るごとに `POST /api/ingest/listings` へ送る |
+| **`external`（本番・2026-09-22〜）** | **Keisuke の Mac（launchd・毎日 04:15 JST）** | cron は取らない。Mac が 1 ページ取るごとに `POST /api/ingest/listings` へ送る |
 
 **Mac へ移した経緯**: Worker の cron から取ると、2026-09-14 に 43 ページ目で 503、9/17・9/20 のクールダウン明けは 1 ページ目で即 503 だった。
 Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/ms/chuko/fukuoka/sc_fukuokashihigashi/`）を自宅回線から curl すると 200・29 件が取れた。
@@ -204,7 +204,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - 取り込みは中古と同じ `POST /api/ingest/listings` に `kind: "shinchiku"` を付けて送る（`runId` の取得元と kind が食い違う要求は 400）。解析・ブロック判定は同じ `fetchAndClassify`、反映・カーソル・掲載終了は同じ `applyOutcome` / `finalizeRun`
 - 取得元キー: 新築は `suumo:ms-shinchiku@mac`（中古 `suumo:ms-chuko@mac` と別に記録）。ただし送信元は同じ Mac なので、
   **どちらかのキーがクールダウン中なら両方とも取らない**・**ページ間隔の起点はどちらかで最後に取った時刻**（同じ相手に種類を変えて続けて取りに行かない）
-- launchd: `com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku`・**毎週日曜 06:00**（中古の 01:00〜≒05:00 と重ならない）。中古が長引いていたらロックで待つ
+- launchd: `com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku`・**毎週日曜 09:00**（中古の 04:15〜≒08:15 と重ならない）。中古が長引いていたらロックで待つ
 
 #### 見る画面（`/listings/shinchiku`・`/api/listings/shinchiku`。Access 保護）
 
@@ -256,7 +256,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - 同じ URL に `tc=0401102`（ペット可・相談 OK の絞り込み）を足した 2 周目を、別の取得元 ID（`suumo:chintai-pets`）の回として回す
 - 2 周目は**行を入れない**。1 周目が入れた行のうち**見えた部屋にだけ** `pets_allowed = 1` を立てる（`UPDATE` だけ）
 - **`pets_allowed` の NULL は「不明」であって「ペット不可」ではない**。0 は入れない。1 周目の upsert が毎回 NULL に戻すので、週ごとに付け直しになる
-  → **2 周目は必ず 1 周目の後に走らせる**（launchd は 06:00 / 12:00）
+  → **2 周目は必ず 1 周目の後に走らせる**（launchd は 01:00 / 03:00）
 - 2 周目で見えた部屋だけに付くので、**`pets_allowed = 1` は下限**（1 周目・2 周目で表示される部屋の組み合わせが違うため、ペット可なのに不明のままの部屋がありうる）
 - リクエストの増え方: 中央区は 734 件 → 177 件・8 ページ → **2 ページ**。全体で 1 周目 ≒ 140 ページに対し 2 周目 ≒ 40 ページ（**+3 割ほど**）。60 秒間隔・ページ上限・ロックは 1 周目と同じ
 
@@ -281,7 +281,7 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
   0 = メゾネットでない（既定）・1 = メゾネット。**「NULL = 不明」はやめた**——1 を立てられるのは 3 周目で見えた部屋だけなので、
   それ以外が全部「メゾネット 不明」になり画面がほぼ全件「不明」で埋まっていた。3 周目は全市区町村を完走しているので、
   表示上の推定ではなくデータの持ち方を二値にした（Keisuke 判断）
-- 0 を書くのは **1 周目の upsert だけ**（毎週いったん落とす）→ **3 周目は必ず 1 周目の後**（launchd は 06:00 / 12:00 / **14:00**）。
+- 0 を書くのは **1 周目の upsert だけ**（毎週いったん落とす）→ **3 周目は必ず 1 周目の後**（launchd は 01:00 / 03:00 / **03:45**）。
   1 を立てるのは 3 周目と、詳細ページで特徴タグに「メゾネット」が出たとき（`UPDATE_DETAIL_SQL`。**1 を消す方向には書かない**）
 - ⚠️ **割り切り: 3 周目が落ちた週は、本当はメゾネットの部屋も 0 のまま残る**（Keisuke に伝えたうえでの割り切り・未返答）。
   どの回まで完走したかは `listing_crawl_runs`（`source = 'suumo:chintai-maisonette' AND status = 'complete'`）で追える
@@ -338,9 +338,10 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
   `test/listing-crawl-sql.test.ts` が `migrations/` から組んだ**素の SQLite に対して実際に実行**し、
   「詳細が一覧の値を壊さない／一覧が詳細由来の値を毎週消さない」ことを確かめている
 - 取得元キー: `suumo:chintai@mac` / `suumo:chintai-pets@mac` / `suumo:chintai-maisonette@mac`。送信元は同じ Mac なので、**どれかがクールダウン中なら全部取らない**・**間隔の起点はどれかで最後に取った時刻**
-- launchd（土曜・**この順番でなければならない**）: `….suumo-chintai` **06:00** → `….suumo-chintai-pets` **12:00**
-  → `….suumo-chintai-maisonette` **14:00** → `….suumo-chintai-detail` **16:00**。
-  中古の 01:00〜≒05:00 とも新築の日曜 06:00 とも重ならない。**6 本とも同じロックファイル**
+- launchd（毎日・**この順番でなければならない**）: `….suumo-chintai` **01:00** → `….suumo-chintai-pets` **03:00**
+  → `….suumo-chintai-maisonette` **03:45** → `….suumo-chintai-detail` **16:00**。
+  中古の 04:15〜≒08:15 とも新築の日曜 09:00 とも重ならない。**6 本とも同じロックファイル**
+  （2026-10-20 賃貸を先に。朝に賃貸が取り終わっているように）
 - 1 回の上限: 1 周目 250 ページ・5 時間 / 2 周目・3 周目 120 ページ・3 時間 / 詳細ページ 60 件
 
 #### 見る画面（`/listings/picks`。Access 保護）
@@ -414,7 +415,7 @@ bash ops/setup-ingest-token.sh https://condo.kechiiiiin.com
                                           # トークン生成 → wrangler secret put（stdin）→ ~/.config/fukuoka-condo-watch/env（600）
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://condo.kechiiiiin.com/api/ingest/listings   # 401（認証なしは拒否）
 npm run crawl:local -- --dry-run          # 設定の確認だけ（取得先 https://suumo.jp・間隔 60000ms と出る）
-bash ops/launchd/install.sh               # launchd に登録（毎日 01:00。入れた瞬間には走らない）
+bash ops/launchd/install.sh               # launchd に登録（毎日 04:15。入れた瞬間には走らない）
 npm run crawl:local -- --max-pages 2      # 試し走り: 2 ページ（≒ 1 分）で切り上げ。続きはカーソルから
 launchctl kickstart gui/$(id -u)/com.kechiiiiin.fukuoka-condo-watch.suumo   # 通しの初回を今すぐ（≒ 4 時間）
 tail -f ~/Library/Logs/fukuoka-condo-watch/suumo-crawl.out.log
