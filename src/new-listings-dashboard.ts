@@ -62,7 +62,7 @@ const HTML = `<!doctype html>
 <body>
 <header>
   <h1>新築マンション（非公開）</h1>
-  <div class="sub"><a href="/listings">← 掲載ウォッチ全体</a> ／ <a href="/listings/picks">条件に合う中古</a> ／ 私的・非商用の個人利用</div>
+  <div class="sub"><a href="/listings">← 掲載ウォッチ全体</a> ／ <a href="/listings/picks">条件に合う中古</a> ／ <a href="/listings/bus">バス直通マップ</a> ／ 私的・非商用の個人利用</div>
   <div class="sub" id="asof">読み込み中…</div>
   <div class="crawl" id="crawl"></div>
   <div id="notices"></div>
