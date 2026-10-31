@@ -14,7 +14,10 @@
     "db:migrate:remote": "wrangler d1 migrations apply fukuoka-condo-watch --remote",
     "backfill": "tsx scripts/backfill.ts",
     "load-geo": "tsx scripts/load-geo.ts",
-    "estat": "tsx scripts/estat.ts"
+    "estat": "tsx scripts/estat.ts",
+    "bus:build": "node --import tsx scripts/build-bus-access.ts",
+    "bus:check": "node --import tsx scripts/check-bus-access.ts",
+    "bus:preview": "node --import tsx scripts/preview-bus-access.ts"
   },
   "type": "module",
   "devDependencies": {

@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["scripts/**/*.ts", "src/reinfolib.ts", "src/wards.ts"]
+  "include": ["scripts/**/*.ts", "src/reinfolib.ts", "src/wards.ts", "src/bus-access-dashboard.ts"]
 }

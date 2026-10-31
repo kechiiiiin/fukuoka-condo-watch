@@ -6,10 +6,11 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
     "strict": true,
+    "resolveJsonModule": true,
     "noEmit": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["test/**/*.ts", "src/suumo.ts", "src/access.ts", "src/wards.ts", "src/scoring.ts", "src/listing-scoring.ts", "src/listing-grouping.ts", "src/listings-picks-dashboard.ts", "src/listing-types.ts", "src/listing-crawl-core.ts", "src/suumo-source.ts", "src/suumo-shinchiku.ts", "src/suumo-chintai.ts", "src/new-listing-view.ts", "src/ingest-auth.ts", "scripts/fake-suumo-server.ts"]
+  "include": ["test/**/*.ts", "src/suumo.ts", "src/access.ts", "src/wards.ts", "src/scoring.ts", "src/listing-scoring.ts", "src/listing-grouping.ts", "src/listings-picks-dashboard.ts", "src/bus-access-dashboard.ts", "scripts/bus-access-lib.ts", "src/listing-types.ts", "src/listing-crawl-core.ts", "src/suumo-source.ts", "src/suumo-shinchiku.ts", "src/suumo-chintai.ts", "src/new-listing-view.ts", "src/ingest-auth.ts", "scripts/fake-suumo-server.ts"]
 }

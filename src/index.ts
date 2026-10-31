@@ -15,6 +15,7 @@ import { buildListingMetrics } from "./listing-metrics";
 import { buildListingPicks } from "./listing-picks";
 import { renderListingsDashboard } from "./listings-dashboard";
 import { renderListingsPicksDashboard } from "./listings-picks-dashboard";
+import { renderBusAccessDashboard } from "./bus-access-dashboard";
 import { buildNewListings } from "./new-listings";
 import { renderNewListingsDashboard } from "./new-listings-dashboard";
 import { buildMetrics, buildStatus, parseFilters } from "./metrics";
@@ -72,6 +73,9 @@ export default {
           case "/listings/shinchiku":
           case "/listings/shinchiku/":
             return new Response(renderNewListingsDashboard(), { headers: { "content-type": "text/html; charset=utf-8", ...priv } });
+          case "/listings/bus":
+          case "/listings/bus/":
+            return new Response(renderBusAccessDashboard(), { headers: { "content-type": "text/html; charset=utf-8", ...priv } });
           case "/api/listings/shinchiku":
             return json(await buildNewListings(env, url));
           default:

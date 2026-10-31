@@ -63,7 +63,7 @@ const HTML = `<!doctype html>
 <header>
   <h1>福岡都市圏 中古マンション ウォッチ</h1>
   <div class="sub">福岡市 7 区と近郊 16 市町（筑紫地区・糸島・宗像・古賀・福津・粕屋郡）</div>
-  <div class="sub">非公開（ログインが必要）: <a href="/listings">SUUMO 掲載ウォッチ →</a> ・<a href="/listings/picks">条件に合う新着・掲載中の物件 →</a> ・<a href="/listings/shinchiku">新築マンション →</a></div>
+  <div class="sub">非公開（ログインが必要）: <a href="/listings">SUUMO 掲載ウォッチ →</a> ・<a href="/listings/picks">条件に合う新着・掲載中の物件 →</a> ・<a href="/listings/shinchiku">新築マンション →</a> ・<a href="/listings/bus">バス直通マップ →</a></div>
   <div class="sub" id="period">読み込み中…</div>
   <div id="notices"></div>
 </header>
