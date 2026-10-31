@@ -7,7 +7,7 @@
   },
   "generatedAt": "2026-10-31T13:38:40.516Z",
   "requestsThisRun": 8,
-  "requestsTotal": 838,
+  "requestsTotal": 891,
   "elapsedSec": 22,
   "stoppedReason": null,
   "dests": {
@@ -25,31 +25,6 @@
    }
   },
   "failures": [
-   {
-    "dest": "gion",
-    "terminus": "中央埠頭",
-    "reason": "停留所名検索で一致する停留所なし"
-   },
-   {
-    "dest": "gion",
-    "terminus": "博多駅",
-    "reason": "停留所名検索で一致する停留所なし"
-   },
-   {
-    "dest": "gion",
-    "terminus": "井尻六ッ角",
-    "reason": "停留所名検索で一致する停留所なし"
-   },
-   {
-    "dest": "gion",
-    "terminus": "大橋駅",
-    "reason": "停留所名検索で一致する停留所なし"
-   },
-   {
-    "dest": "higashi",
-    "terminus": "博多駅",
-    "reason": "停留所名検索で一致する停留所なし"
-   },
    {
     "dest": "higashi",
     "terminus": "土井営業所",
@@ -154,33 +129,9 @@
    "failures": [
     {
      "dest": "higashi",
-     "destStop": "東光小学校前",
-     "terminus": "博多駅",
-     "reason": "停留所名検索で一致する停留所なし"
-    },
-    {
-     "dest": "higashi",
-     "destStop": "東比恵二丁目",
-     "terminus": "博多駅",
-     "reason": "停留所名検索で一致する停留所なし"
-    },
-    {
-     "dest": "higashi",
-     "destStop": "東光町",
-     "terminus": "博多駅",
-     "reason": "停留所名検索で一致する停留所なし"
-    },
-    {
-     "dest": "higashi",
      "destStop": "東光町",
      "terminus": "土井営業所",
      "reason": "直通なし（土井営業所 との両方向・6時/7時）"
-    },
-    {
-     "dest": "higashi",
-     "destStop": "豊一丁目",
-     "terminus": "博多駅",
-     "reason": "停留所名検索で一致する停留所なし"
     },
     {
      "dest": "higashi",
@@ -190,6 +141,541 @@
     }
    ],
    "p11CoordCount": 0
+  },
+  "platformFix": {
+   "note": "行先名（博多駅など）が停留所名と合わず取れなかった行先を、実際の乗り場名で 行先→目的・6時 の経路検索をし直して補った（1 行先 4 回まで。朝の本数は取っていない）",
+   "generatedAt": "2026-10-31T13:58:02.138Z",
+   "requests": 53,
+   "keitoReusedFromCache": 35,
+   "stoppedReason": null,
+   "p11CoordCount": 0,
+   "tried": {
+    "gion|祇園町|中央埠頭": [
+     {
+      "platform": "博多港国際ターミナル（中央ふ頭）",
+      "result": "直通あり（11,19）"
+     },
+     {
+      "platform": "中央ふ頭クルーズセンター",
+      "result": "直通なし"
+     }
+    ],
+    "gion|祇園町|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（3,68-1,32,306,57,203,29,68）"
+     },
+     {
+      "platform": "博多駅前Ａ",
+      "result": "直通あり（99,88）"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通あり（99,88）"
+     },
+     {
+      "platform": "博多駅西日本シティ銀行前Ｆ",
+      "result": "直通あり（99,88）"
+     }
+    ],
+    "gion|祇園町|井尻六ッ角": [
+     {
+      "platform": "井尻六ツ角",
+      "result": "直通あり（46）"
+     },
+     {
+      "platform": "井尻六ツ角（高宮通り）",
+      "result": "直通あり（46）"
+     }
+    ],
+    "gion|祇園町|大橋駅": [
+     {
+      "platform": "西鉄大橋駅",
+      "result": "直通あり（47,48）"
+     }
+    ],
+    "higashi|東光二丁目|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（39,37,39B,73,32）"
+     },
+     {
+      "platform": "博多駅筑紫口",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅博多郵便局前D",
+      "result": "直通なし"
+     }
+    ],
+    "higashi|東光小学校前|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（38,37-1）"
+     },
+     {
+      "platform": "博多駅筑紫口",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅博多郵便局前D",
+      "result": "直通なし"
+     }
+    ],
+    "higashi|東比恵二丁目|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（41,43,38,37-1）"
+     },
+     {
+      "platform": "博多駅筑紫口",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅博多郵便局前D",
+      "result": "直通なし"
+     }
+    ],
+    "higashi|東光町|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（39,41,37,43,39B,73,32）"
+     },
+     {
+      "platform": "博多駅筑紫口",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅博多郵便局前D",
+      "result": "直通なし"
+     }
+    ],
+    "higashi|豊一丁目|博多駅": [
+     {
+      "platform": "博多バスターミナル１Ｆ",
+      "result": "直通あり（39,37,39B,73,32）"
+     },
+     {
+      "platform": "博多駅筑紫口",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅センタービル前Ｅ",
+      "result": "直通なし"
+     },
+     {
+      "platform": "博多駅博多郵便局前D",
+      "result": "直通なし"
+     }
+    ]
+   },
+   "found": [
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "中央埠頭",
+     "platform": "博多港国際ターミナル（中央ふ頭）",
+     "keitoCd": "152208",
+     "numbers": [
+      "11"
+     ],
+     "newStops": 4
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "中央埠頭",
+     "platform": "博多港国際ターミナル（中央ふ頭）",
+     "keitoCd": "185208",
+     "numbers": [
+      "19"
+     ],
+     "newStops": 4
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "中央埠頭",
+     "platform": "博多港国際ターミナル（中央ふ頭）",
+     "keitoCd": "185219",
+     "numbers": [
+      "19"
+     ],
+     "newStops": 4
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "196274",
+     "numbers": [
+      "3"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "182296",
+     "numbers": [
+      "306"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "234228",
+     "numbers": [
+      "57"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "177244",
+     "numbers": [
+      "203"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "282218",
+     "numbers": [
+      "29"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "gion",
+     "destStop": "祇園町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "361156",
+     "numbers": [
+      "68"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324288",
+     "numbers": [
+      "39"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "316202",
+     "numbers": [
+      "37"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324219",
+     "numbers": [
+      "39B"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "320204",
+     "numbers": [
+      "32"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "320251",
+     "numbers": [
+      "32"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光小学校前",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324231",
+     "numbers": [
+      "38"
+     ],
+     "newStops": 4
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光小学校前",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "316204",
+     "numbers": [
+      "37-1"
+     ],
+     "newStops": 4
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343202",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343224",
+     "numbers": [
+      "43"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "342275",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343207",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343232",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324231",
+     "numbers": [
+      "38"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東比恵二丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "316204",
+     "numbers": [
+      "37-1"
+     ],
+     "newStops": 2
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324288",
+     "numbers": [
+      "39"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343202",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "316202",
+     "numbers": [
+      "37"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "343224",
+     "numbers": [
+      "43"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324219",
+     "numbers": [
+      "39B"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "342275",
+     "numbers": [
+      "41"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "東光町",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "320204",
+     "numbers": [
+      "32"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "豊一丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324288",
+     "numbers": [
+      "39"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "豊一丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "316202",
+     "numbers": [
+      "37"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "豊一丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "324219",
+     "numbers": [
+      "39B"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "豊一丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "320204",
+     "numbers": [
+      "32"
+     ],
+     "newStops": 0
+    },
+    {
+     "dest": "higashi",
+     "destStop": "豊一丁目",
+     "terminus": "博多駅",
+     "platform": "博多バスターミナル１Ｆ",
+     "keitoCd": "320251",
+     "numbers": [
+      "32"
+     ],
+     "newStops": 0
+    }
+   ],
+   "coveredByExistingKeito": [
+    "gion|祇園町|井尻六ッ角",
+    "gion|祇園町|大橋駅"
+   ]
   }
  },
  "routes": [
@@ -58356,6 +58842,8442 @@
     }
    ],
    "destIndex": 9
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "152208",
+   "number": "11",
+   "kind": "普通",
+   "terminus": "藤崎",
+   "via": "博多駅 薬院駅 六本松 昭代",
+   "direction": "to_dest",
+   "queriedTerminus": "中央埠頭（博多港国際ターミナル（中央ふ頭））",
+   "stops": [
+    {
+     "name": "博多港国際ターミナル",
+     "rawName": "博多港国際ターミナル（中央ふ頭）",
+     "platform": "石城町・博多方面",
+     "lat": 33.6088151,
+     "lng": 130.4000483,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "マリンメッセ前",
+     "rawName": "マリンメッセ前",
+     "platform": "港湾局・築港口方面",
+     "lat": 33.6074911402554,
+     "lng": 130.403646625518,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "博多臨港警察署北口",
+     "rawName": "博多臨港警察署北口",
+     "platform": "国際Ｃ．石城町方向",
+     "lat": 33.6065042634013,
+     "lng": 130.404653587333,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "国際会議場サンパレス前",
+     "rawName": "国際会議場サンパレス前",
+     "platform": "天神 博多駅方面",
+     "lat": 33.6036385538531,
+     "lng": 130.403733795678,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "石城町",
+     "rawName": "石城町",
+     "platform": "大博通方面",
+     "lat": 33.6027376526426,
+     "lng": 130.403872825615,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "神屋町",
+     "rawName": "神屋町",
+     "platform": "蔵本方面",
+     "lat": 33.6012598348499,
+     "lng": 130.405254778894,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "蔵本",
+     "rawName": "蔵本（博多小前）C・D",
+     "platform": "D：日通前",
+     "lat": 33.5995476141935,
+     "lng": 130.407366464306,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（博多駅方面）I",
+     "platform": "I：博多駅方面",
+     "lat": 33.5973872,
+     "lng": 130.4103865,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "博多駅方向",
+     "lat": 33.5957865422628,
+     "lng": 130.412238450933,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "渡辺通方面・博多駅止",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "博多駅止．渡辺通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "博多駅前",
+     "rawName": "博多駅前B",
+     "platform": "薬院･城南線方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "駅前四丁目",
+     "rawName": "駅前四丁目",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "住吉",
+     "rawName": "住吉",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "柳橋",
+     "rawName": "柳橋",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "渡辺通一丁目",
+     "rawName": "渡辺通一丁目（F・G）",
+     "platform": "F：薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院駅前",
+     "rawName": "薬院駅前",
+     "platform": "六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院大通り",
+     "rawName": "薬院大通り（西鉄旅行前）",
+     "platform": "南薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南薬院",
+     "rawName": "南薬院",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "雙葉学園入口",
+     "rawName": "雙葉学園入口",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜坂",
+     "rawName": "桜坂（城南線）",
+     "platform": "六本松方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "六本松三丁目",
+     "rawName": "六本松三丁目（H・I）",
+     "platform": "六本松方面（I）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "六本松",
+     "rawName": "六本松（福銀前）A・B・C",
+     "platform": "鳥飼・中村高校・飯倉方面（A）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府橋",
+     "rawName": "別府橋",
+     "platform": "荒江方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "城南区役所北口",
+     "rawName": "城南区役所北口",
+     "platform": "昭代・鳥飼方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中村高校",
+     "rawName": "中村高校",
+     "platform": "弥生二丁目方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "曙二丁目",
+     "rawName": "曙二丁目",
+     "platform": "弥生二丁目方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "昭代一丁目",
+     "rawName": "昭代一丁目",
+     "platform": "弥生二丁目方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "昭代二丁目",
+     "rawName": "昭代二丁目",
+     "platform": "弥生二丁目方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "昭代三丁目",
+     "rawName": "昭代三丁目",
+     "platform": "弥生二丁目方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "弥生二丁目",
+     "rawName": "弥生二丁目",
+     "platform": "昭代方面から藤崎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "弥生一丁目",
+     "rawName": "弥生一丁目",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早良口",
+     "rawName": "早良口（原方面）",
+     "platform": "原方面から天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "藤崎",
+     "rawName": "藤崎",
+     "platform": "降車場",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 9,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "185208",
+   "number": "19",
+   "kind": "快速",
+   "terminus": "四箇田団地",
+   "via": "☆快速☆ 博多駅 薬院 次郎丸",
+   "direction": "to_dest",
+   "queriedTerminus": "中央埠頭（博多港国際ターミナル（中央ふ頭））",
+   "stops": [
+    {
+     "name": "博多港国際ターミナル",
+     "rawName": "博多港国際ターミナル（中央ふ頭）",
+     "platform": "石城町・博多方面",
+     "lat": 33.6088151,
+     "lng": 130.4000483,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "マリンメッセ前",
+     "rawName": "マリンメッセ前",
+     "platform": "港湾局・築港口方面",
+     "lat": 33.6074911402554,
+     "lng": 130.403646625518,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "博多臨港警察署北口",
+     "rawName": "博多臨港警察署北口",
+     "platform": "国際Ｃ．石城町方向",
+     "lat": 33.6065042634013,
+     "lng": 130.404653587333,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "国際会議場サンパレス前",
+     "rawName": "国際会議場サンパレス前",
+     "platform": "天神 博多駅方面",
+     "lat": 33.6036385538531,
+     "lng": 130.403733795678,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "石城町",
+     "rawName": "石城町",
+     "platform": "大博通方面",
+     "lat": 33.6027376526426,
+     "lng": 130.403872825615,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "神屋町",
+     "rawName": "神屋町",
+     "platform": "蔵本方面",
+     "lat": 33.6012598348499,
+     "lng": 130.405254778894,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "蔵本",
+     "rawName": "蔵本（博多小前）C・D",
+     "platform": "D：日通前",
+     "lat": 33.5995476141935,
+     "lng": 130.407366464306,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（博多駅方面）I",
+     "platform": "I：博多駅方面",
+     "lat": 33.5973872,
+     "lng": 130.4103865,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "博多駅方向",
+     "lat": 33.5957865422628,
+     "lng": 130.412238450933,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "渡辺通方面・博多駅止",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "博多駅止．渡辺通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "博多駅前",
+     "rawName": "博多駅前B",
+     "platform": "薬院･城南線方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "駅前四丁目",
+     "rawName": "駅前四丁目",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "住吉",
+     "rawName": "住吉",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "渡辺通一丁目",
+     "rawName": "渡辺通一丁目（F・G）",
+     "platform": "F：薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院駅前",
+     "rawName": "薬院駅前",
+     "platform": "六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院大通り",
+     "rawName": "薬院大通り（西鉄旅行前）",
+     "platform": "南薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "雙葉学園入口",
+     "rawName": "雙葉学園入口",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "六本松",
+     "rawName": "六本松（福銀前）A・B・C",
+     "platform": "荒江四角・原方面（A）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府駅前",
+     "rawName": "別府駅前",
+     "platform": "荒江四ツ角・茶山方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中村大学前",
+     "rawName": "中村大学前",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府四丁目",
+     "rawName": "別府四丁目",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江四角",
+     "rawName": "荒江四角",
+     "platform": "原・飯倉方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福陵町",
+     "rawName": "福陵町",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原農協前",
+     "rawName": "原農協前",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原二丁目",
+     "rawName": "原二丁目",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原",
+     "rawName": "原（２０２号）",
+     "platform": "有田・小田部方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原往還",
+     "rawName": "原往還",
+     "platform": "講倫館高校方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "有田",
+     "rawName": "有田",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "講倫館高校前",
+     "rawName": "講倫館高校前",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "立屋敷",
+     "rawName": "立屋敷",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "昭和新町",
+     "rawName": "昭和新町",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "次郎丸",
+     "rawName": "次郎丸",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "河原",
+     "rawName": "河原",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "次郎丸団地",
+     "rawName": "次郎丸団地",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村一丁目",
+     "rawName": "田村一丁目",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村三丁目",
+     "rawName": "田村三丁目",
+     "platform": "金武方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "三軒屋",
+     "rawName": "三軒屋",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村七丁目",
+     "rawName": "田村七丁目",
+     "platform": "金武方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地入口",
+     "rawName": "四箇田団地入口",
+     "platform": "四箇田団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地",
+     "rawName": "四箇田団地",
+     "platform": "終点",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 9,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "185219",
+   "number": "19",
+   "kind": "快速",
+   "terminus": "金武車庫",
+   "via": "☆快速☆ 博多駅 薬院 次郎丸",
+   "direction": "to_dest",
+   "queriedTerminus": "中央埠頭（博多港国際ターミナル（中央ふ頭））",
+   "stops": [
+    {
+     "name": "博多港国際ターミナル",
+     "rawName": "博多港国際ターミナル（中央ふ頭）",
+     "platform": "石城町・博多方面",
+     "lat": 33.6088151,
+     "lng": 130.4000483,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "マリンメッセ前",
+     "rawName": "マリンメッセ前",
+     "platform": "港湾局・築港口方面",
+     "lat": 33.6074911402554,
+     "lng": 130.403646625518,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "博多臨港警察署北口",
+     "rawName": "博多臨港警察署北口",
+     "platform": "国際Ｃ．石城町方向",
+     "lat": 33.6065042634013,
+     "lng": 130.404653587333,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "国際会議場サンパレス前",
+     "rawName": "国際会議場サンパレス前",
+     "platform": "天神 博多駅方面",
+     "lat": 33.6036385538531,
+     "lng": 130.403733795678,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "石城町",
+     "rawName": "石城町",
+     "platform": "大博通方面",
+     "lat": 33.6027376526426,
+     "lng": 130.403872825615,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "神屋町",
+     "rawName": "神屋町",
+     "platform": "蔵本方面",
+     "lat": 33.6012598348499,
+     "lng": 130.405254778894,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "蔵本",
+     "rawName": "蔵本（博多小前）C・D",
+     "platform": "D：日通前",
+     "lat": 33.5995476141935,
+     "lng": 130.407366464306,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（博多駅方面）I",
+     "platform": "I：博多駅方面",
+     "lat": 33.5973872,
+     "lng": 130.4103865,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "博多駅方向",
+     "lat": 33.5957865422628,
+     "lng": 130.412238450933,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "渡辺通方面・博多駅止",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "博多駅止．渡辺通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "博多駅前",
+     "rawName": "博多駅前B",
+     "platform": "薬院･城南線方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "駅前四丁目",
+     "rawName": "駅前四丁目",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "住吉",
+     "rawName": "住吉",
+     "platform": "渡辺通一丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "渡辺通一丁目",
+     "rawName": "渡辺通一丁目（F・G）",
+     "platform": "F：薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院駅前",
+     "rawName": "薬院駅前",
+     "platform": "六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院大通り",
+     "rawName": "薬院大通り（西鉄旅行前）",
+     "platform": "南薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "雙葉学園入口",
+     "rawName": "雙葉学園入口",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "六本松",
+     "rawName": "六本松（福銀前）A・B・C",
+     "platform": "荒江四角・原方面（A）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府駅前",
+     "rawName": "別府駅前",
+     "platform": "荒江四ツ角・茶山方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中村大学前",
+     "rawName": "中村大学前",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府四丁目",
+     "rawName": "別府四丁目",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江四角",
+     "rawName": "荒江四角",
+     "platform": "原・飯倉方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福陵町",
+     "rawName": "福陵町",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原農協前",
+     "rawName": "原農協前",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原二丁目",
+     "rawName": "原二丁目",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原",
+     "rawName": "原（２０２号）",
+     "platform": "有田・小田部方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原往還",
+     "rawName": "原往還",
+     "platform": "講倫館高校方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "有田",
+     "rawName": "有田",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "講倫館高校前",
+     "rawName": "講倫館高校前",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "立屋敷",
+     "rawName": "立屋敷",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "昭和新町",
+     "rawName": "昭和新町",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "次郎丸",
+     "rawName": "次郎丸",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "河原",
+     "rawName": "河原",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "次郎丸団地",
+     "rawName": "次郎丸団地",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村一丁目",
+     "rawName": "田村一丁目",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村三丁目",
+     "rawName": "田村三丁目",
+     "platform": "金武方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "三軒屋",
+     "rawName": "三軒屋",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村七丁目",
+     "rawName": "田村七丁目",
+     "platform": "金武方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地入口",
+     "rawName": "四箇田団地入口",
+     "platform": "四箇田団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地",
+     "rawName": "四箇田団地",
+     "platform": "終点",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早良体育館前",
+     "rawName": "早良体育館前",
+     "platform": "金武方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇",
+     "rawName": "四箇",
+     "platform": "西山方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "金武中学校",
+     "rawName": "金武中学校",
+     "platform": "西山方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西入部五丁目",
+     "rawName": "西入部五丁目",
+     "platform": "金武営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "室見が丘三丁目",
+     "rawName": "室見が丘三丁目",
+     "platform": "金武営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "室見が丘中央",
+     "rawName": "室見が丘中央",
+     "platform": "金武営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "室見が丘西",
+     "rawName": "室見が丘西",
+     "platform": "金武営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "金武車庫",
+     "rawName": "金武車庫",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 9,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "196274",
+   "number": "3",
+   "kind": "普通",
+   "terminus": "星の原団地",
+   "via": "明治通 天神 西新",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "明治通方面",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "明治通．千代町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（明治通経由天神方面）Ｊ",
+     "platform": "J：明治通り方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "土居町",
+     "rawName": "土居町",
+     "platform": "西新・姪浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "川端町・博多座前",
+     "rawName": "川端町・博多座前",
+     "platform": "西新姪浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東中洲",
+     "rawName": "東中洲",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクロス福岡・水鏡天満宮前",
+     "rawName": "アクロス福岡・水鏡天満宮前",
+     "platform": "西新姪浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神ビジネスセンター前",
+     "rawName": "天神ビジネスセンター前（旧天神大和証券）",
+     "platform": "１２ 西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神新天町入口",
+     "rawName": "天神新天町入口（１１）",
+     "platform": "１１ 西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西鉄グランドホテル前",
+     "rawName": "西鉄グランドホテル前",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大名二丁目",
+     "rawName": "大名二丁目",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤坂門",
+     "rawName": "赤坂門（明治通）",
+     "platform": "西新・城内方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡城・鴻臚館前",
+     "rawName": "福岡城・鴻臚館前",
+     "platform": "西新・城内方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大手門・平和台陸上競技場入口",
+     "rawName": "大手門・平和台陸上競技場入口",
+     "platform": "西新・城内方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒戸一丁目",
+     "rawName": "荒戸一丁目",
+     "platform": "西新(右左折)",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大濠公園",
+     "rawName": "大濠公園",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "黒門",
+     "rawName": "黒門",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "唐人町",
+     "rawName": "唐人町",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "地行",
+     "rawName": "地行",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "今川橋",
+     "rawName": "今川橋",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西新一丁目",
+     "rawName": "西新一丁目",
+     "platform": "西新方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西新駅",
+     "rawName": "西新駅（旧：西新パレス）",
+     "platform": "脇山口・藤崎・六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "脇山口",
+     "rawName": "脇山口",
+     "platform": "荒江方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "城西三丁目",
+     "rawName": "城西三丁目",
+     "platform": "荒江方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "祖原",
+     "rawName": "祖原",
+     "platform": "荒江方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江",
+     "rawName": "荒江",
+     "platform": "飯倉方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江四角",
+     "rawName": "荒江四角",
+     "platform": "西新&rarr;飯倉方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "飯倉一丁目",
+     "rawName": "飯倉一丁目",
+     "platform": "唐木方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "飯倉二丁目",
+     "rawName": "飯倉二丁目",
+     "platform": "唐木方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "飯倉",
+     "rawName": "飯倉",
+     "platform": "唐木方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "唐木",
+     "rawName": "唐木",
+     "platform": "干隈方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大坪",
+     "rawName": "大坪",
+     "platform": "星の原団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "星の原団地",
+     "rawName": "星の原団地",
+     "platform": "降車用",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "182296",
+   "number": "306",
+   "kind": "都市高",
+   "terminus": "藤崎・四箇田団地",
+   "via": "呉服町 都市高速 ドーム 田隈新町",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "６のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "都市高速・昭和通・千代町・ふ頭方面",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "昭和通．石城町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（都市高速・蔵本方面）Ｋ",
+     "platform": "Ｋ：蔵本方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "呉服町ランプ通過",
+     "rawName": "呉服町ランプ通過",
+     "platform": "",
+     "passThrough": true,
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神北ランプ通過",
+     "rawName": "天神北ランプ通過",
+     "platform": "",
+     "passThrough": true,
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西公園ランプ通過",
+     "rawName": "西公園ランプ通過",
+     "platform": "",
+     "passThrough": true,
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中央市民プール",
+     "rawName": "中央市民プール",
+     "platform": "福浜．西新方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "伊崎",
+     "rawName": "伊崎",
+     "platform": "福浜．西新方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福浜二丁目",
+     "rawName": "福浜二丁目",
+     "platform": "百道浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "みずほPayPayドーム",
+     "rawName": "みずほＰａｙＰａｙドーム",
+     "platform": "豊浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "九州医療センター",
+     "rawName": "九州医療センター",
+     "platform": "福岡タワー方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ヒルトン福岡シーホーク前",
+     "rawName": "ヒルトン福岡シーホーク前",
+     "platform": "福岡タワー方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "医師会館・ソフトリサーチパーク前",
+     "rawName": "医師会館・ソフトリサーチパーク前",
+     "platform": "福岡タワー方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "博物館北口",
+     "rawName": "博物館北口",
+     "platform": "藤崎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡タワー南口",
+     "rawName": "福岡タワー南口",
+     "platform": "藤崎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ももち浜クリニックゾーン前",
+     "rawName": "ももち浜クリニックゾーン前",
+     "platform": "藤崎方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "百道",
+     "rawName": "百道",
+     "platform": "藤崎方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "藤崎",
+     "rawName": "藤崎",
+     "platform": "６乗り場 原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早良口",
+     "rawName": "早良口（原方面）",
+     "platform": "原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "弥生一丁目",
+     "rawName": "弥生一丁目",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "弥生二丁目",
+     "rawName": "弥生二丁目",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原一丁目",
+     "rawName": "原一丁目",
+     "platform": "有田方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原団地",
+     "rawName": "原団地",
+     "platform": "有田方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原",
+     "rawName": "原（原通り）",
+     "platform": "有田方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原往還",
+     "rawName": "原往還",
+     "platform": "講倫館高校方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "有田",
+     "rawName": "有田",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "講倫館高校前",
+     "rawName": "講倫館高校前",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "平田",
+     "rawName": "平田",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "三十田橋",
+     "rawName": "三十田橋",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "次郎丸中学校前",
+     "rawName": "次郎丸中学校前",
+     "platform": "四箇田方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田隈新町",
+     "rawName": "田隈新町",
+     "platform": "四箇田団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田隈小学校前",
+     "rawName": "田隈小学校前",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村団地北口",
+     "rawName": "田村団地北口",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡歯科大学前",
+     "rawName": "福岡歯科大学前",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田村団地",
+     "rawName": "田村団地",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "建石",
+     "rawName": "建石",
+     "platform": "四箇田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地北口",
+     "rawName": "四箇田団地北口",
+     "platform": "四箇田団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地西口",
+     "rawName": "四箇田団地西口",
+     "platform": "四箇田団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四箇田団地",
+     "rawName": "四箇田団地",
+     "platform": "終点",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "234228",
+   "number": "57",
+   "kind": "普通",
+   "terminus": "柏原営業所",
+   "via": "明治通 天神 赤坂門 桜坂 小笹",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "明治通方面",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "明治通．千代町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "呉服町",
+     "rawName": "呉服町（明治通経由天神方面）Ｊ",
+     "platform": "J：明治通り方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "土居町",
+     "rawName": "土居町",
+     "platform": "渡辺通一丁目・六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "川端町・博多座前",
+     "rawName": "川端町・博多座前",
+     "platform": "一丁目六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東中洲",
+     "rawName": "東中洲",
+     "platform": "渡辺通一丁目・六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクロス福岡・水鏡天満宮前",
+     "rawName": "アクロス福岡・水鏡天満宮前",
+     "platform": "一丁目六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神ビジネスセンター前",
+     "rawName": "天神ビジネスセンター前（旧天神大和証券）",
+     "platform": "１２ 渡辺通一丁目・六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神協和ビル前",
+     "rawName": "天神協和ビル前（１０）",
+     "platform": "協和ビル前１０ 警固町方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西鉄グランドホテル前",
+     "rawName": "西鉄グランドホテル前",
+     "platform": "警固方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大名二丁目",
+     "rawName": "大名二丁目",
+     "platform": "警固方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤坂門",
+     "rawName": "赤坂門",
+     "platform": "警固方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "警固町",
+     "rawName": "警固町",
+     "platform": "薬院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院二丁目",
+     "rawName": "薬院二丁目",
+     "platform": "薬院大通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "薬院大通り",
+     "rawName": "薬院大通り（センタービル前）",
+     "platform": "動物園・小笹方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南薬院",
+     "rawName": "南薬院",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "雙葉学園入口",
+     "rawName": "雙葉学園入口",
+     "platform": "桜坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜坂",
+     "rawName": "桜坂（５７・５７－１番専用）",
+     "platform": "小笹団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "馬屋谷",
+     "rawName": "馬屋谷",
+     "platform": "小笹団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上智福岡中高前",
+     "rawName": "上智福岡中高前",
+     "platform": "桜坂から小笹方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小笹団地正門前",
+     "rawName": "小笹団地正門前",
+     "platform": "小笹方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小笹団地東門",
+     "rawName": "小笹団地東門",
+     "platform": "小笹方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小笹南口",
+     "rawName": "小笹南口",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小笹",
+     "rawName": "小笹",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小笹二丁目",
+     "rawName": "小笹二丁目",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下長尾",
+     "rawName": "下長尾",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "長丘五丁目",
+     "rawName": "長丘五丁目",
+     "platform": "桧原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上長尾",
+     "rawName": "上長尾",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桧原榎町",
+     "rawName": "桧原榎町",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜町",
+     "rawName": "桜町",
+     "platform": "桧原方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桧原三ツ角",
+     "rawName": "桧原三ツ角",
+     "platform": "小笹・桧原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "コットンヒルズ桧原公園通り前",
+     "rawName": "コットンヒルズ桧原公園通り前",
+     "platform": "柏陵高校方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桧原運動公園前",
+     "rawName": "桧原運動公園前",
+     "platform": "柏陵高校方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "花畑園芸公園入口",
+     "rawName": "花畑園芸公園入口",
+     "platform": "柏陵高校方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "柏原小学校前",
+     "rawName": "柏原小学校前",
+     "platform": "柏陵高校方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "柏陵高校前",
+     "rawName": "柏陵高校前",
+     "platform": "柏原営業所方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "自然公園前",
+     "rawName": "自然公園前",
+     "platform": "柏原営業所方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "柏原営業所",
+     "rawName": "柏原営業所",
+     "platform": "降車用",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "177244",
+   "number": "203",
+   "kind": "普通",
+   "terminus": "室住団地",
+   "via": "国体道路 六本松 原",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "天神方面（国体道路）",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "キャナルシティ博多前",
+     "rawName": "キャナルシティ博多前",
+     "platform": "国体道路．天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中洲・南新地",
+     "rawName": "中洲・南新地",
+     "platform": "天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "春吉",
+     "rawName": "春吉",
+     "platform": "天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神一丁目",
+     "rawName": "天神一丁目",
+     "platform": "天神・警固方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神警固神社・三越前",
+     "rawName": "天神警固神社・三越前",
+     "platform": "六本松方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "今泉一丁目",
+     "rawName": "今泉一丁目",
+     "platform": "六本松方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "警固一丁目",
+     "rawName": "警固一丁目",
+     "platform": "六本松方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "警固町",
+     "rawName": "警固町",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤坂二丁目",
+     "rawName": "赤坂二丁目",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤坂三丁目",
+     "rawName": "赤坂三丁目",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "護国神社前",
+     "rawName": "護国神社前",
+     "platform": "原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "六本松",
+     "rawName": "六本松（福銀前）A・B・C",
+     "platform": "荒江四角・原方面（A）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府橋",
+     "rawName": "別府橋",
+     "platform": "荒江方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府駅前",
+     "rawName": "別府駅前",
+     "platform": "荒江四ツ角・茶山方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中村大学前",
+     "rawName": "中村大学前",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府四丁目",
+     "rawName": "別府四丁目",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江団地",
+     "rawName": "荒江団地",
+     "platform": "荒江四ツ角方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "荒江四角",
+     "rawName": "荒江四角",
+     "platform": "原・飯倉方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福陵町",
+     "rawName": "福陵町",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原農協前",
+     "rawName": "原農協前",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原二丁目",
+     "rawName": "原二丁目",
+     "platform": "福重方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原",
+     "rawName": "原（２０２号）",
+     "platform": "有田・小田部方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原四丁目",
+     "rawName": "原四丁目",
+     "platform": "福重方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "小田部一丁目",
+     "rawName": "小田部一丁目",
+     "platform": "福重方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西福岡中学校東口",
+     "rawName": "西福岡中学校東口",
+     "platform": "橋本方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "有田一丁目",
+     "rawName": "有田一丁目",
+     "platform": "橋本方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "室住団地",
+     "rawName": "室住団地",
+     "platform": "橋本方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "282218",
+   "number": "29",
+   "kind": "普通",
+   "terminus": "西鉄香椎(駅構内)",
+   "via": "県庁 名島 城浜団地 海岸通り",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "都市高速・昭和通・千代町・ふ頭方面",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "奥の堂",
+     "rawName": "奥の堂",
+     "platform": "明治通．千代町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "呉服町大島眼科",
+     "rawName": "呉服町大島眼科 F・G・H",
+     "platform": "F：三号線県庁九大病院方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "蓮池",
+     "rawName": "蓮池",
+     "platform": "県庁方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "千代町",
+     "rawName": "千代町（自治会館）",
+     "platform": "県庁方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "県庁前",
+     "rawName": "県庁前",
+     "platform": "警察本部前方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "警察本部前・九大病院入口",
+     "rawName": "警察本部前・九大病院入口",
+     "platform": "吉塚駅・箱崎三丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "馬出通り",
+     "rawName": "馬出通り",
+     "platform": "箱崎三丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "箱崎",
+     "rawName": "箱崎",
+     "platform": "箱崎三丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "箱崎浜",
+     "rawName": "箱崎浜",
+     "platform": "貝塚方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "網屋立筋",
+     "rawName": "網屋立筋",
+     "platform": "貝塚方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "箱崎松原",
+     "rawName": "箱崎松原",
+     "platform": "貝塚方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東箱崎小学校",
+     "rawName": "東箱崎小学校",
+     "platform": "貝塚方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "貝塚",
+     "rawName": "貝塚",
+     "platform": "香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "高須磨町",
+     "rawName": "高須磨町",
+     "platform": "名島方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "高須磨団地",
+     "rawName": "高須磨団地",
+     "platform": "名島方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "名島",
+     "rawName": "名島",
+     "platform": "香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "千早公園前",
+     "rawName": "千早公園前",
+     "platform": "城浜団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西汐見",
+     "rawName": "西汐見",
+     "platform": "城浜団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "城浜団地口",
+     "rawName": "城浜団地口",
+     "platform": "城浜団地方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "城浜団地",
+     "rawName": "城浜団地",
+     "platform": "香椎方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎浜二丁目",
+     "rawName": "香椎浜二丁目",
+     "platform": "香椎浜海岸通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "城香中学校前",
+     "rawName": "城香中学校前",
+     "platform": "香椎浜海岸通方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎浜海岸通り",
+     "rawName": "香椎浜海岸通り",
+     "platform": "アイランド・香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎浜三丁目",
+     "rawName": "香椎浜三丁目",
+     "platform": "アイランド・香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎浜中央",
+     "rawName": "香椎浜中央",
+     "platform": "アイランド・香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "イオンモール香椎浜",
+     "rawName": "イオンモール香椎浜",
+     "platform": "アイランド・香椎方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎浜車庫",
+     "rawName": "香椎浜車庫",
+     "platform": "御幸町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "千早六丁目",
+     "rawName": "千早六丁目",
+     "platform": "香椎・香椎参道方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "香椎",
+     "rawName": "香椎",
+     "platform": "下原方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西鉄香椎",
+     "rawName": "西鉄香椎",
+     "platform": "駅構内着（終点）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "gion",
+   "keitoCd": "361156",
+   "number": "68",
+   "kind": "普通",
+   "terminus": "福浜",
+   "via": "キャナルシティ博多 国体道路 天神 長浜通り 港郵便局",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "５のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "駅前一丁目",
+     "rawName": "駅前一丁目",
+     "platform": "祇園町方向",
+     "lat": 33.5924519773893,
+     "lng": 130.416730231441,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "祇園町",
+     "rawName": "祇園町",
+     "platform": "天神方面（国体道路）",
+     "lat": 33.5940762,
+     "lng": 130.4144121,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "キャナルシティ博多前",
+     "rawName": "キャナルシティ博多前",
+     "platform": "国体道路．天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中洲・南新地",
+     "rawName": "中洲・南新地",
+     "platform": "天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "春吉",
+     "rawName": "春吉",
+     "platform": "天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神高速バスターミナル前",
+     "rawName": "天神高速バスターミナル前（１）",
+     "platform": "１Ｂのりば",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "天神北",
+     "rawName": "天神北（３：フタタ前）",
+     "platform": "那の津方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "那の津口",
+     "rawName": "那の津口（ボートレース福岡入口）",
+     "platform": "那ノ津４丁目方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福祉センター前",
+     "rawName": "福祉センター前（浜の町病院入口）",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "長浜一丁目",
+     "rawName": "長浜一丁目",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "長浜二丁目",
+     "rawName": "長浜二丁目",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "港一丁目",
+     "rawName": "港一丁目",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "すの子",
+     "rawName": "すの子",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "港二丁目",
+     "rawName": "港二丁目",
+     "platform": "福浜方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "港銀座通り",
+     "rawName": "港銀座通り",
+     "platform": "福浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "港郵便局前",
+     "rawName": "港郵便局前",
+     "platform": "福浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "給油センター",
+     "rawName": "給油センター",
+     "platform": "福浜方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "中央市民プール",
+     "rawName": "中央市民プール",
+     "platform": "福浜．西新方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "伊崎",
+     "rawName": "伊崎",
+     "platform": "福浜．西新方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福浜",
+     "rawName": "福浜",
+     "platform": "天神方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光二丁目",
+   "keitoCd": "324288",
+   "number": "39",
+   "kind": "普通",
+   "terminus": "上宇美",
+   "via": "二又瀬 福岡空港 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047,
+     "lng": 130.428745,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "二又瀬",
+     "rawName": "二又瀬（大井中央公園）",
+     "platform": "空港方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大井町",
+     "rawName": "大井町",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘入口",
+     "rawName": "ひばりが丘入口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "井野本村",
+     "rawName": "井野本村",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤井手",
+     "rawName": "赤井手",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美営業所",
+     "rawName": "宇美営業所",
+     "platform": "宇美町役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "太宰府・上宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "上宇美始発折返し場内",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光二丁目",
+   "keitoCd": "316202",
+   "number": "37",
+   "kind": "普通",
+   "terminus": "四王寺坂",
+   "via": "空港通 福岡空港前 月隈団地 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047,
+     "lng": 130.428745,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "坂瀬",
+     "rawName": "坂瀬",
+     "platform": "下志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "志免方面（ルミエール）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "JR宇美駅",
+     "rawName": "ＪＲ宇美駅",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見",
+     "rawName": "早見",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見工業団地",
+     "rawName": "早見工業団地",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第三",
+     "rawName": "四王寺坂第三",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第二",
+     "rawName": "四王寺坂第二",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第一",
+     "rawName": "四王寺坂第一",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂",
+     "rawName": "四王寺坂",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光二丁目",
+   "keitoCd": "324219",
+   "number": "39B",
+   "kind": "普通",
+   "terminus": "ひばりが丘団地",
+   "via": "東平尾公園入口 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047,
+     "lng": 130.428745,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田小学校前",
+     "rawName": "席田小学校前",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木一丁目",
+     "rawName": "青木一丁目",
+     "platform": "東平尾公園方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾公園入口",
+     "rawName": "東平尾公園入口",
+     "platform": "席田小&rarr;正手方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光二丁目",
+   "keitoCd": "320204",
+   "number": "32",
+   "kind": "普通",
+   "terminus": "原田橋",
+   "via": "空港通 亀山 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047,
+     "lng": 130.428745,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府",
+     "rawName": "別府",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "亀山",
+     "rawName": "亀山",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南里",
+     "rawName": "南里",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "苅屋",
+     "rawName": "苅屋",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "日枝",
+     "rawName": "日枝",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋敷",
+     "rawName": "新屋敷",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免役場前",
+     "rawName": "志免役場前",
+     "platform": "宇美方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "宇美方向（本線）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美中学校前",
+     "rawName": "宇美中学校前",
+     "platform": "原田橋方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大谷",
+     "rawName": "大谷",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂入口",
+     "rawName": "四王寺坂入口",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "栄町",
+     "rawName": "栄町",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田",
+     "rawName": "原田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "勝田",
+     "rawName": "勝田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田橋",
+     "rawName": "原田橋",
+     "platform": "只越方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光二丁目",
+   "keitoCd": "320251",
+   "number": "32",
+   "kind": "普通",
+   "terminus": "上宇美",
+   "via": "空港通 亀山 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047,
+     "lng": 130.428745,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府",
+     "rawName": "別府",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "亀山",
+     "rawName": "亀山",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南里",
+     "rawName": "南里",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "苅屋",
+     "rawName": "苅屋",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "日枝",
+     "rawName": "日枝",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋敷",
+     "rawName": "新屋敷",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免役場前",
+     "rawName": "志免役場前",
+     "platform": "宇美方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "宇美方向（本線）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "上宇美始発折返し場内",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光小学校前",
+   "keitoCd": "324231",
+   "number": "38",
+   "kind": "普通",
+   "terminus": "ひばりが丘団地",
+   "via": "榎田町 二又瀬 福岡空港 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.591167313997,
+     "lng": 130.428134343494,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5895925134942,
+     "lng": 130.429912268354,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光小学校前",
+     "rawName": "東光小学校前",
+     "platform": "二又瀬方向",
+     "lat": 33.5919763,
+     "lng": 130.432292,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "榎田町",
+     "rawName": "榎田町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "八郎町",
+     "rawName": "八郎町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "二又瀬",
+     "rawName": "二又瀬（大井中央公園）",
+     "platform": "空港方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大井町",
+     "rawName": "大井町",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 4,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光小学校前",
+   "keitoCd": "316204",
+   "number": "37-1",
+   "kind": "普通",
+   "terminus": "四王寺坂",
+   "via": "榎田町 福岡空港前 月隈団地 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.591167313997,
+     "lng": 130.428134343494,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5895925134942,
+     "lng": 130.429912268354,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光小学校前",
+     "rawName": "東光小学校前",
+     "platform": "二又瀬方向",
+     "lat": 33.5919763,
+     "lng": 130.432292,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "榎田町",
+     "rawName": "榎田町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "八郎町",
+     "rawName": "八郎町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "坂瀬",
+     "rawName": "坂瀬",
+     "platform": "下志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "志免方面（ルミエール）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "JR宇美駅",
+     "rawName": "ＪＲ宇美駅",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見",
+     "rawName": "早見",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見工業団地",
+     "rawName": "早見工業団地",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第三",
+     "rawName": "四王寺坂第三",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第二",
+     "rawName": "四王寺坂第二",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第一",
+     "rawName": "四王寺坂第一",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂",
+     "rawName": "四王寺坂",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 4,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "343202",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "桜並木駅",
+   "via": "麦野",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付二丁目",
+     "rawName": "板付二丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋",
+     "rawName": "新屋",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付六丁目",
+     "rawName": "板付六丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付中学校前",
+     "rawName": "板付中学校前",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "麦野",
+     "rawName": "麦野",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "山田",
+     "rawName": "山田",
+     "platform": "瓦田・中方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜並木駅",
+     "rawName": "桜並木駅",
+     "platform": "山田方面～着停",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "343224",
+   "number": "43",
+   "kind": "普通",
+   "terminus": "金隈",
+   "via": "",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈三丁目",
+     "rawName": "西月隈三丁目",
+     "platform": "月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈",
+     "rawName": "月隈",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上月隈",
+     "rawName": "上月隈",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "立花寺",
+     "rawName": "立花寺",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "金隈",
+     "rawName": "金隈",
+     "platform": "中方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "342275",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "新屋",
+   "via": "比恵",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付二丁目",
+     "rawName": "板付二丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋",
+     "rawName": "新屋",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "343207",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "イオン大野城",
+   "via": "麦野",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付二丁目",
+     "rawName": "板付二丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋",
+     "rawName": "新屋",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付六丁目",
+     "rawName": "板付六丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付中学校前",
+     "rawName": "板付中学校前",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "麦野",
+     "rawName": "麦野",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "山田",
+     "rawName": "山田",
+     "platform": "瓦田・中方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "イオン大野城",
+     "rawName": "イオン大野城",
+     "platform": "瓦田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "343232",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "板付",
+   "via": "",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "324231",
+   "number": "38",
+   "kind": "普通",
+   "terminus": "ひばりが丘団地",
+   "via": "榎田町 二又瀬 福岡空港 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東光小学校前",
+     "rawName": "東光小学校前",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "榎田町",
+     "rawName": "榎田町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "八郎町",
+     "rawName": "八郎町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "二又瀬",
+     "rawName": "二又瀬（大井中央公園）",
+     "platform": "空港方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大井町",
+     "rawName": "大井町",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東比恵二丁目",
+   "keitoCd": "316204",
+   "number": "37-1",
+   "kind": "普通",
+   "terminus": "四王寺坂",
+   "via": "榎田町 福岡空港前 月隈団地 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": 33.5911673,
+     "lng": 130.4281343,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東光小学校前",
+     "rawName": "東光小学校前",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "榎田町",
+     "rawName": "榎田町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "八郎町",
+     "rawName": "八郎町",
+     "platform": "二又瀬方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "坂瀬",
+     "rawName": "坂瀬",
+     "platform": "下志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "志免方面（ルミエール）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "JR宇美駅",
+     "rawName": "ＪＲ宇美駅",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見",
+     "rawName": "早見",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見工業団地",
+     "rawName": "早見工業団地",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第三",
+     "rawName": "四王寺坂第三",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第二",
+     "rawName": "四王寺坂第二",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第一",
+     "rawName": "四王寺坂第一",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂",
+     "rawName": "四王寺坂",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 2,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "324288",
+   "number": "39",
+   "kind": "普通",
+   "terminus": "上宇美",
+   "via": "二又瀬 福岡空港 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "二又瀬",
+     "rawName": "二又瀬（大井中央公園）",
+     "platform": "空港方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大井町",
+     "rawName": "大井町",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘入口",
+     "rawName": "ひばりが丘入口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "井野本村",
+     "rawName": "井野本村",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤井手",
+     "rawName": "赤井手",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美営業所",
+     "rawName": "宇美営業所",
+     "platform": "宇美町役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "太宰府・上宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "上宇美始発折返し場内",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "343202",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "桜並木駅",
+   "via": "麦野",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付二丁目",
+     "rawName": "板付二丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋",
+     "rawName": "新屋",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付六丁目",
+     "rawName": "板付六丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付中学校前",
+     "rawName": "板付中学校前",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "麦野",
+     "rawName": "麦野",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "山田",
+     "rawName": "山田",
+     "platform": "瓦田・中方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜並木駅",
+     "rawName": "桜並木駅",
+     "platform": "山田方面～着停",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "316202",
+   "number": "37",
+   "kind": "普通",
+   "terminus": "四王寺坂",
+   "via": "空港通 福岡空港前 月隈団地 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "坂瀬",
+     "rawName": "坂瀬",
+     "platform": "下志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "志免方面（ルミエール）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "JR宇美駅",
+     "rawName": "ＪＲ宇美駅",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見",
+     "rawName": "早見",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見工業団地",
+     "rawName": "早見工業団地",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第三",
+     "rawName": "四王寺坂第三",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第二",
+     "rawName": "四王寺坂第二",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第一",
+     "rawName": "四王寺坂第一",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂",
+     "rawName": "四王寺坂",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "343224",
+   "number": "43",
+   "kind": "普通",
+   "terminus": "金隈",
+   "via": "",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈三丁目",
+     "rawName": "西月隈三丁目",
+     "platform": "月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈",
+     "rawName": "月隈",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上月隈",
+     "rawName": "上月隈",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "立花寺",
+     "rawName": "立花寺",
+     "platform": "金隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "金隈",
+     "rawName": "金隈",
+     "platform": "中方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "324219",
+   "number": "39B",
+   "kind": "普通",
+   "terminus": "ひばりが丘団地",
+   "via": "東平尾公園入口 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田小学校前",
+     "rawName": "席田小学校前",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木一丁目",
+     "rawName": "青木一丁目",
+     "platform": "東平尾公園方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾公園入口",
+     "rawName": "東平尾公園入口",
+     "platform": "席田小&rarr;正手方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "342275",
+   "number": "41",
+   "kind": "普通",
+   "terminus": "新屋",
+   "via": "比恵",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１２のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "比恵方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東比恵二丁目",
+     "rawName": "東比恵二丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東比恵一丁目",
+     "rawName": "東比恵一丁目",
+     "platform": "板付・榎田町方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "比恵",
+     "rawName": "比恵",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上牟田",
+     "rawName": "上牟田",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "半道橋",
+     "rawName": "半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上半道橋",
+     "rawName": "上半道橋",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東那珂",
+     "rawName": "東那珂",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "西月隈",
+     "rawName": "西月隈",
+     "platform": "板付方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付",
+     "rawName": "板付",
+     "platform": "新屋・月隈方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "板付二丁目",
+     "rawName": "板付二丁目",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋",
+     "rawName": "新屋",
+     "platform": "山田方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "東光町",
+   "keitoCd": "320204",
+   "number": "32",
+   "kind": "普通",
+   "terminus": "原田橋",
+   "via": "空港通 亀山 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279,
+     "lng": 130.4257954,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府",
+     "rawName": "別府",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "亀山",
+     "rawName": "亀山",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南里",
+     "rawName": "南里",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "苅屋",
+     "rawName": "苅屋",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "日枝",
+     "rawName": "日枝",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋敷",
+     "rawName": "新屋敷",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免役場前",
+     "rawName": "志免役場前",
+     "platform": "宇美方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "宇美方向（本線）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美中学校前",
+     "rawName": "宇美中学校前",
+     "platform": "原田橋方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大谷",
+     "rawName": "大谷",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂入口",
+     "rawName": "四王寺坂入口",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "栄町",
+     "rawName": "栄町",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田",
+     "rawName": "原田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "勝田",
+     "rawName": "勝田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田橋",
+     "rawName": "原田橋",
+     "platform": "只越方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 1,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "豊一丁目",
+   "keitoCd": "324288",
+   "number": "39",
+   "kind": "普通",
+   "terminus": "上宇美",
+   "via": "二又瀬 福岡空港 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047323784,
+     "lng": 130.428745037797,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": 33.5986796,
+     "lng": 130.4311247,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "二又瀬",
+     "rawName": "二又瀬（大井中央公園）",
+     "platform": "空港方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大井町",
+     "rawName": "大井町",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘入口",
+     "rawName": "ひばりが丘入口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "井野本村",
+     "rawName": "井野本村",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "赤井手",
+     "rawName": "赤井手",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美営業所",
+     "rawName": "宇美営業所",
+     "platform": "宇美町役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "太宰府・上宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "上宇美始発折返し場内",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 3,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "豊一丁目",
+   "keitoCd": "316202",
+   "number": "37",
+   "kind": "普通",
+   "terminus": "四王寺坂",
+   "via": "空港通 福岡空港前 月隈団地 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047323784,
+     "lng": 130.428745037797,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": 33.5986796,
+     "lng": 130.4311247,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "稲城",
+     "rawName": "稲城",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "福岡空港前",
+     "rawName": "福岡空港前",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上臼井",
+     "rawName": "上臼井",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木",
+     "rawName": "青木",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾",
+     "rawName": "東平尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田会館",
+     "rawName": "席田会館",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田",
+     "rawName": "席田",
+     "platform": "宝満尾方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宝満尾",
+     "rawName": "宝満尾",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田中学校前",
+     "rawName": "席田中学校前",
+     "platform": "正手方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "坂瀬",
+     "rawName": "坂瀬",
+     "platform": "下志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "志免方面（ルミエール）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "JR宇美駅",
+     "rawName": "ＪＲ宇美駅",
+     "platform": "障子岳方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見",
+     "rawName": "早見",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "早見工業団地",
+     "rawName": "早見工業団地",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第三",
+     "rawName": "四王寺坂第三",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第二",
+     "rawName": "四王寺坂第二",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂第一",
+     "rawName": "四王寺坂第一",
+     "platform": "四王寺坂方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂",
+     "rawName": "四王寺坂",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 3,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "豊一丁目",
+   "keitoCd": "324219",
+   "number": "39B",
+   "kind": "普通",
+   "terminus": "ひばりが丘団地",
+   "via": "東平尾公園入口 月隈団地 桜丘",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047323784,
+     "lng": 130.428745037797,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": 33.5986796,
+     "lng": 130.4311247,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "席田小学校前",
+     "rawName": "席田小学校前",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "青木一丁目",
+     "rawName": "青木一丁目",
+     "platform": "東平尾公園方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東平尾公園入口",
+     "rawName": "東平尾公園入口",
+     "platform": "席田小&rarr;正手方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "アクシオン福岡前",
+     "rawName": "アクシオン福岡前",
+     "platform": "月隈団地方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "正手",
+     "rawName": "正手",
+     "platform": "志免方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "月隈団地",
+     "rawName": "月隈団地",
+     "platform": "桜丘方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "浦田",
+     "rawName": "浦田",
+     "platform": "桜丘方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第一",
+     "rawName": "桜丘第一",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第二",
+     "rawName": "桜丘第二",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第三",
+     "rawName": "桜丘第三",
+     "platform": "桜丘第四方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "桜丘第四",
+     "rawName": "桜丘第四",
+     "platform": "桜丘第五・井野方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘西口",
+     "rawName": "ひばりが丘西口",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "ひばりが丘団地",
+     "rawName": "ひばりが丘団地",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 3,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "豊一丁目",
+   "keitoCd": "320204",
+   "number": "32",
+   "kind": "普通",
+   "terminus": "原田橋",
+   "via": "空港通 亀山 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047323784,
+     "lng": 130.428745037797,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": 33.5986796,
+     "lng": 130.4311247,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府",
+     "rawName": "別府",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "亀山",
+     "rawName": "亀山",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南里",
+     "rawName": "南里",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "苅屋",
+     "rawName": "苅屋",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "日枝",
+     "rawName": "日枝",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋敷",
+     "rawName": "新屋敷",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免役場前",
+     "rawName": "志免役場前",
+     "platform": "宇美方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "宇美方向（本線）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美中学校前",
+     "rawName": "宇美中学校前",
+     "platform": "原田橋方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "大谷",
+     "rawName": "大谷",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "四王寺坂入口",
+     "rawName": "四王寺坂入口",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "栄町",
+     "rawName": "栄町",
+     "platform": "往復共通",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田",
+     "rawName": "原田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "勝田",
+     "rawName": "勝田",
+     "platform": "原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "原田橋",
+     "rawName": "原田橋",
+     "platform": "只越方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 3,
+   "platformFix": true
+  },
+  {
+   "dest": "higashi",
+   "destStop": "豊一丁目",
+   "keitoCd": "320251",
+   "number": "32",
+   "kind": "普通",
+   "terminus": "上宇美",
+   "via": "空港通 亀山 志免",
+   "direction": "to_dest",
+   "queriedTerminus": "博多駅（博多バスターミナル１Ｆ）",
+   "stops": [
+    {
+     "name": "博多バスターミナル1",
+     "rawName": "博多バスターミナル１Ｆ",
+     "platform": "１４のりば",
+     "lat": 33.5912,
+     "lng": 130.4198,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光町",
+     "rawName": "東光町",
+     "platform": "豊二丁目方向",
+     "lat": 33.5946279029948,
+     "lng": 130.425795378394,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "東光二丁目",
+     "rawName": "東光二丁目",
+     "platform": "二又瀬方面",
+     "lat": 33.5967047323784,
+     "lng": 130.428745037797,
+     "coordSource": "nnr-search",
+     "city": "福岡市博多区"
+    },
+    {
+     "name": "豊一丁目",
+     "rawName": "豊一丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": 33.5986796,
+     "lng": 130.4311247,
+     "coordSource": "nnr-search"
+    },
+    {
+     "name": "豊二丁目",
+     "rawName": "豊二丁目",
+     "platform": "二又瀬・稲城方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "砂原",
+     "rawName": "砂原",
+     "platform": "亀山・席田小方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "別府",
+     "rawName": "別府",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "亀山",
+     "rawName": "亀山",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "南里",
+     "rawName": "南里",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "苅屋",
+     "rawName": "苅屋",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "日枝",
+     "rawName": "日枝",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "新屋敷",
+     "rawName": "新屋敷",
+     "platform": "志免方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免役場前",
+     "rawName": "志免役場前",
+     "platform": "宇美方面",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下志免",
+     "rawName": "下志免",
+     "platform": "宇美方向（本線）",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "志免",
+     "rawName": "志免",
+     "platform": "宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "東志免",
+     "rawName": "東志免",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "吉原",
+     "rawName": "吉原",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "田富",
+     "rawName": "田富",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "深町",
+     "rawName": "深町",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美口",
+     "rawName": "下宇美口",
+     "platform": "下宇美方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "下宇美",
+     "rawName": "下宇美",
+     "platform": "役場入口・原田橋方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美八幡前",
+     "rawName": "宇美八幡前",
+     "platform": "役場入口方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "宇美町役場入口",
+     "rawName": "宇美町役場入口",
+     "platform": "原田橋・宇美営方向",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    },
+    {
+     "name": "上宇美",
+     "rawName": "上宇美",
+     "platform": "上宇美始発折返し場内",
+     "lat": null,
+     "lng": null,
+     "coordSource": null
+    }
+   ],
+   "destIndex": 3,
+   "platformFix": true
   }
  ],
  "stops": [
@@ -58509,7 +67431,9 @@
     "57",
     "56",
     "57-1",
-    "30"
+    "30",
+    "11",
+    "19"
    ],
    "higashiStops": [
     "東光二丁目",
@@ -58547,7 +67471,9 @@
     "57",
     "56",
     "57-1",
-    "30"
+    "30",
+    "11",
+    "19"
    ],
    "higashiStops": [
     "東光二丁目",
@@ -60058,7 +68984,9 @@
     "47",
     "48",
     "48-1",
-    "30"
+    "30",
+    "11",
+    "19"
    ],
    "higashiStops": [
     "東光二丁目",
@@ -60136,7 +69064,9 @@
    "numbers": [
     "47",
     "48",
-    "48-1"
+    "48-1",
+    "11",
+    "19"
    ]
   },
   {
@@ -60151,7 +69081,9 @@
    "numbers": [
     "47",
     "48",
-    "48-1"
+    "48-1",
+    "11",
+    "19"
    ]
   },
   {
@@ -60841,7 +69773,13 @@
     "32",
     "139",
     "40",
-    "48"
+    "48",
+    "3",
+    "306",
+    "57",
+    "203",
+    "29",
+    "68"
    ],
    "higashiStops": [
     "東光二丁目",
@@ -63273,12 +72211,27 @@
     "30",
     "32",
     "139",
-    "40"
+    "40",
+    "3",
+    "306",
+    "57",
+    "203",
+    "29",
+    "68",
+    "39",
+    "37",
+    "39B",
+    "38",
+    "37-1",
+    "41",
+    "43"
    ],
    "higashiStops": [
     "東光二丁目",
     "東光町",
-    "豊一丁目"
+    "豊一丁目",
+    "東光小学校前",
+    "東比恵二丁目"
    ]
   },
   {
@@ -65351,11 +74304,20 @@
    "numbers": [
     "30",
     "32",
-    "139"
+    "139",
+    "39",
+    "37",
+    "39B",
+    "38",
+    "37-1",
+    "41",
+    "43"
    ],
    "higashiStops": [
     "東光二丁目",
-    "豊一丁目"
+    "豊一丁目",
+    "東光小学校前",
+    "東比恵二丁目"
    ]
   },
   {
@@ -67491,7 +76453,8 @@
    ],
    "higashiStops": [
     "東比恵二丁目",
-    "東光町"
+    "東光町",
+    "東光小学校前"
    ]
   },
   {
@@ -67852,10 +76815,69 @@
    ],
    "numbers": [
     "41",
-    "43"
+    "43",
+    "38",
+    "37-1"
    ],
    "higashiStops": [
-    "東光町"
+    "東光町",
+    "東光小学校前"
+   ]
+  },
+  {
+   "name": "博多港国際ターミナル",
+   "lat": 33.6088151,
+   "lng": 130.4000483,
+   "city": "福岡市博多区",
+   "coordSource": "nnr-search",
+   "dests": [
+    "gion"
+   ],
+   "numbers": [
+    "11",
+    "19"
+   ]
+  },
+  {
+   "name": "マリンメッセ前",
+   "lat": 33.6074911402554,
+   "lng": 130.403646625518,
+   "city": "福岡市博多区",
+   "coordSource": "nnr-search",
+   "dests": [
+    "gion"
+   ],
+   "numbers": [
+    "11",
+    "19"
+   ]
+  },
+  {
+   "name": "博多臨港警察署北口",
+   "lat": 33.6065042634013,
+   "lng": 130.404653587333,
+   "city": "福岡市博多区",
+   "coordSource": "nnr-search",
+   "dests": [
+    "gion"
+   ],
+   "numbers": [
+    "11",
+    "19"
+   ]
+  },
+  {
+   "name": "国際会議場サンパレス前",
+   "lat": 33.6036385538531,
+   "lng": 130.403733795678,
+   "city": "福岡市博多区",
+   "coordSource": "nnr-search",
+   "dests": [
+    "gion"
+   ],
+   "numbers": [
+    "11",
+    "19"
    ]
   }
  ]

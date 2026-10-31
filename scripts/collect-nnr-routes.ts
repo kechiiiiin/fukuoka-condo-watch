@@ -1,5 +1,6 @@
 // 西鉄の時刻表サイトから「職場（祇園町）・学校（東光二丁目）へ乗り換えなしで着く便」が通るバス停を集める。
 //   node --import tsx scripts/collect-nnr-routes.ts [--p11 <P11-22_40.geojson>] [--out src/data/bus-routes.json] [--cache-only] [--only higashi]
+//   --fix-platforms: 行先名が停留所名と合わず取れなかった行先（博多駅など）を乗り場名で補う（既存の出力に追記）
 //   --only <dest>: その目的地だけ集め直し、他の目的地の routes は既存の出力からそのまま引き継ぐ（追加収集用）
 //   上限は環境変数で（どちらも _requests.log の累計件数）: NNR_LIMIT（既定 700）・NNR_COORD_BUDGET（座標検索を打ち切る件数・既定 660）
 // 取得の作法（直列・3 秒間隔・キャッシュ・上限 700 件・連続失敗で停止）は scripts/nnr-fetch.ts。
@@ -241,6 +242,7 @@ type RouteOut = {
   morning?: { departures7to9: number; capped: boolean; from: string };
   stops: { name: string; rawName: string; platform: string; passThrough?: true; lat: number | null; lng: number | null; coordSource: "nnr-search" | "p11" | null; city?: string }[];
   destIndex: number;
+  platformFix?: true;
 };
 
 type Job = { dest: DestKey; ds: DestStop; terminus: string; direction: "to_dest" | "from_dest"; cassette: Cassette };
@@ -259,6 +261,249 @@ function cachedKeitoStops(): Map<string, string> {
     if (t) m.set(k[1]!, t);
   }
   return m;
+}
+
+let keitoCache: Map<string, string> | undefined;
+
+/** 便（job）ごとに停留所列を作る。取得済みの系統は通過時刻表を取り直さない */
+function buildRoutes(jobs: Map<string, Job>, morning: Map<string, { n: number; total: number; from: string }>, extra: Partial<RouteOut> = {}): { routes: RouteOut[]; keitoReused: number } {
+  const routes: RouteOut[] = [];
+  const keitoHtml = keitoCache ??= cachedKeitoStops();
+  let keitoReused = 0;
+  try {
+    for (const [key, job] of jobs) {
+      let h = keitoHtml.get(job.cassette.keitoCd) ?? null;
+      if (h) keitoReused++;
+      else {
+        h = get(job.cassette.busbin);
+        if (h) keitoHtml.set(job.cassette.keitoCd, h);
+      }
+      if (!h) {
+        failures.push({ dest: job.dest, destStop: job.ds.name, terminus: job.terminus, reason: `通過時刻表が取れない（keito ${job.cassette.keitoCd}）` });
+        continue;
+      }
+      const raw = parseBusbin(h);
+      const dName = job.ds.name;
+      const destIndex = raw.findIndex((s) => baseName(s.raw) === dName);
+      if (destIndex < 0) {
+        failures.push({ dest: job.dest, destStop: dName, terminus: job.terminus, reason: `通過時刻表に ${dName} が無い（keito ${job.cassette.keitoCd}）` });
+        continue;
+      }
+      const m = morning.get(key);
+      routes.push({
+        dest: job.dest,
+        ...(job.dest === "higashi" ? { destStop: dName } : {}),
+        keitoCd: job.cassette.keitoCd,
+        number: job.cassette.number,
+        kind: job.cassette.kind,
+        terminus: job.cassette.terminus,
+        via: job.cassette.via,
+        direction: job.direction,
+        queriedTerminus: job.terminus,
+        ...(m ? { morning: { departures7to9: m.n, capped: m.n === m.total && m.total > 0, from: m.from } } : {}),
+        stops: raw.map((s) => ({
+          name: baseName(s.raw),
+          rawName: s.raw,
+          platform: s.platform,
+          ...(isPassThrough(s.raw) ? { passThrough: true as const } : {}),
+          lat: null,
+          lng: null,
+          coordSource: null,
+        })),
+        destIndex,
+        ...extra,
+      });
+    }
+  } catch (e) {
+    if (e instanceof LimitReached || e instanceof TooManyFailures) stoppedReason = (e as Error).message;
+    else throw e;
+  }
+  return { routes, keitoReused };
+}
+
+/** 座標: 直通で行ける側の停留所と目的バス停。近い順に決めていく（前後の停留所に最も近い同名を選ぶ）。P11 で代用した数を返す */
+function assignCoords(routes: RouteOut[]): number {
+  let p11Used = 0;
+  try {
+    for (const r of routes) {
+      const d = DEST_STOPS[r.dest].find((x) => x.name === (r.destStop ?? DESTS[r.dest].name))!;
+      const idxs = r.stops.map((_, i) => i);
+      // 目的バス停から外へ向かって決めると「前後の停留所」の座標が先に決まっている
+      const order = r.direction === "to_dest" ? idxs.slice(0, r.destIndex + 1).reverse() : idxs.slice(r.destIndex);
+      let prev: { lat: number; lng: number } = d;
+      for (const i of order) {
+        const s = r.stops[i]!;
+        if (s.passThrough) continue;
+        if (i === r.destIndex) {
+          Object.assign(s, { lat: d.lat, lng: d.lng, coordSource: "nnr-search" as const });
+          prev = d;
+          continue;
+        }
+        const hit = resolveStop(s.rawName, prev, COORD_SEARCH_BUDGET);
+        if (hit && distM(hit, prev) < 15000) {
+          Object.assign(s, { lat: hit.lat, lng: hit.lng, coordSource: "nnr-search" as const, city: hit.city });
+          prev = hit;
+          continue;
+        }
+        const p = p11Lookup(s.rawName, prev);
+        if (p && distM(p, prev) < 15000) {
+          Object.assign(s, { lat: p.lat, lng: p.lng, coordSource: "p11" as const });
+          p11Used++;
+          prev = p;
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof LimitReached || e instanceof TooManyFailures) stoppedReason = (e as Error).message;
+    else throw e;
+  }
+  return p11Used;
+}
+
+type StopOut = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: DestKey[]; numbers: string[]; higashiStops?: string[] };
+/** 直通で行けるバス停（重複除去: 同名で 500m 以内は同じ停留所） */
+function buildStops(allRoutes: RouteOut[]): StopOut[] {
+  const stops: StopOut[] = [];
+  // 目的 → 行先 の向きでしか直通が出なかった便（from_dest）は stops[] に入れない。
+  // 帰りの便が目的バス停を通る保証が無く、実際 福大病院 → 祇園町 は公式検索で直通なし（行きの 12 番は祇園町を通るが帰りは通らない）
+  for (const r of allRoutes) {
+    if (r.direction !== "to_dest") continue;
+    const reach = r.stops.slice(0, r.destIndex).filter((s) => !s.passThrough);
+    for (const s of reach) {
+      let o = stops.find(
+        (x) => x.name === s.name && (x.lat === null || s.lat === null ? x.lat === s.lat : distM({ lat: x.lat, lng: x.lng! }, { lat: s.lat, lng: s.lng! }) < 500),
+      );
+      if (!o) {
+        o = { name: s.name, lat: s.lat, lng: s.lng, ...(s.city ? { city: s.city } : {}), coordSource: s.coordSource, dests: [], numbers: [] };
+        stops.push(o);
+      }
+      if (!o.dests.includes(r.dest)) o.dests.push(r.dest);
+      if (!o.numbers.includes(r.number)) o.numbers.push(r.number);
+      if (r.dest === "higashi") {
+        const ds = r.destStop ?? DESTS.higashi.name;
+        o.higashiStops ??= [];
+        if (!o.higashiStops.includes(ds)) o.higashiStops.push(ds);
+      }
+    }
+  }
+  return stops;
+}
+
+// ---------- 行先名が停留所名と合わなかった行先の補い（--fix-platforms） ----------
+// 行先一覧の行先名（例「博多駅」）がそのままの停留所名で無いため取れなかった行先を、実際の乗り場名で引き直す。
+// 1 つの行先につき経路検索は最大 4 回（行先 → 目的の向き・6 時）。出た乗り場はすべて使う（乗り場ごとに出る系統が違う）
+/** 行先名 → 停留所名検索のキーワードと、試す乗り場名（目的地ごとに優先順） */
+const PLATFORM_ALIASES: Record<string, { keywords: string[]; gion: string[]; higashi: string[] }> = {
+  // 祇園町発「博多駅」行きは博多バスターミナル着（「博多駅前」行きは博多口前で別行先）。帰りは博多駅の博多口側・筑紫口側の乗り場から
+  博多駅: {
+    keywords: ["博多駅", "博多バスターミナル"],
+    gion: ["博多バスターミナル１Ｆ", "博多駅前Ａ", "博多駅センタービル前Ｅ", "博多駅西日本シティ銀行前Ｆ"],
+    higashi: ["博多バスターミナル１Ｆ", "博多駅筑紫口", "博多駅センタービル前Ｅ", "博多駅博多郵便局前D"],
+  },
+  大橋駅: { keywords: ["大橋駅"], gion: ["西鉄大橋駅"], higashi: ["西鉄大橋駅"] },
+  中央埠頭: { keywords: ["中央ふ頭"], gion: ["博多港国際ターミナル（中央ふ頭）", "中央ふ頭クルーズセンター"], higashi: ["博多港国際ターミナル（中央ふ頭）", "中央ふ頭クルーズセンター"] },
+  井尻六ッ角: { keywords: ["井尻六"], gion: ["井尻六ツ角", "井尻六ツ角（高宮通り）"], higashi: ["井尻六ツ角", "井尻六ツ角（高宮通り）"] },
+};
+
+type Failure = { dest: DestKey; destStop?: string; terminus: string; reason: string };
+function fixPlatforms() {
+  const prev = JSON.parse(readFileSync(OUT, "utf8")) as { meta: Record<string, any>; routes: RouteOut[]; stops: StopOut[] };
+  const nameMismatch = (f: Failure) => f.reason.startsWith("停留所名検索で一致する停留所なし");
+  const lists: Failure[][] = [prev.meta.failures, prev.meta.higashiExtension?.failures ?? []];
+  const targets = lists.flatMap((l) => l.filter(nameMismatch));
+  const found: { dest: DestKey; destStop: string; terminus: string; platform: string; keitoCd: string; numbers: string[]; newStops: number }[] = [];
+  const tried: Record<string, { platform: string; result: string }[]> = {};
+  const jobs = new Map<string, Job>();
+  const jobPlatform = new Map<string, { term: string; platform: string }>();
+  const directFound = new Set<string>(); // 乗り場名で直通が出た行先（系統が既存と同じだけでも、行先としては拾えている）
+  try {
+    for (const f of targets) {
+      const ds = DEST_STOPS[f.dest].find((x) => x.name === (f.destStop ?? DESTS[f.dest].name))!;
+      const alias = PLATFORM_ALIASES[f.terminus];
+      const key = `${f.dest}|${ds.name}|${f.terminus}`;
+      tried[key] = [];
+      if (!alias) continue;
+      for (const kw of alias.keywords) searchStops(kw);
+      for (const platform of alias[f.dest].slice(0, 4)) {
+        const st = (known.get(nfkc(platform)) ?? []).sort((a, b) => distM(a, ds) - distM(b, ds))[0];
+        if (!st) {
+          tried[key].push({ platform, result: "停留所名検索に無い" });
+          continue;
+        }
+        const h = get(routeUrl(st.id, ds.routeId, "06"));
+        const r = h === null ? null : parseRoute(h);
+        tried[key].push({ platform, result: r === null ? "取得失敗" : r.direct ? `直通あり（${[...new Set(r.cassettes.map((c) => c.number))].join(",")}）` : "直通なし" });
+        if (!r?.direct) continue;
+        directFound.add(key);
+        for (const c of r.cassettes) {
+          const jk = `${f.dest}|${ds.name}|to_dest|${c.keitoCd}`;
+          if (prev.routes.some((x) => x.dest === f.dest && (x.destStop ?? DESTS[f.dest].name) === ds.name && x.direction === "to_dest" && x.keitoCd === c.keitoCd)) continue; // 既に持っている系統
+          if (!jobs.has(jk)) {
+            jobs.set(jk, { dest: f.dest, ds, terminus: `${f.terminus}（${platform}）`, direction: "to_dest", cassette: c });
+            jobPlatform.set(jk, { term: f.terminus, platform });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof LimitReached || e instanceof TooManyFailures) stoppedReason = (e as Error).message;
+    else throw e;
+  }
+  const { routes, keitoReused } = buildRoutes(jobs, new Map(), { platformFix: true } as Partial<RouteOut>);
+  const p11Used = assignCoords(routes);
+  const allRoutes = [...prev.routes, ...routes];
+  const stops = buildStops(allRoutes);
+
+  // 系統ごとの「増えた直通バス停」: その目的バス停へ前回まで行けなかった停留所の数
+  const reachKey = (r: RouteOut) => `${r.dest}|${r.destStop ?? DESTS[r.dest].name}`;
+  const before = new Map<string, Set<string>>();
+  for (const r of prev.routes) {
+    if (r.direction !== "to_dest") continue;
+    const set = before.get(reachKey(r)) ?? new Set<string>();
+    for (const x of r.stops.slice(0, r.destIndex)) if (!x.passThrough) set.add(x.name);
+    before.set(reachKey(r), set);
+  }
+  for (const r of routes) {
+    const jp = [...jobPlatform.entries()].find(([k]) => k === `${r.dest}|${r.destStop ?? DESTS[r.dest].name}|to_dest|${r.keitoCd}`)?.[1];
+    const set = before.get(reachKey(r)) ?? new Set<string>();
+    const fresh = r.stops.slice(0, r.destIndex).filter((x) => !x.passThrough && !set.has(x.name)).map((x) => x.name);
+    found.push({ dest: r.dest, destStop: r.destStop ?? DESTS[r.dest].name, terminus: jp?.term ?? "", platform: jp?.platform ?? "", keitoCd: r.keitoCd, numbers: [r.number], newStops: new Set(fresh).size });
+  }
+
+  // failures: 拾えた行先は外し、拾えなかった行先には試した乗り場名を残す
+  const pickedUp = directFound;
+  const rewrite = (l: Failure[]) =>
+    l.flatMap((f) => {
+      if (!nameMismatch(f)) return [f];
+      const key = `${f.dest}|${f.destStop ?? DESTS[f.dest].name}|${f.terminus}`;
+      if (pickedUp.has(key)) return [];
+      const t = tried[key] ?? [];
+      return [{ ...f, reason: `停留所名検索で一致する停留所なし。乗り場名で試したが直通なし: ${t.map((x) => `${x.platform}=${x.result}`).join("、") || "候補なし"}` }];
+    });
+  const st = stats();
+  const meta = {
+    ...prev.meta,
+    requestsTotal: st.totalEver,
+    failures: rewrite(prev.meta.failures),
+    ...(prev.meta.higashiExtension ? { higashiExtension: { ...prev.meta.higashiExtension, failures: rewrite(prev.meta.higashiExtension.failures) } } : {}),
+    missingCoordCount: stops.filter((x) => x.lat === null).length,
+    platformFix: {
+      note: "行先名（博多駅など）が停留所名と合わず取れなかった行先を、実際の乗り場名で 行先→目的・6時 の経路検索をし直して補った（1 行先 4 回まで。朝の本数は取っていない）",
+      generatedAt: new Date().toISOString(),
+      // 前回の出力以降に台帳へ増えた件数（キャッシュから再実行しても変わらない）
+      requests: st.totalEver - Number(prev.meta.requestsTotal ?? 0),
+      keitoReusedFromCache: keitoReused,
+      stoppedReason,
+      p11CoordCount: p11Used,
+      tried,
+      found,
+      coveredByExistingKeito: [...directFound].filter((k) => !found.some((x) => `${x.dest}|${x.destStop}|${x.terminus}` === k)),
+    },
+  };
+  writeFileSync(OUT, JSON.stringify({ meta, routes: allRoutes, stops }, null, 1) + "\n");
+  console.log(`補った系統 ${routes.length}（系統の再利用 ${keitoReused}） / stops ${prev.stops.length} → ${stops.length} / requests this run ${st.network} total ${st.totalEver}`);
+  if (stoppedReason) console.log(`停止: ${stoppedReason}`);
+  for (const [k, t] of Object.entries(tried)) console.log(`  ${k}: ${t.map((x) => `${x.platform}=${x.result}`).join("、")}`);
 }
 
 function main() {
@@ -336,119 +581,10 @@ function main() {
   // 通過時刻表
   // --only のときは他の目的地の routes を既存の出力からそのまま引き継ぐ（座標も決め直さない）
   const kept: RouteOut[] = prev ? prev.routes.filter((r) => r.dest !== ONLY) : [];
-  const routes: RouteOut[] = [];
-  const keitoHtml = cachedKeitoStops();
-  let keitoReused = 0;
-  try {
-    for (const [key, job] of jobs) {
-      let h = keitoHtml.get(job.cassette.keitoCd) ?? null;
-      if (h) keitoReused++;
-      else {
-        h = get(job.cassette.busbin);
-        if (h) keitoHtml.set(job.cassette.keitoCd, h);
-      }
-      if (!h) {
-        failures.push({ dest: job.dest, destStop: job.ds.name, terminus: job.terminus, reason: `通過時刻表が取れない（keito ${job.cassette.keitoCd}）` });
-        continue;
-      }
-      const raw = parseBusbin(h);
-      const dName = job.ds.name;
-      const destIndex = raw.findIndex((s) => baseName(s.raw) === dName);
-      if (destIndex < 0) {
-        failures.push({ dest: job.dest, destStop: dName, terminus: job.terminus, reason: `通過時刻表に ${dName} が無い（keito ${job.cassette.keitoCd}）` });
-        continue;
-      }
-      const m = morning.get(key);
-      routes.push({
-        dest: job.dest,
-        ...(job.dest === "higashi" ? { destStop: dName } : {}),
-        keitoCd: job.cassette.keitoCd,
-        number: job.cassette.number,
-        kind: job.cassette.kind,
-        terminus: job.cassette.terminus,
-        via: job.cassette.via,
-        direction: job.direction,
-        queriedTerminus: job.terminus,
-        ...(m ? { morning: { departures7to9: m.n, capped: m.n === m.total && m.total > 0, from: m.from } } : {}),
-        stops: raw.map((s) => ({
-          name: baseName(s.raw),
-          rawName: s.raw,
-          platform: s.platform,
-          ...(isPassThrough(s.raw) ? { passThrough: true as const } : {}),
-          lat: null,
-          lng: null,
-          coordSource: null,
-        })),
-        destIndex,
-      });
-    }
-  } catch (e) {
-    if (e instanceof LimitReached || e instanceof TooManyFailures) stoppedReason = (e as Error).message;
-    else throw e;
-  }
-
-  // 座標: 直通で行ける側の停留所と目的バス停。近い順に決めていく（前後の停留所に最も近い同名を選ぶ）
-  let p11Used = 0;
-  try {
-    for (const r of routes) {
-      const d = DEST_STOPS[r.dest].find((x) => x.name === (r.destStop ?? DESTS[r.dest].name))!;
-      const idxs = r.stops.map((_, i) => i);
-      // 目的バス停から外へ向かって決めると「前後の停留所」の座標が先に決まっている
-      const order = r.direction === "to_dest" ? idxs.slice(0, r.destIndex + 1).reverse() : idxs.slice(r.destIndex);
-      let prev: { lat: number; lng: number } = d;
-      for (const i of order) {
-        const s = r.stops[i]!;
-        if (s.passThrough) continue;
-        if (i === r.destIndex) {
-          Object.assign(s, { lat: d.lat, lng: d.lng, coordSource: "nnr-search" as const });
-          prev = d;
-          continue;
-        }
-        const hit = resolveStop(s.rawName, prev, COORD_SEARCH_BUDGET);
-        if (hit && distM(hit, prev) < 15000) {
-          Object.assign(s, { lat: hit.lat, lng: hit.lng, coordSource: "nnr-search" as const, city: hit.city });
-          prev = hit;
-          continue;
-        }
-        const p = p11Lookup(s.rawName, prev);
-        if (p && distM(p, prev) < 15000) {
-          Object.assign(s, { lat: p.lat, lng: p.lng, coordSource: "p11" as const });
-          p11Used++;
-          prev = p;
-        }
-      }
-    }
-  } catch (e) {
-    if (e instanceof LimitReached || e instanceof TooManyFailures) stoppedReason = (e as Error).message;
-    else throw e;
-  }
-
-  // 直通で行けるバス停（重複除去: 同名で 500m 以内は同じ停留所）
-  type StopOut = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: DestKey[]; numbers: string[]; higashiStops?: string[] };
-  const stops: StopOut[] = [];
-  // 目的 → 行先 の向きでしか直通が出なかった便（from_dest）は stops[] に入れない。
-  // 帰りの便が目的バス停を通る保証が無く、実際 福大病院 → 祇園町 は公式検索で直通なし（行きの 12 番は祇園町を通るが帰りは通らない）
+  const { routes, keitoReused } = buildRoutes(jobs, morning);
+  const p11Used = assignCoords(routes);
   const allRoutes = [...kept, ...routes];
-  for (const r of allRoutes) {
-    if (r.direction !== "to_dest") continue;
-    const reach = r.stops.slice(0, r.destIndex).filter((s) => !s.passThrough);
-    for (const s of reach) {
-      let o = stops.find(
-        (x) => x.name === s.name && (x.lat === null || s.lat === null ? x.lat === s.lat : distM({ lat: x.lat, lng: x.lng! }, { lat: s.lat, lng: s.lng! }) < 500),
-      );
-      if (!o) {
-        o = { name: s.name, lat: s.lat, lng: s.lng, ...(s.city ? { city: s.city } : {}), coordSource: s.coordSource, dests: [], numbers: [] };
-        stops.push(o);
-      }
-      if (!o.dests.includes(r.dest)) o.dests.push(r.dest);
-      if (!o.numbers.includes(r.number)) o.numbers.push(r.number);
-      if (r.dest === "higashi") {
-        const ds = r.destStop ?? DESTS.higashi.name;
-        o.higashiStops ??= [];
-        if (!o.higashiStops.includes(ds)) o.higashiStops.push(ds);
-      }
-    }
-  }
+  const stops = buildStops(allRoutes);
 
   const st = stats();
   const fromDestOnly = allRoutes
@@ -495,4 +631,5 @@ function main() {
   for (const f of failures) console.log(`  取れず: [${f.dest}/${f.destStop}] ${f.terminus} — ${f.reason}`);
 }
 
-main();
+if (process.argv.includes("--fix-platforms")) fixPlatforms();
+else main();

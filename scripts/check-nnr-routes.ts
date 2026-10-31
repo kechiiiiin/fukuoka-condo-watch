@@ -6,7 +6,12 @@ import { option } from "./lib";
 
 type Stop = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: string[]; numbers: string[]; higashiStops?: string[] };
 type Route = { dest: string; destStop?: string; number: string; direction: string; destIndex: number; stops: { name: string; passThrough?: true }[] };
-const data = JSON.parse(readFileSync(option("in") ?? "src/data/bus-routes.json", "utf8")) as { stops: Stop[]; routes: Route[] };
+type Found = { dest: string; destStop: string; terminus: string; platform: string; keitoCd: string; numbers: string[]; newStops: number };
+const data = JSON.parse(readFileSync(option("in") ?? "src/data/bus-routes.json", "utf8")) as {
+  stops: Stop[];
+  routes: Route[];
+  meta: { platformFix?: { found: Found[]; coveredByExistingKeito: string[] } };
+};
 /** その停留所から通勤の向きで直通できる higashi の便（降りるバス停と系統番号） */
 const higashiVia = (name: string) =>
   data.routes
@@ -56,6 +61,13 @@ for (const n of ["椎原", "福大病院", "雁の巣", "西月隈三丁目"]) {
   const missing = data.stops.filter((s) => s.lat === null);
   const bySource = data.stops.reduce<Record<string, number>>((a, s) => ((a[s.coordSource ?? "なし"] = (a[s.coordSource ?? "なし"] ?? 0) + 1), a), {});
   console.log(`     座標の出典: ${JSON.stringify(bySource)}  座標なし ${missing.length} 件${missing.length ? `: ${missing.map((s) => s.name).join("、")}` : ""}`);
+}
+// 参考: 行先名が合わず抜けていた行先を乗り場名で補った系統（行先・使った乗り場名・系統番号・増えた直通バス停の数）
+if (data.meta.platformFix) {
+  console.log("補った系統:");
+  console.log("     （降りるバス停  行先 ← 使った乗り場  系統番号(keito)  増えた直通バス停＝その降りるバス停へ前回まで行けなかった停留所の数）");
+  for (const f of data.meta.platformFix.found) console.log(`     ${f.destStop}  ${f.terminus} ← ${f.platform}  ${f.numbers.join(",")}(${f.keitoCd})  +${f.newStops}`);
+  if (data.meta.platformFix.coveredByExistingKeito.length) console.log(`     直通は出たが系統が既存と同じ（新しい系統なし）: ${data.meta.platformFix.coveredByExistingKeito.join("、")}`);
 }
 console.log(`stops ${data.stops.length} / routes ${data.routes.length} / NG ${failed}`);
 process.exit(failed ? 1 : 0);
