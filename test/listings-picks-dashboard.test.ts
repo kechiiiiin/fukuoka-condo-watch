@@ -29,8 +29,13 @@ class El {
   remove() {
     this.removed = true;
   }
-  addEventListener() {
-    /* 送信はテストから直接呼ぶ */
+  readonly handlers: Record<string, () => void> = {};
+  addEventListener(type: string, fn: () => void) {
+    this.handlers[type] = fn; /* 送信・クリックはテストから直接呼ぶ */
+  }
+  attrs: Record<string, string> = {};
+  setAttribute(k: string, v: string) {
+    this.attrs[k] = v;
   }
   get options(): El[] {
     return this.children.flatMap((c) => (c.tag === "optgroup" ? c.children : [c]));
@@ -55,7 +60,7 @@ function harness(search: string, payload: () => unknown): Harness {
   }
   for (const id of [
     "tab-sale", "tab-rent", "title", "defaults-text", "lb-pmax", "lb-sort", "opt-retention", "lb-pets",
-    "lb-mais", "lb-tatami", "lb-floors",
+    "lb-mais", "lb-tatami", "lb-floors", "area-btn-airport", "area-btn-ijiri", "area-btn-minamifukuoka",
     "muni-select", "asof", "notices", "coverage", "count", "cards", "cards-section", "footer",
   ]) {
     ids.set(id, new El("div", id));
@@ -305,4 +310,37 @@ test("画面（賃貸）: 読み込み失敗時のエラー notice は折りた�
   const notices = ids.get("notices")!.innerHTML;
   assert.ok(notices.includes("読み込み失敗"), "エラー文言が出る");
   assert.ok(!notices.includes("<details"), "エラーは <details> で包まない");
+});
+
+test("画面: エリアボタン3つが出て、押すと即 area= 付きで再取得・賃貸/売買で共通の保存状態に載る", async () => {
+  const html = renderListingsPicksDashboard();
+  assert.ok(html.indexOf("見ているエリア") > html.indexOf('id="defaults-text"') && html.indexOf("見ているエリア") < html.indexOf('id="lb-pmax"'));
+  for (const l of ["空港線・筑肥線", "井尻・笹原", "南福岡・雑餉隈"]) assert.ok(html.includes(">" + l + "</button>"), l);
+
+  const h = harness("", () => PAYLOAD("rent"));
+  h.run();
+  await flush();
+  assert.equal(h.requestedUrls.length, 1);
+  assert.ok(!h.requestedUrls[0]!.includes("area="), "全部オフなら area を付けない");
+  const a = h.ids.get("area-btn-airport")!;
+  const b = h.ids.get("area-btn-ijiri")!;
+  a.handlers.click!();
+  b.handlers.click!();
+  await flush();
+  assert.equal(a.className, "areabtn on");
+  assert.equal(a.attrs["aria-pressed"], "true");
+  assert.ok(h.requestedUrls.at(-1)!.includes("area=airport%2Cijiri"));
+  b.handlers.click!();
+  assert.ok(h.requestedUrls.at(-1)!.includes("area=airport") && !h.requestedUrls.at(-1)!.includes("ijiri"));
+  const store = (globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage;
+  assert.equal(store.getItem("fcw_picks_area_v1"), '["airport"]', "タブ共通の保存キー");
+});
+
+test("画面: ?area= の初期値でボタンがオンになり、未知キーは無視", async () => {
+  const h = harness("?kind=sale&area=minamifukuoka,zzz", () => PAYLOAD("sale"));
+  h.run();
+  await flush();
+  assert.equal(h.ids.get("area-btn-minamifukuoka")!.className, "areabtn on");
+  assert.equal(h.ids.get("area-btn-airport")!.className, "areabtn");
+  assert.ok(h.requestedUrls[0]!.includes("area=minamifukuoka"));
 });

@@ -2,7 +2,7 @@
 // 賃貸（既定。2026-09-26〜）と売買（中古・?kind=sale）をタブで切り替える。方針が賃貸優先になったため既定は賃貸。データは /api/listings/picks（src/listing-picks.ts）。
 // ⚠️ クライアント側スクリプトではバッククォートと「ドル記号+波括弧」を使わない（この TS テンプレートに展開されてしまう）。
 
-import { DEFAULT_PICK_FILTERS, DEFAULT_RENT_PICK_FILTERS } from "./listing-grouping";
+import { DEFAULT_PICK_FILTERS, DEFAULT_RENT_PICK_FILTERS, STATION_AREAS } from "./listing-grouping";
 import { AREAS, GROUP_LABEL } from "./wards";
 
 export function renderListingsPicksDashboard(): string {
@@ -11,6 +11,10 @@ export function renderListingsPicksDashboard(): string {
 
 const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 const AREAS_JSON = safeJson(AREAS);
+const STATION_AREAS_JSON = safeJson(Object.entries(STATION_AREAS).map(([key, a]) => ({ key, label: a.label, stations: a.stations })));
+const AREA_BUTTONS_HTML = Object.entries(STATION_AREAS)
+  .map(([key, a]) => `<button type="button" class="areabtn" id="area-btn-${key}" aria-pressed="false" title="${a.stations.join("・")}">${a.label}</button>`)
+  .join("");
 const GROUPS_JSON = safeJson(GROUP_LABEL);
 const D = DEFAULT_PICK_FILTERS;
 const R = DEFAULT_RENT_PICK_FILTERS;
@@ -78,6 +82,11 @@ const HTML = `<!doctype html>
   nav.tabs a.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   .badge.pets { background: color-mix(in srgb, var(--good) 20%, transparent); }
   .badge.warnbadge { background: color-mix(in srgb, var(--warn) 22%, transparent); }
+  .areabar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .areabar .lbl { font-size: .78rem; color: var(--muted); margin-right: 2px; }
+  button.areabtn { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .85rem; font-weight: 500; }
+  button.areabtn.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  @media (prefers-color-scheme: dark) { button.areabtn.on { color: #0b1220; } }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -94,6 +103,7 @@ const HTML = `<!doctype html>
   <section>
     <form id="filters">
       <div class="sub full" id="defaults-text">${SALE_DEFAULTS_TEXT}</div>
+      <div class="areabar full"><span class="lbl">見ているエリア</span>${AREA_BUTTONS_HTML}</div>
       <label id="lb-pmax">価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="${D.priceMaxMan}"></label>
       <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="${D.areaMin}"></label>
       <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>
@@ -127,6 +137,7 @@ const HTML = `<!doctype html>
 <script>
 (function () {
   var AREAS = ${AREAS_JSON};
+  var STATION_AREAS = ${STATION_AREAS_JSON};
   var GROUP_LABEL = ${GROUPS_JSON};
   var DEFAULTS = { sale: ${DEFAULTS_SALE_JSON}, rent: ${DEFAULTS_RENT_JSON} };
   var DEFAULTS_TEXT = { sale: ${safeJson(SALE_DEFAULTS_TEXT)}, rent: ${safeJson(RENT_DEFAULTS_TEXT)} };
@@ -134,6 +145,7 @@ const HTML = `<!doctype html>
   var IS_RENT = KIND === "rent";
   var D = DEFAULTS[KIND];
   var LS_KEY = "fcw_picks_filters_v1_" + KIND;
+  var LS_AREA_KEY = "fcw_picks_area_v1";
   function esc(v) { return String(v === null || v === undefined ? "" : v).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function n(v, d) { if (v === null || v === undefined) return "—"; return Number(v).toLocaleString("ja-JP", { maximumFractionDigits: d || 0 }); }
   function man(yen) { return yen === null || yen === undefined ? "—" : n(Math.round(yen / 10000)); }
@@ -182,6 +194,22 @@ const HTML = `<!doctype html>
     }
   })();
 
+  // 見ているエリア（最寄り駅の絞り込み）。オンのキーの集合。押したら即反映
+  var areaOn = {};
+  function renderAreaButtons() {
+    STATION_AREAS.forEach(function (a) {
+      var b = document.getElementById("area-btn-" + a.key);
+      if (!b) return;
+      b.className = areaOn[a.key] ? "areabtn on" : "areabtn";
+      b.setAttribute("aria-pressed", areaOn[a.key] ? "true" : "false");
+    });
+  }
+  function areaKeys() { return STATION_AREAS.map(function (a) { return a.key; }).filter(function (k) { return areaOn[k]; }); }
+  STATION_AREAS.forEach(function (a) {
+    var b = document.getElementById("area-btn-" + a.key);
+    if (b) b.addEventListener("click", function () { areaOn[a.key] = !areaOn[a.key]; renderAreaButtons(); load(); });
+  });
+
   function loadSaved() {
     try {
       var raw = localStorage.getItem(LS_KEY);
@@ -198,6 +226,8 @@ const HTML = `<!doctype html>
         muni: Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; }),
       };
       localStorage.setItem(LS_KEY, JSON.stringify(data));
+      // エリアは賃貸・売買で共通の保存先（タブを切り替えても保持する）
+      localStorage.setItem(LS_AREA_KEY, JSON.stringify(areaKeys()));
     } catch (e) { /* 無視（プライベートブラウズ等） */ }
   }
   function applySaved(saved) {
@@ -222,6 +252,17 @@ const HTML = `<!doctype html>
     }
   }
   applySaved(loadSaved());
+  // エリアの初期値: URL の ?area=（あれば優先）→ 共通の保存状態。未知のキーは捨てる
+  (function initAreas() {
+    var fromUrl = new URLSearchParams(location.search).get("area");
+    var keys = [];
+    if (fromUrl) keys = fromUrl.split(",");
+    else {
+      try { var raw = localStorage.getItem(LS_AREA_KEY); keys = raw ? JSON.parse(raw) : []; } catch (e) { keys = []; }
+    }
+    STATION_AREAS.forEach(function (a) { if (keys.indexOf(a.key) !== -1) areaOn[a.key] = true; });
+  })();
+  renderAreaButtons();
 
   function buildParams() {
     var f = document.getElementById("filters");
@@ -248,6 +289,8 @@ const HTML = `<!doctype html>
     if (f.sort.value === "retention" && !IS_RENT) p.set("sort", "retention");
     var munis = Array.prototype.map.call(sel.selectedOptions, function (o) { return o.value; });
     if (munis.length) p.set("muni", munis.join(","));
+    var areas = areaKeys();
+    if (areas.length) p.set("area", areas.join(","));
     return p;
   }
 

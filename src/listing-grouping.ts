@@ -114,6 +114,8 @@ export interface PickFilters {
   buildingFloorsMin: number | null;
   /** 対象の市区町村コード（null = すべて） */
   municipalities: string[] | null;
+  /** 見ているエリアのキー（STATION_AREAS のキー。null = 絞らない）。駅名（station_name）の和集合で絞る */
+  stationAreas: string[] | null;
   /** true なら新着（first_seen が直近 freshDays 日以内）だけ */
   freshOnly: boolean;
   /** 「新着」とみなす日数 */
@@ -131,7 +133,7 @@ export function parsePickKind(v: string | null | undefined): PickKind {
 }
 
 /** 売買（中古）の既定条件 */
-export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
+export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities" | "stationAreas"> & { municipalities: null; stationAreas: null } = {
   priceMaxMan: 4800,
   areaMin: 70,
   planRoomsMin: 3,
@@ -145,6 +147,7 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
   ldkTatamiMin: null,
   buildingFloorsMin: null,
   municipalities: null,
+  stationAreas: null,
   freshOnly: false,
   freshDays: 7,
 };
@@ -163,7 +166,7 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { munic
  * 2026-10-05: **メゾネットは既定で除外しない**（excludeMaisonette = false。本人が「メゾネットは許容する」と決めたため）。
  * メゾネットの行には画面上でバッジを出す（除くかどうかは URL の mais=1 / 画面のチェックボックスで任意に絞れる）
  */
-export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { municipalities: null } = {
+export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities" | "stationAreas"> & { municipalities: null; stationAreas: null } = {
   priceMaxMan: 15,
   areaMin: 70,
   planRoomsMin: 3,
@@ -176,6 +179,7 @@ export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities"> & { 
   ldkTatamiMin: 15,
   buildingFloorsMin: null,
   municipalities: null,
+  stationAreas: null,
   freshOnly: false,
   freshDays: 7,
 };
@@ -214,6 +218,30 @@ export function parseMunicipalities(params: URLSearchParams, isAreaCode: (v: str
   return codes.length > 0 ? codes : null;
 }
 
+/**
+ * 「見ているエリア」ボタン（画面の絞り込み）。キー → 表示名と最寄り駅。
+ * 駅名は listings.station_name との完全一致で照合する（路線名は見ない）。置き場はここ1か所。
+ */
+export const STATION_AREAS: Record<string, { label: string; stations: string[] }> = {
+  airport: {
+    label: "空港線・筑肥線",
+    stations: [
+      "福岡空港", "東比恵", "博多", "祇園", "中洲川端", "天神", "赤坂", "大濠公園", "唐人町", "西新", "藤崎", "室見",
+      "姪浜", "下山門", "今宿", "九大学研都市", "周船寺", "波多江", "糸島高校前", "筑前前原",
+    ],
+  },
+  ijiri: { label: "井尻・笹原", stations: ["井尻", "笹原"] },
+  minamifukuoka: { label: "南福岡・雑餉隈", stations: ["南福岡", "雑餉隈"] },
+};
+
+/** area=airport,ijiri を読む。未知のキーは無視、全部無効・空なら null（=絞らない） */
+export function parseStationAreas(params: URLSearchParams): string[] | null {
+  const v = params.get("area");
+  if (v === null || v.trim() === "") return null;
+  const keys = [...new Set(v.split(",").map((x) => x.trim()))].filter((k) => Object.hasOwn(STATION_AREAS, k));
+  return keys.length > 0 ? keys : null;
+}
+
 /** kind を省略すると売買（従来どおり）。賃貸は既定条件が違う（DEFAULT_RENT_PICK_FILTERS） */
 export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string) => boolean, kind: PickKind = "sale"): PickFilters {
   const d = defaultPickFilters(kind);
@@ -233,6 +261,7 @@ export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string
     // 建物の階数の下限。**既定は絞らない**。floors=3 のように指定したときだけ効く
     buildingFloorsMin: kind === "rent" ? nonPositiveToNull(num(params, "floors") ?? d.buildingFloorsMin) : null,
     municipalities: parseMunicipalities(params, isAreaCode),
+    stationAreas: parseStationAreas(params),
     freshOnly: bool(params, "fresh", d.freshOnly),
     freshDays: d.freshDays,
   };
@@ -284,6 +313,11 @@ export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: 
   }
 
   if (f.municipalities && (!row.ward_code || !f.municipalities.includes(row.ward_code))) return false;
+
+  if (f.stationAreas) {
+    const name = row.station_name;
+    if (!name || !f.stationAreas.some((k) => STATION_AREAS[k]?.stations.includes(name))) return false;
+  }
 
   if (f.freshOnly) {
     const since = addDaysStr(today, -f.freshDays);

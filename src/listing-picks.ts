@@ -212,6 +212,7 @@ export async function buildListingPicks(env: Env, url: URL) {
       tatami: filters.ldkTatamiMin,
       floors: filters.buildingFloorsMin,
       muni: filters.municipalities,
+      area: filters.stationAreas,
       fresh: filters.freshOnly,
       freshDays: filters.freshDays,
       sort,

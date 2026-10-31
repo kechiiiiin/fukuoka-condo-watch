@@ -11,6 +11,8 @@ import {
   normalizeBuildingName,
   parseFloorPlan,
   parseMunicipalities,
+  parseStationAreas,
+  STATION_AREAS,
   parsePickFilters,
   parsePickSort,
   pickRetention,
@@ -176,6 +178,34 @@ test("市区町村の絞り込み: muni クエリで対象コードだけ通す"
   const today = "2026-09-14";
   assert.equal(matchesConditions(row({ ward_code: "40132" }), f, 2026, today), false);
   assert.equal(matchesConditions(row({ ward_code: "40131" }), f, 2026, today), true);
+});
+
+test("見ているエリア: 駅名の完全一致で絞る（空港線オンで井尻は除かれる・全部オフは変化なし・未知キー無視）", () => {
+  const today = "2026-09-14";
+  const none = parsePickFilters(new URLSearchParams(), () => true);
+  assert.equal(none.stationAreas, null);
+  assert.equal(matchesConditions(row({ station_name: "井尻" }), none, 2026, today), true, "全部オフ = 絞り込みなし");
+  assert.equal(matchesConditions(row({ station_name: null }), none, 2026, today), true);
+
+  const airport = parsePickFilters(new URLSearchParams("area=airport"), () => true);
+  assert.deepEqual(airport.stationAreas, ["airport"]);
+  assert.equal(matchesConditions(row({ station_name: "天神" }), airport, 2026, today), true);
+  assert.equal(matchesConditions(row({ station_name: "筑前前原" }), airport, 2026, today), true);
+  assert.equal(matchesConditions(row({ station_name: "井尻" }), airport, 2026, today), false);
+  assert.equal(matchesConditions(row({ station_name: "博多駅前" }), airport, 2026, today), false, "完全一致のみ");
+  assert.equal(matchesConditions(row({ station_name: null }), airport, 2026, today), false);
+
+  const both = parsePickFilters(new URLSearchParams("area=airport,ijiri"), () => true);
+  assert.equal(matchesConditions(row({ station_name: "井尻" }), both, 2026, today), true, "和集合");
+  assert.equal(matchesConditions(row({ station_name: "南福岡" }), both, 2026, today), false);
+
+  assert.equal(parseStationAreas(new URLSearchParams("area=bogus")), null, "未知キーだけなら絞らない");
+  assert.deepEqual(parseStationAreas(new URLSearchParams("area=bogus,minamifukuoka,toString")), ["minamifukuoka"]);
+  assert.equal(parseStationAreas(new URLSearchParams("area=")), null);
+
+  // 他条件との AND
+  assert.equal(matchesConditions(row({ station_name: "天神", area_sqm: 40 }), airport, 2026, today), false);
+  assert.equal(STATION_AREAS.airport!.stations.length, 20);
 });
 
 test("クエリパラメータで条件を上書きできる", () => {
