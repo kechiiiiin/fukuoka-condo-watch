@@ -387,11 +387,11 @@ const HTML = `<!doctype html>
       document.getElementById("asof").textContent = "データ取得 " + esc(d.today) + "時点。" +
         (d.coverage && d.coverage.lastCompleteAt ? "最終の完走クロール: " + esc(d.coverage.lastCompleteAt) : "完走したクロールはまだありません") +
         (d.coverage && d.coverage.latestRun ? "（直近の起動: " + esc(d.coverage.latestRun.crawlDate) + " " + esc(d.coverage.latestRun.status) + "）" : "");
+      // 注意事項は賃貸だけ表示（既定は閉じた <details>）。売買（中古）タブでは出さない
       var notesHtml = (d.notes || []).map(function (t) { return '<div class="notice">' + esc(t) + "</div>"; }).join("");
-      // 賃貸だけ注意事項を折りたたむ（既定は閉じる）。売買は今までどおり常に開いたまま表示
       document.getElementById("notices").innerHTML = (IS_RENT && d.notes && d.notes.length)
         ? '<details class="notices-details"><summary>注意事項（' + d.notes.length + '件）</summary>' + notesHtml + '</details>'
-        : notesHtml;
+        : "";
       if (d.coverage && d.coverage.areas && d.coverage.areas.length) {
         var missing = d.coverage.areas.filter(function (a) { return a.status !== "done"; });
         document.getElementById("coverage").innerHTML = missing.length === 0

@@ -264,13 +264,13 @@ test("画面（賃貸）: 注意事項は <details> で折りたたまれ、件�
   assert.ok(!/<details[^>]*\bopen\b/.test(notices), "既定は閉じた状態（open 属性を付けない）");
 });
 
-test("画面（売買）: 注意事項は折りたたまず、これまでどおりそのまま表示する", async () => {
+test("画面（売買）: 注意事項（d.notes）は表示しない", async () => {
   const h = harness("?kind=sale", () => PAYLOAD("sale"));
   h.run();
   await flush();
   const notices = h.ids.get("notices")!.innerHTML;
-  assert.ok(!notices.includes("<details"), "売買では <details> を使わない");
-  assert.equal(notices, '<div class="notice">テストの注記</div>', "売買は従来どおりの表示");
+  assert.equal(notices, "", "売買では d.notes を出さない");
+  assert.ok(!notices.includes("テストの注記"), "注記の本文が出ない");
 });
 
 // 読み込み失敗時のエラー notice は賃貸でも折りたたまない（引き続き即見える状態にする）
