@@ -1,7 +1,7 @@
 // Mac 側クローラの共通部品（設定の読み込み・多重起動よけのロック・Worker への取り込み要求）。
-// scripts/suumo-crawl-local.ts（一覧の周回）と scripts/suumo-chintai-detail.ts（賃貸の詳細ページ）が使う。
+// scripts/suumo-crawl-local.ts（一覧の周回）と scripts/suumo-chintai-detail.ts（賃貸の詳細ページ）・scripts/suumo-coords.ts（座標）が使う。
 //
-// ⚠️ **同じロックファイル**を使うこと（中古・新築・賃貸・ペット・メゾネット・詳細ページの 6 本が
+// ⚠️ **同じロックファイル**を使うこと（中古・新築・賃貸・ペット・メゾネット・詳細ページ・座標の 7 本が
 //    同時に SUUMO を叩かないため）。後から起きた方が最大 CRAWL.localLockWaitMs 待つ。
 // ⚠️ トークンは表示しない・ログに出さない。
 

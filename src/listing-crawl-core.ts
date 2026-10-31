@@ -269,6 +269,19 @@ export function localStateKey(kind: CrawlKind): string {
  */
 export const CHINTAI_DETAIL_MAX_PER_RUN = 60;
 
+/**
+ * 座標の周回（scripts/suumo-coords.ts）の 1 回あたりの上限。**賃貸の詳細ページの周回と同じ値**にしてある
+ * （ページ間隔も同じ crawlSettings().intervalMs = 本番 60 秒以上）。60 件 × 61 秒 ≒ 1 時間。超えた分は次回へ。
+ */
+export const COORD_MAX_PER_RUN = CHINTAI_DETAIL_MAX_PER_RUN;
+
+/**
+ * 座標を先に取る「条件に近い」物件の線（2026-10-31 の依頼）: 面積 60㎡以上・3 部屋以上・
+ * 売買は 5,500 万円以下・賃貸は月 18 万円以下。これに当たるものを先に、残りはその後に取る。
+ * 画面の既定条件（DEFAULT_PICK_FILTERS 等）より広めに取ってあるのは、画面で条件を少し緩めても座標が付いているように。
+ */
+export const COORD_PRIORITY = { areaMin: 60, roomsMin: 3, saleMaxYen: 55_000_000, rentMaxYen: 180_000 } as const;
+
 /** 取り込みで受け取る 1 件（中古 = ListingRecord・新築 = NewListingRecord。kind で決まる） */
 export type AnyListingRecord = ListingRecord | NewListingRecord;
 
@@ -300,7 +313,23 @@ export type IngestRequest =
       kind: CrawlKind;
       fetchedAt: string;
       results: ChintaiDetailResult[];
-    };
+    }
+  /**
+   * 座標を取る相手をもらう（中古・賃貸の掲載中のうち coord_fetched_at IS NULL のもの。条件に近いものが先）。
+   * kind は見ない（中古・賃貸の両方をまとめて返し、各要素の kind で分ける）。
+   */
+  | { op: "coord_targets"; kind: CrawlKind; limit: number }
+  /** 座標を反映する（UPDATE だけ）。読めなかった物件も lat/lng = null で送る（取り直さない印） */
+  | { op: "coord_results"; kind: CrawlKind; fetchedAt: string; results: CoordResult[] };
+
+/** 座標 1 件。kind で取得元（sale = 中古 suumo:ms-chuko / rent = 賃貸 suumo:chintai）を分ける */
+export interface CoordResult {
+  externalId: string;
+  kind: "sale" | "rent";
+  /** 読めなければ lat・lng とも null（片方だけ入ることは無い） */
+  lat: number | null;
+  lng: number | null;
+}
 
 /**
  * 詳細ページ 1 件から Mac が送ってくる結果（src/suumo-chintai.ts の ChintaiDetail のうち D1 に入れる分）。
@@ -398,6 +427,7 @@ export function listingUpsertRow(r: ListingRecord, areaCode: string): ListingUps
  * sale では常に NULL / 0 になる（JSON に鍵が無ければ json_extract は NULL。pets・mais は 0 を入れて渡す）。
  *
  * ⚠️ **ldk_tatami・detail_fetched_at はここで触らない**（詳細ページの周回が入れる値で、毎週の一覧クロールで消したくない）。
+ * ⚠️ **lat・lng・coord_fetched_at もここで触らない**（座標の周回 UPDATE_COORDS_SQL が入れる値。0009・2026-10-31）。
  * ⚠️ **building_floors / room_floor も詳細で補った値を毎週消さない**: 一覧に値があれば一覧を正にし、
  *    一覧が NULL のときだけ今ある値（詳細由来）を残す（COALESCE(excluded, listings)。2026-09-27）。
  * ⚠️ **maisonette は毎週 0 に戻す**（二値・0008）。3 周目（nj_113）が同じ日に走って 1 を立て直す前提。
@@ -483,6 +513,49 @@ UPDATE listings SET ldk_tatami = (
   detail_fetched_at = ?2
 WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
 
+/**
+ * 座標の結果 → UPDATE_COORDS_SQL に渡す JSON 1 行ぶん（鍵は SQL の json_extract と 1:1）。
+ * lat・lng は**両方そろっているときだけ**入れる（片方だけの座標は使い物にならないので両方 null）。
+ */
+export function coordUpdateRow(r: CoordResult): { id: string; lat: number | null; lng: number | null } {
+  const ok = r.lat !== null && r.lng !== null;
+  return { id: r.externalId, lat: ok ? r.lat : null, lng: ok ? r.lng : null };
+}
+
+/**
+ * 座標を listings に反映する UPDATE（?1 = 取得元・?2 = 取得時刻・?3 = coordUpdateRow の配列 JSON）。
+ * ⚠️ 読めなかった（null）ときも coord_fetched_at は入れる（毎回取り直さないため）。
+ * ⚠️ 既に入っている座標を null で消さない（COALESCE。取り直しで読めなかったときに前の値を残す）。
+ * ⚠️ 一覧の UPSERT（UPSERT_LISTINGS_SQL）は lat・lng・coord_fetched_at を触らない。座標を書くのはここだけ。
+ */
+export const UPDATE_COORDS_SQL = `
+UPDATE listings SET
+  lat = COALESCE((
+    SELECT json_extract(j.value, '$.lat') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ), listings.lat),
+  lng = COALESCE((
+    SELECT json_extract(j.value, '$.lng') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ), listings.lng),
+  coord_fetched_at = ?2
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
+
+/**
+ * 座標を取る相手（掲載中・未取得・URL あり）。?1 = 中古の取得元・?2 = 賃貸の取得元・
+ * ?3〜?6 = COORD_PRIORITY（面積下限・部屋数下限・売買の上限円・賃貸の上限円）。
+ * 並びは「条件に近いもの（priority = 1）が先」→ 古く見えたものが先（first_seen ASC。賃貸の詳細ページの周回と同じく、
+ * 新着優先にすると上限で切られた古い候補がずっと後回しになるため）。
+ * 部屋数は先頭 1 文字（"3LDK" → 3）で見る（DETAIL_TARGETS_SQL と同じ流儀）。
+ */
+export const COORD_TARGETS_SQL = `
+SELECT external_id, url, CASE WHEN source = ?2 THEN 'rent' ELSE 'sale' END AS kind,
+  CASE WHEN area_sqm IS NOT NULL AND area_sqm >= ?3
+        AND floor_plan IS NOT NULL AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
+        AND ((source = ?1 AND current_price <= ?5) OR (source = ?2 AND current_price <= ?6))
+       THEN 1 ELSE 0 END AS priority
+FROM listings
+WHERE source IN (?1, ?2) AND delisted_on IS NULL AND coord_fetched_at IS NULL AND url IS NOT NULL
+ORDER BY priority DESC, first_seen ASC, external_id`;
+
 /** 一覧の周回（カーソル・回を持つ）の要求だけ。詳細ページ（detail_*）は別の流れなので含まない */
 export type PagedIngestRequest = Extract<IngestRequest, { op: "begin" | "page" | "end" }>;
 
@@ -502,11 +575,16 @@ export interface IngestResponse {
   lastFetchAt?: string | null;
   /** 送ったページが既に反映済み・別の位置だった（二重送信）。next から続ける */
   stale?: boolean;
-  /** op = "detail_targets" の答え。詳細ページを取る相手（全条件を通った最終候補のうち未取得のもの） */
-  targets?: { externalId: string; url: string }[];
-  /** op = "detail_targets" で、まだ取っていない候補が全部で何件あるか（上限で切る前の数） */
+  /**
+   * op = "detail_targets" / "coord_targets" の答え。取りに行く相手。
+   * kind は coord_targets のときだけ付く（sale = 中古の詳細ページ / rent = 賃貸の周辺環境ページ）
+   */
+  targets?: { externalId: string; url: string; kind?: "sale" | "rent"; priority?: number }[];
+  /** op = "detail_targets" / "coord_targets" で、まだ取っていない相手が全部で何件あるか（上限で切る前の数） */
   remaining?: number;
-  /** op = "detail_results" で実際に更新した件数 */
+  /** op = "coord_targets" で、remaining のうち「条件に近い」もの（先に取る分）が何件あるか */
+  remainingPriority?: number;
+  /** op = "detail_results" / "coord_results" で実際に更新した件数 */
   updated?: number;
   detail?: string;
   error?: string;
@@ -742,6 +820,28 @@ export function parseIngestRequest(body: unknown): IngestRequest {
         };
       });
       return { op: "detail_results", kind, fetchedAt, results };
+    }
+    case "coord_targets":
+      return { op: "coord_targets", kind, limit: int(body.limit, 1, COORD_MAX_PER_RUN) };
+    case "coord_results": {
+      const fetchedAt = body.fetchedAt;
+      if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
+      if (!Array.isArray(body.results) || body.results.length > COORD_MAX_PER_RUN) throw new Error("results が不正");
+      const results = body.results.map((x): CoordResult => {
+        if (!isObj(x)) throw new Error("results の要素が不正");
+        const externalId = x.externalId;
+        if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
+        if (x.kind !== "sale" && x.kind !== "rent") throw new Error("results の kind が不正");
+        const lat = x.lat ?? null;
+        const lng = x.lng ?? null;
+        if (lat === null || lng === null) return { externalId, kind: x.kind, lat: null, lng: null };
+        // 日本の範囲だけ（src/listing-coords.ts の plausibleLatLng と同じ線）。外れたら要求ごと弾く（Mac 側の読み違いに気づくため）
+        if (typeof lat !== "number" || typeof lng !== "number" || !(lat >= 20 && lat <= 46) || !(lng >= 122 && lng <= 154)) {
+          throw new Error("lat / lng が不正");
+        }
+        return { externalId, kind: x.kind, lat, lng };
+      });
+      return { op: "coord_results", kind, fetchedAt, results };
     }
     case "end": {
       const runId = runOfKind(body.runId);

@@ -12,11 +12,17 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import {
+  COORD_PRIORITY,
+  COORD_TARGETS_SQL,
+  type CoordResult,
+  coordUpdateRow,
   detailUpdateRow,
   listingUpsertRow,
+  UPDATE_COORDS_SQL,
   UPDATE_DETAIL_SQL,
   UPSERT_LISTINGS_SQL,
 } from "../src/listing-crawl-core.ts";
+import { SUUMO_SOURCE_ID } from "../src/suumo.ts";
 import { CHINTAI_SOURCE_ID } from "../src/suumo-chintai.ts";
 import type { ListingRecord } from "../src/listing-types.ts";
 
@@ -174,4 +180,119 @@ test("0008 のマイグレーション: 既存の NULL は 0 に埋まる", () =
   ).run(CHINTAI_SOURCE_ID);
   for (const f of files.filter((x) => x.startsWith("0008"))) applyMigration(db, f);
   assert.equal(read(db, "1").maisonette, 0, "移行後は「メゾネットでない」の 0");
+});
+
+// ---------------------------------------------------------------------------
+// 座標（0009・2026-10-31）: 一覧の毎日の UPSERT が lat / lng / coord_fetched_at を消さないこと
+// ---------------------------------------------------------------------------
+
+interface CoordRow {
+  lat: number | null;
+  lng: number | null;
+  coord_fetched_at: string | null;
+}
+const readCoord = (db: DatabaseSync, id: string, source = CHINTAI_SOURCE_ID): CoordRow => {
+  const r = db.prepare("SELECT lat, lng, coord_fetched_at FROM listings WHERE source = ? AND external_id = ?").get(source, id) as unknown as CoordRow;
+  return { ...r };
+};
+function applyCoords(db: DatabaseSync, source: string, fetchedAt: string, results: CoordResult[]): void {
+  db.prepare(UPDATE_COORDS_SQL).run(source, fetchedAt, JSON.stringify(results.map(coordUpdateRow)));
+}
+const saleRecord = (over: Partial<ListingRecord> = {}): ListingRecord => ({
+  externalId: "21806428",
+  kind: "sale",
+  price: 45_000_000,
+  url: "https://suumo.jp/ms/chuko/fukuoka/sc_fukuokashichuo/nc_21806428/",
+  buildingName: "架空マンション",
+  buildingYear: 2010,
+  areaSqm: 72,
+  floorPlan: "3LDK",
+  ...over,
+});
+function upsertSale(db: DatabaseSync, date: string, records: ListingRecord[]): void {
+  const rows = records.map((r) => listingUpsertRow(r, "40133"));
+  db.prepare(UPSERT_LISTINGS_SQL).run(SUUMO_SOURCE_ID, date, `${SUUMO_SOURCE_ID}:${date}`, JSON.stringify(rows), "sale");
+}
+
+test("座標: 反映される・読めなくても coord_fetched_at が入る・一覧の再クロールで消えない（中古・賃貸）", () => {
+  const db = freshDb();
+  upsertList(db, "2026-10-31", [rentRecord(), rentRecord({ externalId: "100437646093" })]);
+  upsertSale(db, "2026-10-31", [saleRecord()]);
+  assert.deepEqual(readCoord(db, "100437646092"), { lat: null, lng: null, coord_fetched_at: null });
+
+  applyCoords(db, CHINTAI_SOURCE_ID, "2026-10-31T11:00:00Z", [
+    { externalId: "100437646092", kind: "rent", lat: 33.5735, lng: 130.3914 },
+    { externalId: "100437646093", kind: "rent", lat: null, lng: null },
+  ]);
+  applyCoords(db, SUUMO_SOURCE_ID, "2026-10-31T11:00:00Z", [{ externalId: "21806428", kind: "sale", lat: 33.578, lng: 130.4031 }]);
+  assert.deepEqual(readCoord(db, "100437646092"), { lat: 33.5735, lng: 130.3914, coord_fetched_at: "2026-10-31T11:00:00Z" });
+  assert.deepEqual(readCoord(db, "100437646093"), { lat: null, lng: null, coord_fetched_at: "2026-10-31T11:00:00Z" }, "読めなくても取りに行った印は入る");
+  assert.deepEqual(readCoord(db, "21806428", SUUMO_SOURCE_ID), { lat: 33.578, lng: 130.4031, coord_fetched_at: "2026-10-31T11:00:00Z" });
+
+  // 翌日の一覧クロール（値下げ・住所の表記ゆれ・階の変化があっても座標は触らない）
+  upsertList(db, "2026-11-01", [rentRecord({ price: 120_000, address: "福岡県福岡市中央区平尾浄水町" }), rentRecord({ externalId: "100437646093" })]);
+  upsertSale(db, "2026-11-01", [saleRecord({ price: 44_000_000 })]);
+  assert.deepEqual(readCoord(db, "100437646092"), { lat: 33.5735, lng: 130.3914, coord_fetched_at: "2026-10-31T11:00:00Z" }, "賃貸の座標が残る");
+  assert.deepEqual(readCoord(db, "100437646093"), { lat: null, lng: null, coord_fetched_at: "2026-10-31T11:00:00Z" }, "取りに行った印も残る（取り直さない）");
+  assert.deepEqual(readCoord(db, "21806428", SUUMO_SOURCE_ID), { lat: 33.578, lng: 130.4031, coord_fetched_at: "2026-10-31T11:00:00Z" }, "中古の座標が残る");
+
+  // 詳細ページの周回（畳数）も座標を触らない
+  applyDetail(db, "2026-11-01T16:00:00Z", [{ externalId: "100437646092", ldkTatami: 16, roomFloor: 2, buildingFloors: 5, maisonette: false }]);
+  assert.equal(readCoord(db, "100437646092").lat, 33.5735);
+
+  // 座標の取り直しで読めなかった（null）ときに、前の座標を消さない
+  applyCoords(db, CHINTAI_SOURCE_ID, "2026-11-02T11:00:00Z", [{ externalId: "100437646092", kind: "rent", lat: null, lng: null }]);
+  assert.deepEqual(readCoord(db, "100437646092"), { lat: 33.5735, lng: 130.3914, coord_fetched_at: "2026-11-02T11:00:00Z" });
+  // 取得元が違う行は触らない（同じ external_id でも）
+  applyCoords(db, SUUMO_SOURCE_ID, "2026-11-02T11:00:00Z", [{ externalId: "100437646093", kind: "sale", lat: 33.1, lng: 130.1 }]);
+  assert.deepEqual(readCoord(db, "100437646093"), { lat: null, lng: null, coord_fetched_at: "2026-10-31T11:00:00Z" });
+});
+
+test("座標を取る相手: 掲載中・未取得だけ・条件に近いもの（60㎡以上・3部屋以上・売買5,500万以下・賃貸18万以下）が先", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s-far", price: 60_000_000 }), // 5,500 万超 → 後
+    saleRecord({ externalId: "s-near", price: 55_000_000 }), // ちょうど → 先
+  ]);
+  upsertSale(db, "2026-10-02", [saleRecord({ externalId: "s-small", areaSqm: 59.9 })]); // 60㎡未満 → 後
+  upsertList(db, "2026-10-03", [
+    rentRecord({ externalId: "r-near", price: 180_000 }), // ちょうど → 先
+    rentRecord({ externalId: "r-2ldk", floorPlan: "2LDK" }), // 2 部屋 → 後
+    rentRecord({ externalId: "r-done" }),
+    rentRecord({ externalId: "r-gone" }),
+    rentRecord({ externalId: "r-nourl", url: undefined }),
+  ]);
+  applyCoords(db, CHINTAI_SOURCE_ID, "2026-10-31T11:00:00Z", [{ externalId: "r-done", kind: "rent", lat: 33.5, lng: 130.4 }]);
+  db.prepare("UPDATE listings SET delisted_on = '2026-10-30' WHERE external_id = 'r-gone'").run();
+
+  const p = COORD_PRIORITY;
+  const rows = db
+    .prepare(COORD_TARGETS_SQL)
+    .all(SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, p.areaMin, p.roomsMin, p.saleMaxYen, p.rentMaxYen) as unknown as {
+    external_id: string;
+    kind: string;
+    priority: number;
+  }[];
+  assert.deepEqual(
+    rows.map((r) => [r.external_id, r.kind, r.priority]),
+    [
+      ["s-near", "sale", 1],
+      ["r-near", "rent", 1],
+      ["s-far", "sale", 0],
+      ["s-small", "sale", 0],
+      ["r-2ldk", "rent", 0],
+    ],
+    "条件に近いものが先・その中は古く見えたものが先。取得済み・掲載終了・URL なしは返らない",
+  );
+});
+
+test("0009 のマイグレーション: 既存の行は座標なし（NULL）のまま足される", () => {
+  const db = new DatabaseSync(":memory:");
+  const files = migrationFiles();
+  for (const f of files.filter((x) => !x.startsWith("0009"))) applyMigration(db, f);
+  db.prepare(
+    `INSERT INTO listings (source, external_id, kind, first_seen, last_seen, current_price) VALUES (?, '1', 'rent', '2026-09-01', '2026-09-01', 100000)`,
+  ).run(CHINTAI_SOURCE_ID);
+  for (const f of files.filter((x) => x.startsWith("0009"))) applyMigration(db, f);
+  assert.deepEqual(readCoord(db, "1"), { lat: null, lng: null, coord_fetched_at: null });
 });

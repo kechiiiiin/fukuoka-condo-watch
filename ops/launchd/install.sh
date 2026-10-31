@@ -1,17 +1,18 @@
 #!/bin/bash
-# SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。6 本:
+# SUUMO クロール（Mac 側）を launchd に登録する。何度実行してもよい（入れ直し）。7 本:
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo           … 中古・毎日 04:15
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku … 新築・毎週日曜 09:00（2026-09-22〜）
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai   … 賃貸・毎日 01:00（2026-09-26〜・2026-10-05 に毎週土曜から毎日へ）
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets … 賃貸のペット相談可（2 周目）・毎日 03:00
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette … 賃貸のメゾネット（3 周目）・毎日 03:45
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail … 賃貸の詳細ページ（LDK 畳数・階・メゾネット）・毎日 16:00
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-coords    … 掲載（中古・賃貸）の座標・毎日 11:00 と 17:15（2026-10-31〜）
 # ⚠️ 賃貸の 2〜4 本目は 1 周目（01:00）より後でなければならない（1 周目の upsert が印を上書きするため）。
-# 6 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
+# 7 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
 # 2026-10-20 賃貸を先に（朝に賃貸が取り終わっているように）。中古は賃貸 1〜3 周目の後の 04:15 開始・新築は中古と重ならない日曜 09:00 へ。
 #
-#   bash ops/launchd/install.sh                    # 6 本とも登録（~/Library/LaunchAgents に置いて bootstrap）
-#   bash ops/launchd/install.sh --only chintai     # 1 本だけ（chuko / shinchiku / chintai / chintai_pets / chintai_maisonette / chintai_detail）
+#   bash ops/launchd/install.sh                    # 7 本とも登録（~/Library/LaunchAgents に置いて bootstrap）
+#   bash ops/launchd/install.sh --only chintai     # 1 本だけ（chuko / shinchiku / chintai / chintai_pets / chintai_maisonette / chintai_detail / coords）
 #   bash ops/launchd/install.sh --dry-run          # 埋めた plist を表示して lint するだけ（登録しない）
 #
 # 前提: ~/.config/fukuoka-condo-watch/env（ops/setup-ingest-token.sh が作る）と npm ci 済みの node_modules
@@ -35,14 +36,15 @@ done
 die() { echo "✗ $*" >&2; exit 1; }
 
 case "$ONLY" in
-  "") LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo" "com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail") ;;
+  "") LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo" "com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette" "com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail" "com.kechiiiiin.fukuoka-condo-watch.suumo-coords") ;;
   chuko) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo") ;;
   shinchiku) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-shinchiku") ;;
   chintai) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-chintai") ;;
   chintai_pets) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets") ;;
   chintai_maisonette) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette") ;;
   chintai_detail) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail") ;;
-  *) die "--only には chuko / shinchiku / chintai / chintai_pets / chintai_maisonette / chintai_detail のいずれかを" ;;
+  coords) LABELS=("com.kechiiiiin.fukuoka-condo-watch.suumo-coords") ;;
+  *) die "--only には chuko / shinchiku / chintai / chintai_pets / chintai_maisonette / chintai_detail / coords のいずれかを" ;;
 esac
 
 # node の実体を探す。
@@ -112,6 +114,7 @@ for LABEL in "${LABELS[@]}"; do
     *.suumo-chintai-pets) WHEN="毎日 03:00"; LOG="suumo-chintai-pets-crawl.out.log" ;;
     *.suumo-chintai-maisonette) WHEN="毎日 03:45"; LOG="suumo-chintai-maisonette-crawl.out.log" ;;
     *.suumo-chintai-detail) WHEN="毎日 16:00"; LOG="suumo-chintai-detail.out.log" ;;
+    *.suumo-coords) WHEN="毎日 11:00・17:15"; LOG="suumo-coords.out.log" ;;
     *.suumo-chintai)   WHEN="毎日 01:00"; LOG="suumo-chintai-crawl.out.log" ;;
     *) WHEN="毎日 04:15"; LOG="suumo-crawl.out.log" ;;
   esac
@@ -124,4 +127,4 @@ if [ "$DRY" = 1 ]; then
   echo "（--dry-run: 登録していない）"
   exit 0
 fi
-echo "  止める:             bash ops/launchd/uninstall.sh（--only chuko|shinchiku|chintai|chintai_pets|chintai_maisonette|chintai_detail で 1 本だけ）"
+echo "  止める:             bash ops/launchd/uninstall.sh（--only chuko|shinchiku|chintai|chintai_pets|chintai_maisonette|chintai_detail|coords で 1 本だけ）"

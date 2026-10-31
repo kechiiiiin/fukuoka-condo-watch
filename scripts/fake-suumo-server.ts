@@ -468,6 +468,33 @@ export function renderFakeChintaiDetail(bc: string, day: number): { status: numb
   return { status: 404, html: "<html><body>not found</body></html>" };
 }
 
+/**
+ * 座標の周回（scripts/suumo-coords.ts）向けの架空ページ。骨格は 2026-10-31 に本番で 1 件ずつ見たものに合わせてある:
+ *   中古の詳細（/ms/chuko/fukuoka/sc_<slug>/nc_<id>/）… `initIdo : '33.57…'` / `initKeido : '130.40…'`
+ *   賃貸の周辺環境（/chintai/jnc_<掲載 ID>/kankyo/?bc=<部屋 ID>）… <script id="js-gmapData"> の JSON
+ * 座標は ID から決まる福岡市中心部の近く（同じ ID なら毎回同じ）。ID の末尾が 9 の物件は「地図が無い」（座標が読めない）ページにする。
+ */
+export function renderFakeCoordsPage(kind: "sale" | "rent", id: string): { status: number; html: string } {
+  const n = Number(id.replace(/\D/g, "").slice(-6) || "0");
+  const lat = (33.55 + (n % 100) * 0.0008).toFixed(13);
+  const lng = (130.36 + (Math.floor(n / 100) % 100) * 0.0008).toFixed(12);
+  const noMap = id.endsWith("9");
+  if (kind === "sale") {
+    return {
+      status: 200,
+      html: `<!doctype html><html><head><meta charset="utf-8"><title>【SUUMO】架空の物件 ${id} 中古マンション物件情報</title></head><body>
+<h2>物件概要</h2>${noMap ? "" : `<script>var mapParam = { initIdo : '${lat}', initKeido : '${lng}', zoom : 16 };</script>`}
+</body></html>`,
+    };
+  }
+  return {
+    status: 200,
+    html: `<!doctype html><html><head><meta charset="utf-8"><title>【SUUMO】架空の部屋（${id}）- 周辺環境</title></head><body>
+<h2>周辺環境</h2>${noMap ? "" : `<script id="js-gmapData" type="application/json">{ "center": { "lat": ${lat}, "lng": ${lng} }, "zoom": 16, "markers": [ { "type": "room", "lat": ${lat}, "lng": ${lng} } ] }</script>`}
+</body></html>`,
+  };
+}
+
 function main(): void {
   const port = Number(process.env.FAKE_SUUMO_PORT ?? 8790);
   let day = 1;
@@ -488,6 +515,16 @@ function main(): void {
       return send(200, JSON.stringify({ mode }), "application/json");
     }
     if (u.pathname === "/__stats") return send(200, JSON.stringify({ day, mode, hits }), "application/json");
+    // 座標の周回: 中古の詳細ページ・賃貸の周辺環境ページ
+    const saleDetail = /^\/ms\/chuko\/fukuoka\/sc_[a-z]+\/nc_(\d+)\/$/.exec(u.pathname);
+    const kankyo = /^\/chintai\/jnc_\d+\/kankyo\/$/.test(u.pathname);
+    if (saleDetail || kankyo) {
+      hits++;
+      if (mode === "403") return send(403, "forbidden");
+      if (mode === "429") return send(429, "too many requests");
+      const c = saleDetail ? renderFakeCoordsPage("sale", saleDetail[1] ?? "") : renderFakeCoordsPage("rent", u.searchParams.get("bc") ?? "");
+      return send(c.status, c.html);
+    }
     // 賃貸の詳細ページ（LDK の畳数）
     const detail = /^\/chintai\/jnc_\d+\/$/.exec(u.pathname);
     if (detail) {

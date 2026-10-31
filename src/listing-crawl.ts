@@ -42,6 +42,10 @@ import { checkIngestToken } from "./ingest-auth";
 import {
   type AnyListingRecord,
   type ChintaiDetailResult,
+  COORD_PRIORITY,
+  COORD_TARGETS_SQL,
+  type CoordResult,
+  coordUpdateRow,
   CRAWL,
   CRAWL_KINDS,
   type CrawlKind,
@@ -58,6 +62,7 @@ import {
   type PageOutcome,
   type PagedIngestRequest,
   parseIngestRequest,
+  UPDATE_COORDS_SQL,
   UPDATE_DETAIL_SQL,
   UPSERT_LISTINGS_SQL,
 } from "./listing-crawl-core";
@@ -441,6 +446,9 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   // 詳細ページは一覧の周回とは別の流れ（カーソルも回も持たない・UPDATE だけ）
   if (r.op === "detail_targets") return ingestJson(await detailTargets(db, r.limit));
   if (r.op === "detail_results") return ingestJson(await detailResults(db, r.fetchedAt, r.results));
+  // 座標（中古・賃貸の両方）。これも回・カーソルを持たない UPDATE だけの流れ
+  if (r.op === "coord_targets") return ingestJson(await coordTargets(db, r.limit));
+  if (r.op === "coord_results") return ingestJson(await coordResults(db, r.fetchedAt, r.results));
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
   if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
   if (r.kind === "chintai") return ingestKind(db, env, r, new ChintaiSource(), CHINTAI_STORE, now);
@@ -517,6 +525,44 @@ async function detailResults(
   const json = JSON.stringify(results.map(detailUpdateRow));
   const res = await db.prepare(UPDATE_DETAIL_SQL).bind(CHINTAI_SOURCE_ID, fetchedAt, json).run();
   return { ok: true, status: "running", updated: res.meta?.changes ?? results.length };
+}
+
+// ---------------------------------------------------------------------------
+// 座標（中古 = 詳細ページの initIdo / 賃貸 = 周辺環境ページの js-gmapData）。掲載中で未取得のものを、条件に近いものから
+// ---------------------------------------------------------------------------
+
+/** 座標を取る相手を limit 件まで返す。SQL と並び順は src/listing-crawl-core.ts の COORD_TARGETS_SQL */
+async function coordTargets(db: D1Database, limit: number): Promise<IngestResponse> {
+  const p = COORD_PRIORITY;
+  const bind = [SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, p.areaMin, p.roomsMin, p.saleMaxYen, p.rentMaxYen] as const;
+  const rows = await db
+    .prepare(`${COORD_TARGETS_SQL} LIMIT ?7`)
+    .bind(...bind, limit)
+    .all<{ external_id: string; url: string; kind: "sale" | "rent"; priority: number }>();
+  const total = await db
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(priority), 0) AS p FROM (${COORD_TARGETS_SQL})`)
+    .bind(...bind)
+    .first<{ n: number; p: number }>();
+  return {
+    ok: true,
+    status: "running",
+    targets: rows.results.map((r) => ({ externalId: r.external_id, url: r.url, kind: r.kind, priority: r.priority })),
+    remaining: total?.n ?? rows.results.length,
+    remainingPriority: total?.p ?? 0,
+  };
+}
+
+/** 座標を反映する（UPDATE だけ・取得元ごとに 1 文を 1 回の batch で）。読めなかった物件にも coord_fetched_at を入れる */
+async function coordResults(db: D1Database, fetchedAt: string, results: CoordResult[]): Promise<IngestResponse> {
+  const stmts: D1PreparedStatement[] = [];
+  for (const [kind, sourceId] of [["sale", SUUMO_SOURCE_ID], ["rent", CHINTAI_SOURCE_ID]] as const) {
+    const rows = results.filter((r) => r.kind === kind).map(coordUpdateRow);
+    if (rows.length > 0) stmts.push(db.prepare(UPDATE_COORDS_SQL).bind(sourceId, fetchedAt, JSON.stringify(rows)));
+  }
+  if (stmts.length === 0) return { ok: true, status: "running", updated: 0 };
+  const res = await db.batch(stmts);
+  const updated = res.reduce((s, r) => s + (r.meta?.changes ?? 0), 0);
+  return { ok: true, status: "running", updated };
 }
 
 async function ingestKind<R extends AnyListingRecord>(
