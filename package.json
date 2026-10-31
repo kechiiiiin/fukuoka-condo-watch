@@ -17,7 +17,9 @@
     "estat": "tsx scripts/estat.ts",
     "bus:build": "node --import tsx scripts/build-bus-access.ts",
     "bus:check": "node --import tsx scripts/check-bus-access.ts",
-    "bus:preview": "node --import tsx scripts/preview-bus-access.ts"
+    "bus:preview": "node --import tsx scripts/preview-bus-access.ts",
+    "nnr:collect": "node --import tsx scripts/collect-nnr-routes.ts",
+    "nnr:check": "node --import tsx scripts/check-nnr-routes.ts"
   },
   "type": "module",
   "devDependencies": {
