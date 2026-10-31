@@ -1,7 +1,10 @@
 // 「条件に合う新着・掲載中の物件」ビュー（src/listing-picks.ts）のうち D1 に触らない純粋関数のテスト。
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { busStopIndex } from "../src/bus-access.ts";
 import {
+  BUS_AREA_KEY,
+  classifyPick,
   DEFAULT_PICK_FILTERS,
   DEFAULT_RENT_PICK_FILTERS,
   districtNameFromAddress,
@@ -506,4 +509,62 @@ test("賃貸のグルーピング: 敷礼・管理費・ペット・掲載日を
   assert.equal(sale.adminFeeMin, null);
   assert.equal(sale.petsAllowed, false);
   assert.equal(sale.latestListedOn, null);
+});
+
+// ---------------------------------------------------------------------------
+// 見ているエリアの 4 つ目「バスで職場・学校へ直通」（area=bus・2026-10-31）
+// ---------------------------------------------------------------------------
+
+/** 呉服町（職場・学校の両方へ直通）のすぐそば（約 100m 北）と、どの直通バス停からも遠い海の上 */
+const NEAR_GOFUKU = { lat: 33.5973872 + 0.0009, lng: 130.4103865 };
+const FAR_AWAY = { lat: 33.75, lng: 130.2 };
+
+test("バス直通エリア: area=bus を読む・駅のエリアとの和集合・座標なしは no_coord で分ける", () => {
+  const today = "2026-09-14";
+  const idx = busStopIndex();
+  const busNear = (r: { lat: number; lng: number }) => idx.hasAny(r.lat, r.lng);
+
+  assert.deepEqual(parseStationAreas(new URLSearchParams("area=bus")), [BUS_AREA_KEY]);
+  assert.deepEqual(parseStationAreas(new URLSearchParams("area=airport,bus,zzz")), ["airport", "bus"]);
+
+  const bus = parsePickFilters(new URLSearchParams("area=bus"), () => true);
+  // 座標が直通バス停の 320m 以内 → 入る（駅名は関係ない）
+  assert.equal(classifyPick(row({ station_name: "井尻", ...NEAR_GOFUKU }), bus, 2026, today, busNear), "ok");
+  assert.equal(matchesConditions(row({ station_name: "井尻", ...NEAR_GOFUKU }), bus, 2026, today, busNear), true);
+  // 遠い → 入らない
+  assert.equal(classifyPick(row({ ...FAR_AWAY }), bus, 2026, today, busNear), "no");
+  // 座標なし → 除外（理由は no_coord）。lat だけある行も座標なし扱い
+  assert.equal(classifyPick(row({ lat: null, lng: null }), bus, 2026, today, busNear), "no_coord");
+  assert.equal(classifyPick(row({ lat: 33.59, lng: null }), bus, 2026, today, busNear), "no_coord");
+  assert.equal(classifyPick(row(), bus, 2026, today, busNear), "no_coord", "列が無い行（undefined）も座標なし");
+  assert.equal(matchesConditions(row(), bus, 2026, today, busNear), false);
+  // 他の条件で落ちる行は no_coord と数えない（「位置未取得のため除外」は座標だけが理由のものだけ）
+  assert.equal(classifyPick(row({ area_sqm: 40 }), bus, 2026, today, busNear), "no");
+  // busNear を渡さなければ「近くではない」扱い
+  assert.equal(classifyPick(row({ ...NEAR_GOFUKU }), bus, 2026, today), "no");
+
+  // 和集合: 空港線 + バス
+  const both = parsePickFilters(new URLSearchParams("area=airport,bus"), () => true);
+  assert.equal(classifyPick(row({ station_name: "天神", lat: null, lng: null }), both, 2026, today, busNear), "ok", "駅で当たれば座標なしでも残る");
+  assert.equal(classifyPick(row({ station_name: "井尻", ...NEAR_GOFUKU }), both, 2026, today, busNear), "ok", "駅で外れてもバスで当たれば残る");
+  assert.equal(classifyPick(row({ station_name: "井尻", ...FAR_AWAY }), both, 2026, today, busNear), "no");
+  assert.equal(classifyPick(row({ station_name: "井尻", lat: null, lng: null }), both, 2026, today, busNear), "no_coord");
+
+  // バスがオフなら座標の有無は関係ない（今までどおり）
+  const airport = parsePickFilters(new URLSearchParams("area=airport"), () => true);
+  assert.equal(classifyPick(row({ station_name: "井尻", lat: null, lng: null }), airport, 2026, today, busNear), "no");
+  assert.equal(classifyPick(row({ station_name: "天神" }), airport, 2026, today, busNear), "ok");
+  const none = parsePickFilters(new URLSearchParams(), () => true);
+  assert.equal(classifyPick(row({ lat: null, lng: null }), none, 2026, today, busNear), "ok");
+});
+
+test("グループの座標: 座標のある最初の行を使う・無ければ null", () => {
+  const [g] = groupListings([
+    row({ external_id: "a", lat: null, lng: null }),
+    row({ external_id: "b", ...NEAR_GOFUKU }),
+  ]);
+  assert.equal(g!.lat, NEAR_GOFUKU.lat);
+  assert.equal(g!.lng, NEAR_GOFUKU.lng);
+  const [h] = groupListings([row({ external_id: "c" })]);
+  assert.equal(h!.lat, null);
 });

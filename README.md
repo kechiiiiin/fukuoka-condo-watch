@@ -23,9 +23,11 @@
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から賃貸は毎日 01:00 / 03:00（`chintai_pets`）/ 03:45（`chintai_maisonette`）・中古は毎日 04:15・新築（`--kind shinchiku`）は毎週日曜 09:00 JST |
 | `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎日 16:00 |
-| `scripts/crawl-local-lib.ts` | 上の 2 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
+| `scripts/suumo-coords.ts` / `src/listing-coords.ts` | 掲載（中古・賃貸）の**建物の座標**を取る（`npm run crawl:coords`）。中古は詳細ページの `initIdo`/`initKeido`、賃貸は周辺環境ページ（`jnc_*/kankyo/`）の `js-gmapData`。条件に近いもの（60㎡以上・3部屋以上・売買5,500万以下・賃貸18万以下）から・1 回 60 件・60 秒間隔・毎日 11:00 と 17:15（2026-10-31〜） |
+| `scripts/crawl-local-lib.ts` | 上の 3 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
+| `src/bus-access.ts` | 「バスで職場・学校へ直通」の判定。`src/data/bus-routes.json` の直通バス停まで**直線 320m（= 徒歩5分・64m/分）以内**か、行先ごとの最寄り（停留所・徒歩分・系統番号・降りるバス停）。停留所は格子に入れて周り 3×3 マスだけ測る |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
-| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット相談可・LDK15畳以上（建物の階数では絞らない。メゾネットは既定で除かず2026-10-05〜バッジで表示）。ペット可否とメゾネットは 2・3 周目、LDK 畳数は詳細ページで取る） |
+| `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット相談可・LDK15畳以上（建物の階数では絞らない。メゾネットは既定で除かず2026-10-05〜バッジで表示）。ペット可否とメゾネットは 2・3 周目、LDK 畳数は詳細ページで取る）。「見ているエリア」は駅のエリア 3 つと **「バスで職場・学校へ直通」**（`area=bus`・2026-10-31〜。座標から直通バス停まで徒歩5分以内。和集合・座標未取得はオンのとき除外して件数の横に数を出す）。カードには座標があれば常に**職場（青）・学校（オレンジ）への最寄り直通バス停**を出す |
 | `src/new-listings.ts` / `src/new-listing-view.ts` / `src/new-listings-dashboard.ts` | `/listings/shinchiku`・`/api/listings/shinchiku`（非公開）。新築の価格幅・㎡単価幅・面積幅・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化と**新築プレミアム**（下の「新築」） |
 | `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
 | `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
@@ -90,6 +92,7 @@ FCW_ENV_FILE=/nonexistent LISTINGS_INGEST_URL=http://127.0.0.1:8787/api/ingest/l
 # ペット相談可の 2 周目は `npm run crawl:local -- --kind chintai_pets`（chintai の後に流すこと）
 # メゾネットの 3 周目は `npm run crawl:local -- --kind chintai_maisonette`（偽サーバは /nj_113/ も返す。chintai の後に）
 # LDK 畳数（詳細ページ）は `npm run crawl:detail`（偽サーバは /chintai/jnc_*/?bc=* も返す。上の 3 本の後に）
+# 座標は `npm run crawl:coords`（偽サーバは中古の nc_*/ と賃貸の jnc_*/kankyo/ も返す。ID の末尾が 9 の物件は地図なし）
 open http://localhost:8787/listings/picks          # 既定は賃貸
 open http://localhost:8787/listings/picks?kind=sale # 売買（中古）
 open http://localhost:8787/listings/shinchiku
@@ -164,8 +167,8 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 | もの | 場所 | 備考 |
 |---|---|---|
 | トークンと送り先 | `~/.config/fukuoka-condo-watch/env`（chmod 600） | `LISTINGS_INGEST_URL=` と `LISTINGS_INGEST_TOKEN=` の 2 行。plist・リポジトリには書かない |
-| launchd | `….suumo.plist`（中古）・`….suumo-shinchiku.plist`（新築）・`….suumo-chintai.plist`（賃貸）・`….suumo-chintai-pets.plist`（ペット 2 周目）・`….suumo-chintai-maisonette.plist`（メゾネット 3 周目）・`….suumo-chintai-detail.plist`（LDK 畳数） | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋めて **6 本**とも入れる（`--only chuko\|shinchiku\|chintai\|chintai_pets\|chintai_maisonette\|chintai_detail` で 1 本） |
-| ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log`・`suumo-shinchiku-crawl.{out,err}.log`・`suumo-chintai-crawl.{out,err}.log`・`suumo-chintai-pets-crawl.*`・`suumo-chintai-maisonette-crawl.*`・`suumo-chintai-detail.*` | 1 ページ 1 行 |
+| launchd | `….suumo.plist`（中古）・`….suumo-shinchiku.plist`（新築）・`….suumo-chintai.plist`（賃貸）・`….suumo-chintai-pets.plist`（ペット 2 周目）・`….suumo-chintai-maisonette.plist`（メゾネット 3 周目）・`….suumo-chintai-detail.plist`（LDK 畳数）・`….suumo-coords.plist`（座標・2026-10-31〜） | テンプレートは `ops/launchd/`。`install.sh` が node のパスを埋めて **7 本**とも入れる（`--only chuko\|shinchiku\|chintai\|chintai_pets\|chintai_maisonette\|chintai_detail\|coords` で 1 本） |
+| ログ | `~/Library/Logs/fukuoka-condo-watch/suumo-crawl.{out,err}.log`・`suumo-shinchiku-crawl.{out,err}.log`・`suumo-chintai-crawl.{out,err}.log`・`suumo-chintai-pets-crawl.*`・`suumo-chintai-maisonette-crawl.*`・`suumo-chintai-detail.*`・`suumo-coords.*` | 1 ページ 1 行 |
 | 最後の実行結果 | `/api/listings/status` の `lastLocalRun`（`/listings` の「クロールの状態」にも） | D1 `listing_crawl_events` の kind=`local` |
 
 ### 取り方
@@ -324,6 +327,9 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 - `migrations/0006_listings_rent.sql`: `listings` に `admin_fee`・`deposit`・`key_money`・`pets_allowed`・`listed_on` を足しただけ（**追加のみ**）。
   クロールの状態（runs・cursor・state・events）と `listing_snapshots` は取得元 `suumo:chintai` / `suumo:chintai-pets` で中古と同じ表を使う
 - `migrations/0007_listings_floors.sql`（2026-09-26）: `building_floors`・`room_floor`・`maisonette`・`ldk_tatami`・`detail_fetched_at`（**追加のみ**）
+- `migrations/0009_listing_coords.sql`（2026-10-31）: `lat`・`lng`・`coord_fetched_at`（**追加のみ**・中古と賃貸の両方）。
+  書くのは座標の周回（`op: "coord_targets"` / `"coord_results"` → `UPDATE_COORDS_SQL`）だけで、一覧の毎日の UPSERT は触らない（`ldk_tatami` と同じ扱い。`test/listing-crawl-sql.test.ts`）。
+  賃貸の座標は詳細ページに無く周辺環境ページにあるので、LDK 畳数の周回とは別のページを取る
 - `migrations/0008_maisonette_binary.sql`（2026-09-27）: `maisonette` を二値に（既存の NULL を 0 に埋める）。
   ⚠️ 0007 の「0 は入れない・NULL = 不明」という設計はここで取り消し（0007 自体は履歴なので直さない）。
   列の `DEFAULT` は SQLite では後から変えられないので、**書き手（`listingUpsertRow`）が必ず 0 か 1 を入れる**ことで既定 0 を保つ

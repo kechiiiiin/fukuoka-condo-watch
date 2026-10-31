@@ -49,6 +49,12 @@ export interface ListingPickRow {
   ldk_tatami?: number | null;
   /** 詳細ページを取った時刻。NULL = 未取得 */
   detail_fetched_at?: string | null;
+  // ---- 0009 で足した列（中古・賃貸とも）----
+  /** 建物の緯度・経度（詳細ページ・周辺環境ページの地図から）。NULL = 未取得または読めなかった */
+  lat?: number | null;
+  lng?: number | null;
+  /** 座標を取りに行った時刻。NULL = まだ取りに行っていない */
+  coord_fetched_at?: string | null;
 }
 
 /**
@@ -114,7 +120,10 @@ export interface PickFilters {
   buildingFloorsMin: number | null;
   /** 対象の市区町村コード（null = すべて） */
   municipalities: string[] | null;
-  /** 見ているエリアのキー（STATION_AREAS のキー。null = 絞らない）。駅名（station_name）の和集合で絞る */
+  /**
+   * 見ているエリアのキー（STATION_AREAS のキー、または BUS_AREA_KEY。null = 絞らない）。
+   * 駅名（station_name）の一致と「直通バス停まで徒歩5分以内」（BUS_AREA_KEY）の**和集合**で絞る
+   */
   stationAreas: string[] | null;
   /** true なら新着（first_seen が直近 freshDays 日以内）だけ */
   freshOnly: boolean;
@@ -234,12 +243,30 @@ export const STATION_AREAS: Record<string, { label: string; stations: string[] }
   minamifukuoka: { label: "南福岡・雑餉隈", stations: ["南福岡", "雑餉隈"] },
 };
 
-/** area=airport,ijiri を読む。未知のキーは無視、全部無効・空なら null（=絞らない） */
+/**
+ * 「見ているエリア」の 4 つ目のボタン「バスで職場・学校へ直通」のキー（2026-10-31）。
+ * 駅名ではなく**物件の座標**で決まる: 職場か学校へ乗り換えなしで着くバス停まで徒歩 5 分以内（src/bus-access.ts の
+ * BUS_WALK_MAX_M = 直線 320m）。座標の無い物件は、このボタンだけでは拾えない（「位置未取得のため除外」で数える）。
+ */
+export const BUS_AREA_KEY = "bus";
+export const BUS_AREA_LABEL = "バスで職場・学校へ直通";
+
+/** エリアのキーとして使えるか（駅のエリア・バス直通） */
+export function isAreaKey(k: string): boolean {
+  return k === BUS_AREA_KEY || Object.hasOwn(STATION_AREAS, k);
+}
+
+/** area=airport,ijiri,bus を読む。未知のキーは無視、全部無効・空なら null（=絞らない） */
 export function parseStationAreas(params: URLSearchParams): string[] | null {
   const v = params.get("area");
   if (v === null || v.trim() === "") return null;
-  const keys = [...new Set(v.split(",").map((x) => x.trim()))].filter((k) => Object.hasOwn(STATION_AREAS, k));
+  const keys = [...new Set(v.split(",").map((x) => x.trim()))].filter(isAreaKey);
   return keys.length > 0 ? keys : null;
+}
+
+/** 物件の座標があるか（lat・lng の両方が数） */
+export function hasCoords(row: Pick<ListingPickRow, "lat" | "lng">): row is { lat: number; lng: number } {
+  return typeof row.lat === "number" && typeof row.lng === "number" && Number.isFinite(row.lat) && Number.isFinite(row.lng);
 }
 
 /** kind を省略すると売買（従来どおり）。賃貸は既定条件が違う（DEFAULT_RENT_PICK_FILTERS） */
@@ -274,8 +301,44 @@ export function parsePickSort(params: URLSearchParams): PickSort {
   return params.get("sort") === "retention" ? "retention" : "newest";
 }
 
-/** 行が条件に合うか（掲載中かどうかはここでは見ない。呼び出し側で delisted_on IS NULL を絞ってから使う） */
-export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: number, today: string): boolean {
+/**
+ * 座標から「職場・学校へ直通のバス停まで徒歩 5 分以内か」を答える関数（src/bus-access.ts の BusStopIndex.hasAny を包んで渡す）。
+ * 座標のある行にだけ呼ばれる。
+ */
+export type BusNear = (row: ListingPickRow & { lat: number; lng: number }) => boolean;
+
+/**
+ * 行が条件に合うか（掲載中かどうかはここでは見ない。呼び出し側で delisted_on IS NULL を絞ってから使う）。
+ * busNear はバス直通のエリア（BUS_AREA_KEY）がオンのときだけ使う。渡さなければ「直通バス停の近くではない」扱い。
+ */
+export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: number, today: string, busNear?: BusNear): boolean {
+  return classifyPick(row, f, nowYear, today, busNear) === "ok";
+}
+
+/**
+ * matchesConditions の中身。合わなかった理由のうち「座標が無いせいでバス直通のエリアに入れられなかった」（no_coord）だけを
+ * 分けて返す（画面の「位置未取得のため除外 N件」に使う）。
+ * no_coord になるのは、**他の条件は全部通り**、駅のエリアにも当たらず、バス直通のエリアがオンで、座標が無い行だけ。
+ */
+export function classifyPick(
+  row: ListingPickRow,
+  f: PickFilters,
+  nowYear: number,
+  today: string,
+  busNear?: BusNear,
+): "ok" | "no" | "no_coord" {
+  if (!matchesNonArea(row, f, nowYear, today)) return "no";
+  if (!f.stationAreas) return "ok";
+  // エリアは和集合: 駅のエリアのどれかに当たる、またはバス直通（オンのとき）に当たれば残す
+  const name = row.station_name;
+  if (name && f.stationAreas.some((k) => STATION_AREAS[k]?.stations.includes(name))) return "ok";
+  if (!f.stationAreas.includes(BUS_AREA_KEY)) return "no";
+  if (!hasCoords(row)) return "no_coord";
+  return busNear && busNear(row as ListingPickRow & { lat: number; lng: number }) ? "ok" : "no";
+}
+
+/** エリア（見ているエリアのボタン）以外の条件 */
+function matchesNonArea(row: ListingPickRow, f: PickFilters, nowYear: number, today: string): boolean {
   if (row.current_price > f.priceMaxMan * 10000) return false;
   if (row.area_sqm === null || row.area_sqm < f.areaMin) return false;
 
@@ -313,11 +376,6 @@ export function matchesConditions(row: ListingPickRow, f: PickFilters, nowYear: 
   }
 
   if (f.municipalities && (!row.ward_code || !f.municipalities.includes(row.ward_code))) return false;
-
-  if (f.stationAreas) {
-    const name = row.station_name;
-    if (!name || !f.stationAreas.some((k) => STATION_AREAS[k]?.stations.includes(name))) return false;
-  }
 
   if (f.freshOnly) {
     const since = addDaysStr(today, -f.freshDays);
@@ -372,6 +430,9 @@ export interface ListingGroup {
   ldkTatami: number | null;
   /** グループの中に 1 件でも詳細ページを取った部屋があるか（「未取得」と出し分けるため） */
   detailFetched: boolean;
+  /** 建物の座標（座標のある最初の行。同じ建物の部屋なので 1 つに決めてよい）。無ければ null */
+  lat: number | null;
+  lng: number | null;
   /** 一番新しい情報公開日（読めたときだけ） */
   latestListedOn: string | null;
   /** 一番早い first_seen（この部屋が最初に見えた日） */
@@ -493,6 +554,10 @@ function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
     maisonette: items.some((r) => r.maisonette === 1),
     ldkTatami: minOf(items.map((r) => r.ldk_tatami ?? null)),
     detailFetched: items.some((r) => !!r.detail_fetched_at),
+    ...(() => {
+      const c = items.find(hasCoords);
+      return c ? { lat: c.lat as number, lng: c.lng as number } : { lat: null, lng: null };
+    })(),
     latestListedOn: items.map((r) => r.listed_on ?? null).filter((v): v is string => !!v).sort().slice(-1)[0] ?? null,
     earliestFirstSeen: items.map((r) => r.first_seen).sort()[0]!,
     latestFirstSeen: items.map((r) => r.first_seen).sort().slice(-1)[0]!,

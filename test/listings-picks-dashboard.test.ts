@@ -60,7 +60,7 @@ function harness(search: string, payload: () => unknown): Harness {
   }
   for (const id of [
     "tab-sale", "tab-rent", "title", "defaults-text", "lb-pmax", "lb-sort", "opt-retention", "lb-pets",
-    "lb-mais", "lb-tatami", "lb-floors", "area-btn-airport", "area-btn-ijiri", "area-btn-minamifukuoka",
+    "lb-mais", "lb-tatami", "lb-floors", "area-btn-airport", "area-btn-ijiri", "area-btn-minamifukuoka", "area-btn-bus", "bus-note",
     "muni-select", "asof", "notices", "coverage", "count", "cards", "cards-section", "footer",
   ]) {
     ids.set(id, new El("div", id));
@@ -343,4 +343,98 @@ test("画面: ?area= の初期値でボタンがオンになり、未知キー�
   assert.equal(h.ids.get("area-btn-minamifukuoka")!.className, "areabtn on");
   assert.equal(h.ids.get("area-btn-airport")!.className, "areabtn");
   assert.ok(h.requestedUrls[0]!.includes("area=minamifukuoka"));
+});
+
+// ---------------------------------------------------------------------------
+// 見ているエリアの 4 つ目「バスで職場・学校へ直通」とカードの直通バス停（2026-10-31）
+// ---------------------------------------------------------------------------
+
+test("画面: バス直通のボタンが 4 つ目に出て、title に「直通バス停（約N か所）まで徒歩5分以内（直線320m）」", () => {
+  const html = renderListingsPicksDashboard();
+  const m = /<button type="button" class="areabtn" id="area-btn-bus" aria-pressed="false" title="([^"]*)">バスで職場・学校へ直通<\/button>/.exec(html);
+  assert.ok(m, "バス直通のボタン");
+  assert.match(m![1]!, /^直通バス停（約\d+0 か所）まで徒歩5分以内（直線320m）$/);
+  assert.ok(html.indexOf('id="area-btn-minamifukuoka"') < html.indexOf('id="area-btn-bus"'), "既存の 3 つの後ろ");
+  assert.match(html, /<div class="sub full hidden" id="bus-note">バスで職場・学校へ直通: 直通バス停（約\d+0 か所）まで徒歩5分以内（直線320m）/, "ボタンの下の説明（既定は隠す）");
+  // 職場 = 青・学校 = オレンジ（ライト・ダーク両方に定義）
+  assert.match(html, /--gion:#2563eb; --higashi:#ea580c;/);
+  assert.match(html, /--gion:#3b82f6; --higashi:#f97316;/);
+  assert.match(html, /\.bustag\.gion \{[^}]*var\(--gion\)/);
+  assert.match(html, /\.bustag\.higashi \{[^}]*var\(--higashi\)/);
+});
+
+test("画面: バス直通を押すと area=bus で再取得・説明が出る・保存状態に載る（他のエリアと同じ扱い）", async () => {
+  const h = harness("", () => PAYLOAD("rent"));
+  h.run();
+  await flush();
+  assert.equal(h.ids.get("bus-note")!.className, "sub full hidden");
+  const b = h.ids.get("area-btn-bus")!;
+  b.handlers.click!();
+  await flush();
+  assert.equal(b.className, "areabtn on");
+  assert.equal(b.attrs["aria-pressed"], "true");
+  assert.ok(h.requestedUrls.at(-1)!.includes("area=bus"));
+  assert.equal(h.ids.get("bus-note")!.className, "sub full", "オンのときはボタンの下に説明を出す");
+  h.ids.get("area-btn-airport")!.handlers.click!();
+  assert.ok(h.requestedUrls.at(-1)!.includes("area=airport%2Cbus"), "和集合で両方送る");
+  const store = (globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage;
+  assert.equal(store.getItem("fcw_picks_area_v1"), '["airport","bus"]');
+});
+
+test("画面: ?area=bus の初期値でボタンがオン", async () => {
+  const h = harness("?kind=sale&area=bus", () => PAYLOAD("sale"));
+  h.run();
+  await flush();
+  assert.equal(h.ids.get("area-btn-bus")!.className, "areabtn on");
+  assert.ok(h.requestedUrls[0]!.includes("area=bus"));
+});
+
+const BUS_ACCESS = {
+  gion: { name: "南片江六丁目", meters: 170, minutes: 3, numbers: ["13"], alightAt: [] },
+  higashi: { name: "呉服町", meters: 300, minutes: 5, numbers: ["32", "37", "39", "39B", "41", "73"], alightAt: ["東光二丁目", "東光町"] },
+};
+
+test("カード: 職場・学校の最寄り直通バス停をタグで出す（学校は降りるバス停を添える・番号は 4 つまで）", async () => {
+  for (const kind of ["rent", "sale"]) {
+    const h = harness(kind === "sale" ? "?kind=sale" : "", () => ({ ...PAYLOAD(kind), items: [{ ...CARD, busAccess: BUS_ACCESS }] }));
+    h.run();
+    await flush();
+    const cards = h.ids.get("cards")!.innerHTML;
+    assert.ok(cards.includes('<span class="bustag gion">職場へ直通: 南片江六丁目 徒歩3分（13番）</span>'), `${kind}: 職場`);
+    assert.ok(
+      cards.includes('<span class="bustag higashi">学校へ直通: 呉服町 徒歩5分（32・37・39・39B番ほか）（東光二丁目・東光町で降りる）</span>'),
+      `${kind}: 学校`,
+    );
+  }
+});
+
+test("カード: 片方だけなら片方の行だけ・両方無ければ何も出さない・座標なし（null）も何も出さない", async () => {
+  const only = { gion: null, higashi: { ...BUS_ACCESS.higashi, alightAt: [] } };
+  let h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess: only }] }));
+  h.run();
+  await flush();
+  let cards = h.ids.get("cards")!.innerHTML;
+  assert.ok(!cards.includes("職場へ直通"));
+  assert.ok(cards.includes("学校へ直通: 呉服町 徒歩5分（32・37・39・39B番ほか）</span>"), "降りるバス停が無ければ添えない");
+
+  for (const busAccess of [{ gion: null, higashi: null }, null, undefined]) {
+    h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess }] }));
+    h.run();
+    await flush();
+    cards = h.ids.get("cards")!.innerHTML;
+    assert.ok(!cards.includes("busline") && !cards.includes("直通"), `busAccess=${JSON.stringify(busAccess)}`);
+  }
+});
+
+test("件数: バス直通オンで座標未取得を除いたときは「位置未取得のため除外 N件」を出す（0・null なら出さない）", async () => {
+  let h = harness("?area=bus", () => ({ ...PAYLOAD("rent"), busExcludedNoCoord: 12 }));
+  h.run();
+  await flush();
+  assert.ok(h.ids.get("count")!.textContent.includes("位置未取得のため除外 12件"));
+  for (const v of [0, null]) {
+    h = harness("", () => ({ ...PAYLOAD("rent"), busExcludedNoCoord: v }));
+    h.run();
+    await flush();
+    assert.ok(!h.ids.get("count")!.textContent.includes("位置未取得"));
+  }
 });

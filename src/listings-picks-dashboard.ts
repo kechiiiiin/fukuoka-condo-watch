@@ -2,7 +2,8 @@
 // 賃貸（既定。2026-09-26〜）と売買（中古・?kind=sale）をタブで切り替える。方針が賃貸優先になったため既定は賃貸。データは /api/listings/picks（src/listing-picks.ts）。
 // ⚠️ クライアント側スクリプトではバッククォートと「ドル記号+波括弧」を使わない（この TS テンプレートに展開されてしまう）。
 
-import { DEFAULT_PICK_FILTERS, DEFAULT_RENT_PICK_FILTERS, STATION_AREAS } from "./listing-grouping";
+import { BUS_WALK_MAX_M, BUS_WALK_MAX_MIN, busStopIndex } from "./bus-access";
+import { BUS_AREA_KEY, BUS_AREA_LABEL, DEFAULT_PICK_FILTERS, DEFAULT_RENT_PICK_FILTERS, STATION_AREAS } from "./listing-grouping";
 import { AREAS, GROUP_LABEL } from "./wards";
 
 export function renderListingsPicksDashboard(): string {
@@ -11,10 +12,22 @@ export function renderListingsPicksDashboard(): string {
 
 const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 const AREAS_JSON = safeJson(AREAS);
-const STATION_AREAS_JSON = safeJson(Object.entries(STATION_AREAS).map(([key, a]) => ({ key, label: a.label, stations: a.stations })));
-const AREA_BUTTONS_HTML = Object.entries(STATION_AREAS)
-  .map(([key, a]) => `<button type="button" class="areabtn" id="area-btn-${key}" aria-pressed="false" title="${a.stations.join("・")}">${a.label}</button>`)
-  .join("");
+/**
+ * バス直通ボタンの説明（title とボタンの下の注記）。停留所の数は「約」なので 10 の位に丸める。
+ * 「か所」は座標のある直通バス停の場所の数（職場・学校の両方へ行く停留所は 1 か所）
+ */
+export const BUS_AREA_HINT =
+  `直通バス停（約${Math.round(busStopIndex().placeCount / 10) * 10} か所）まで徒歩${BUS_WALK_MAX_MIN}分以内（直線${BUS_WALK_MAX_M}m）`;
+/** 見ているエリアのボタン（駅のエリア 3 つ + バス直通）。クライアント側は key だけで扱うので、URL・保存状態も同じ流儀になる */
+const AREA_BUTTONS = [
+  ...Object.entries(STATION_AREAS).map(([key, a]) => ({ key, label: a.label, title: a.stations.join("・") })),
+  { key: BUS_AREA_KEY, label: BUS_AREA_LABEL, title: BUS_AREA_HINT },
+];
+const STATION_AREAS_JSON = safeJson(AREA_BUTTONS.map((a) => ({ key: a.key, label: a.label })));
+const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const AREA_BUTTONS_HTML = AREA_BUTTONS.map(
+  (a) => `<button type="button" class="areabtn" id="area-btn-${a.key}" aria-pressed="false" title="${escAttr(a.title)}">${a.label}</button>`,
+).join("");
 const GROUPS_JSON = safeJson(GROUP_LABEL);
 const D = DEFAULT_PICK_FILTERS;
 const R = DEFAULT_RENT_PICK_FILTERS;
@@ -37,8 +50,10 @@ const HTML = `<!doctype html>
 <meta name="robots" content="noindex, nofollow">
 <title>条件に合う物件（非公開）</title>
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#1f2328; --muted:#667085; --line:#e4e4e0; --accent:#2563eb; --warn:#b45309; --bad:#b91c1c; --good:#0f766e; --chip:#eef2ff; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#16181c; --card:#1f2228; --ink:#e8e8e6; --muted:#9aa3af; --line:#30343c; --accent:#60a5fa; --warn:#f59e0b; --bad:#f87171; --good:#5eead4; --chip:#26304a; } }
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1f2328; --muted:#667085; --line:#e4e4e0; --accent:#2563eb; --warn:#b45309; --bad:#b91c1c; --good:#0f766e; --chip:#eef2ff;
+          --gion:#2563eb; --higashi:#ea580c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181c; --card:#1f2228; --ink:#e8e8e6; --muted:#9aa3af; --line:#30343c; --accent:#60a5fa; --warn:#f59e0b; --bad:#f87171; --good:#5eead4; --chip:#26304a;
+          --gion:#3b82f6; --higashi:#f97316; } }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
   header, main, footer { max-width: 760px; margin: 0 auto; padding: 12px 14px; }
@@ -87,6 +102,11 @@ const HTML = `<!doctype html>
   button.areabtn { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .85rem; font-weight: 500; }
   button.areabtn.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   @media (prefers-color-scheme: dark) { button.areabtn.on { color: #0b1220; } }
+  /* 直通バス停のタグ（職場 = 青・学校 = オレンジ。/listings/bus の地図と同じ色） */
+  .busline { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0; }
+  .bustag { display: inline-block; border-radius: 6px; padding: 1px 8px; font-size: .8rem; border-left: 3px solid; }
+  .bustag.gion { background: color-mix(in srgb, var(--gion) 14%, transparent); border-color: var(--gion); }
+  .bustag.higashi { background: color-mix(in srgb, var(--higashi) 14%, transparent); border-color: var(--higashi); }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -104,6 +124,7 @@ const HTML = `<!doctype html>
     <form id="filters">
       <div class="sub full" id="defaults-text">${SALE_DEFAULTS_TEXT}</div>
       <div class="areabar full"><span class="lbl">見ているエリア</span>${AREA_BUTTONS_HTML}</div>
+      <div class="sub full hidden" id="bus-note">${BUS_AREA_LABEL}: ${BUS_AREA_HINT}。職場・学校のどちらか一方でも当てはまれば出します。</div>
       <label id="lb-pmax">価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="${D.priceMaxMan}"></label>
       <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="${D.areaMin}"></label>
       <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>
@@ -203,6 +224,9 @@ const HTML = `<!doctype html>
       b.className = areaOn[a.key] ? "areabtn on" : "areabtn";
       b.setAttribute("aria-pressed", areaOn[a.key] ? "true" : "false");
     });
+    // バス直通の説明はオンのときだけボタンの下に出す（スマホでは title が見えないため）
+    var busNote = document.getElementById("bus-note");
+    if (busNote) busNote.className = areaOn[${JSON.stringify(BUS_AREA_KEY)}] ? "sub full" : "sub full hidden";
   }
   function areaKeys() { return STATION_AREAS.map(function (a) { return a.key; }).filter(function (k) { return areaOn[k]; }); }
   STATION_AREAS.forEach(function (a) {
@@ -307,6 +331,27 @@ const HTML = `<!doctype html>
 
   function yen(v) { return v === null || v === undefined ? "—" : n(v) + "円"; }
 
+  /**
+   * 最寄りの直通バス停（職場 = 青・学校 = オレンジ）。徒歩5分以内に無い行先は出さない。両方無ければ空文字。
+   * 系統番号は多いと長くなるので 4 つまで（残りは「ほか」）
+   */
+  function busLine(it) {
+    var a = it.busAccess;
+    if (!a) return "";
+    function nums(h) {
+      if (!h.numbers || !h.numbers.length) return "";
+      var shown = h.numbers.slice(0, 4).join("・") + "番" + (h.numbers.length > 4 ? "ほか" : "");
+      return "（" + esc(shown) + "）";
+    }
+    var parts = [];
+    if (a.gion) parts.push('<span class="bustag gion">職場へ直通: ' + esc(a.gion.name) + ' 徒歩' + a.gion.minutes + '分' + nums(a.gion) + '</span>');
+    if (a.higashi) {
+      var alight = a.higashi.alightAt && a.higashi.alightAt.length ? "（" + esc(a.higashi.alightAt.join("・")) + "で降りる）" : "";
+      parts.push('<span class="bustag higashi">学校へ直通: ' + esc(a.higashi.name) + ' 徒歩' + a.higashi.minutes + '分' + nums(a.higashi) + alight + '</span>');
+    }
+    return parts.length ? '<div class="busline">' + parts.join("") + '</div>' : "";
+  }
+
   /** 賃貸のカード。賃料＋管理費・敷礼・ペット相談可・掲載日を出す（価格維持・売出/成約は売買の指標なので出さない） */
   function rentCard(it) {
     var addr = [it.wardName, it.districtName].filter(Boolean).join(" ");
@@ -337,6 +382,7 @@ const HTML = `<!doctype html>
       maisBadge + '</h3>' +
       '<div class="meta">' + esc(addr) + '</div>' +
       '<div class="row">' + station + '</div>' +
+      busLine(it) +
       '<div class="row">' + esc(it.floorPlan || "—") + ' ・ ' + n(it.areaSqm, 1) + '㎡ ・ 築' + age + '</div>' +
       '<div class="row">' + tatami + ' ・ ' + roomFloor + '／' + floors + '</div>' +
       '<div class="price">' + rent + '<span class="unit">/月 ・ ' + fee + '</span></div>' +
@@ -364,6 +410,7 @@ const HTML = `<!doctype html>
       '<h3>' + esc(it.buildingName) + (it.count > 1 ? '<span class="badge">重複掲載 ' + it.count + '件</span>' : '') + (it.isFresh ? '<span class="badge fresh">新着</span>' : '') + '</h3>' +
       '<div class="meta">' + esc(addr) + '</div>' +
       '<div class="row">' + station + '</div>' +
+      busLine(it) +
       '<div class="row">' + esc(it.floorPlan || "—") + ' ・ ' + n(it.areaSqm, 1) + '㎡ ・ 築' + age + '</div>' +
       '<div class="price">' + priceLine + '<span class="unit">㎡単価 ' + unit + '円</span></div>' +
       '<div class="row">値下げ ' + (it.priceCutCountMax > 0 ? '<span class="cut">' + it.priceCutCountMax + '回</span>' : '0回') + ' ・ 掲載開始 ' + esc(it.earliestFirstSeen) + '</div>' +
@@ -400,6 +447,7 @@ const HTML = `<!doctype html>
       }
       var rb = d.retentionBasis;
       document.getElementById("count").textContent = d.groups + " 件（重複を含む掲載 " + d.matchedListings + " 件をまとめた数）・" +
+        (d.busExcludedNoCoord ? "位置未取得のため除外 " + d.busExcludedNoCoord + "件・" : "") +
         (!IS_RENT && d.filters && d.filters.sort === "retention" ? "価格維持の高い順（値の無いものは末尾）" : "新着順") +
         (!IS_RENT && rb && rb.latestQuarter ? "。価格維持は" + rb.label + " " + rb.recentFrom + "〜" + rb.latestQuarter + " ÷ " + rb.priorFrom + "〜" + rb.priorTo : "");
       document.getElementById("cards").innerHTML = d.items.length ? d.items.map(card).join("") : '<div class="empty">条件に合う' + (IS_RENT ? "賃貸" : "物件") + 'はありませんでした</div>';

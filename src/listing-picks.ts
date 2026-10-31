@@ -9,14 +9,17 @@
 // （buildMetricsWithWindows が返す地区・市区町村の窓。カードごとに D1 へ問い合わせない）。
 // SUUMO の掲載は地区名を持たないので、住所から町名を起こして（districtNameFromAddress）XIT001 の DistrictName に当てる。
 
+import { type BusAccess, BUS_WALK_MAX_M, BUS_WALK_MAX_MIN, busStopIndex } from "./bus-access";
 import type { Env } from "./env";
 import { jstToday } from "./ingest";
 import {
+  BUS_AREA_KEY,
+  classifyPick,
   defaultPickFilters,
   districtNameFromAddress,
   groupListings,
+  hasCoords,
   indexDistrictWindows,
-  matchesConditions,
   parsePickFilters,
   parsePickKind,
   parsePickSort,
@@ -120,7 +123,8 @@ export async function buildListingPicks(env: Env, url: URL) {
       `SELECT source, external_id, ward_code, district_name, building_name, building_year, built_month, area_sqm, floor_plan,
               line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
               price_cut_count, relisted_count, admin_fee, deposit, key_money, pets_allowed, listed_on,
-              building_floors, room_floor, maisonette, ldk_tatami, detail_fetched_at
+              building_floors, room_floor, maisonette, ldk_tatami, detail_fetched_at,
+              lat, lng, coord_fetched_at
        FROM listings WHERE source = ? AND kind = ? AND delisted_on IS NULL`,
     )
       .bind(sourceId, kind)
@@ -129,7 +133,28 @@ export async function buildListingPicks(env: Env, url: URL) {
     buildAreaScores(env),
   ]);
 
-  const active = rowsRes.results.filter((r) => matchesConditions(r, filters, nowYear, today));
+  // 直通バス停（職場・学校へ乗り換えなし）までの最寄り。停留所の格子は初回に 1 回だけ作る（src/bus-access.ts）。
+  // 座標ごとに 1 回だけ測る（同じ建物の部屋・重複掲載は同じ座標なので使い回す）
+  const busIndex = busStopIndex();
+  const busMemo = new Map<string, BusAccess>();
+  const busAt = (lat: number, lng: number): BusAccess => {
+    const k = `${lat},${lng}`;
+    let a = busMemo.get(k);
+    if (!a) busMemo.set(k, (a = busIndex.nearest(lat, lng)));
+    return a;
+  };
+  const busOn = filters.stationAreas?.includes(BUS_AREA_KEY) ?? false;
+  const active: ListingPickRow[] = [];
+  /** バス直通のエリアがオンで、座標が無いために外した掲載の数（他の条件は全部通っていたもの） */
+  let busExcludedNoCoord = 0;
+  for (const r of rowsRes.results) {
+    const c = classifyPick(r, filters, nowYear, today, (x) => {
+      const a = busAt(x.lat, x.lng);
+      return a.gion !== null || a.higashi !== null;
+    });
+    if (c === "ok") active.push(r);
+    else if (c === "no_coord") busExcludedNoCoord++;
+  }
   const groups = groupListings(active);
   const municipalityName = (code: string) => AREA_NAME[code] ?? null;
 
@@ -176,6 +201,11 @@ export async function buildListingPicks(env: Env, url: URL) {
       maisonette: g.maisonette,
       ldkTatami: g.ldkTatami,
       detailFetched: g.detailFetched,
+      /**
+       * 職場（gion）・学校（higashi）それぞれの、徒歩 5 分以内の最寄りの直通バス停。無ければその行先は null。
+       * 座標が無い物件は null（バス直通のエリアのオン・オフに関わらず、座標があれば常に付ける）
+       */
+      busAccess: hasCoords(g) ? busAt(g.lat, g.lng) : null,
       listedOn: g.latestListedOn,
       earliestFirstSeen: g.earliestFirstSeen,
       latestFirstSeen: g.latestFirstSeen,
@@ -227,6 +257,9 @@ export async function buildListingPicks(env: Env, url: URL) {
     },
     allMunicipalities: AREAS.map((a) => ({ code: a.code, name: a.name, group: a.group })),
     matchedListings: active.length,
+    /** バス直通のエリアがオンのときだけ数（オフなら null）。座標が未取得で「バスで職場・学校へ直通」に入れられなかった掲載の数 */
+    busExcludedNoCoord: busOn ? busExcludedNoCoord : null,
+    busArea: { walkMaxMin: BUS_WALK_MAX_MIN, walkMaxM: BUS_WALK_MAX_M, stopPlaces: busIndex.placeCount },
     groups: cards.length,
     coverage,
     notes: kind === "rent" ? RENT_NOTES : SALE_NOTES,
@@ -234,10 +267,16 @@ export async function buildListingPicks(env: Env, url: URL) {
   };
 }
 
+const BUS_NOTE =
+  "「バスで職場・学校へ直通」は、職場（祇園町）か学校（東光二丁目ほか）へ乗り換えなしで着く西鉄バスの停留所（/listings/bus の地図と同じデータ）まで、" +
+  "建物から直線 " + BUS_WALK_MAX_M + "m（徒歩" + BUS_WALK_MAX_MIN + "分）以内の物件です。SUUMO の徒歩分は道のり 80m/分なので、直線では 2 割控えめに 64m/分で数えています。" +
+  "建物の位置は SUUMO の詳細ページ（賃貸は周辺環境ページ）の地図から 1 日 2 回・1 回 60 件ずつ取っているので、まだ取れていない物件はこのボタンでは拾えません（件数の横に「位置未取得のため除外」で出します）。";
+
 const SALE_NOTES = [
   "ペット可かどうかは取得項目に無いので、リンク先で確認してください。",
   "データは SUUMO の掲載情報（私的利用）。同じ部屋が複数の仲介業者から重複掲載されることがあるため、建物名・面積・間取り・築年でまとめて1枚のカードにしています。",
   "価格維持 = 直近2年（8四半期）の成約㎡単価の中央値 ÷ その前2年の中央値（国交省 不動産情報ライブラリ）。1.00 より大きいほど値上がり。住所から町名を起こして地区の値を出し、地区の件数が足りない（直近8件・前期5件未満）ときは市区町村の値を出します。",
+  BUS_NOTE,
 ];
 
 const RENT_NOTES = [
@@ -250,6 +289,7 @@ const RENT_NOTES = [
   "管理費・敷金・礼金が「—」の物件は、SUUMO の表記が「-」で、0 円なのか表記なしなのか一覧からは分かりません（0 円と決めつけていません）。",
   "同じ建物・同じ間取り・同じ築年で専有面積が近い部屋は 1 枚のカードにまとめています（複数業者の重複掲載をまとめる売買と同じ仕組み）。別の部屋がまとまることもあるので、部屋の特定はリンク先で。",
   "価格維持・売出/成約比は売買の指標なので賃貸では出していません（貸しやすさは市区町村単位の目安です）。",
+  BUS_NOTE,
 ];
 
 /** 四半期の通し番号（year*4 + quarter - 1）→ "2026Q2" */
