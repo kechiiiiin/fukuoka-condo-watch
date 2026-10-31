@@ -4,8 +4,14 @@
 import { readFileSync } from "node:fs";
 import { option } from "./lib";
 
-type Stop = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: string[]; numbers: string[] };
-const data = JSON.parse(readFileSync(option("in") ?? "src/data/bus-routes.json", "utf8")) as { stops: Stop[]; routes: unknown[] };
+type Stop = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: string[]; numbers: string[]; higashiStops?: string[] };
+type Route = { dest: string; destStop?: string; number: string; direction: string; destIndex: number; stops: { name: string; passThrough?: true }[] };
+const data = JSON.parse(readFileSync(option("in") ?? "src/data/bus-routes.json", "utf8")) as { stops: Stop[]; routes: Route[] };
+/** その停留所から通勤の向きで直通できる higashi の便（降りるバス停と系統番号） */
+const higashiVia = (name: string) =>
+  data.routes
+    .filter((r) => r.dest === "higashi" && r.direction === "to_dest" && r.stops.slice(0, r.destIndex).some((s) => s.name === name && !s.passThrough))
+    .map((r) => `${r.destStop}:${r.number}`);
 
 let failed = 0;
 const ok = (cond: boolean, label: string, detail = "") => {
@@ -26,10 +32,15 @@ for (const n of ["田隈小学校前", "香椎", "千早公園前", "すの子",
   const ss = find(n, "gion");
   ok(ss.length > 0, `(a) ${n} が gion`, where(ss));
 }
-// (b) 東光二丁目へ直通
+// (b) 学校近くへ直通（半道橋 → 東比恵二丁目 は公式検索で直通あり。東光二丁目へは直通なし）
 {
   const ss = find("半道橋", "higashi");
-  ok(ss.length > 0, "(b) 半道橋 が higashi", where(ss));
+  ok(ss.some((s) => s.higashiStops?.includes("東比恵二丁目")), "(b) 半道橋 が higashi（東比恵二丁目経由）", ss.map((s) => `降りる: ${s.higashiStops?.join("・")}`).join(" / "));
+}
+// 参考（合否にしない）: 東比恵二丁目へは公式検索で直通なし。学校近くの他のバス停へ入ったか
+for (const n of ["八田", "大濠公園", "金隈遺跡前", "土井団地"]) {
+  const ss = find(n, "higashi");
+  console.log(`参考 ${n}: ${ss.length ? `入った  降りる:系統 ${[...new Set(higashiVia(n))].join(", ")}` : "入らなかった"}`);
 }
 // (c) 祇園町へ直通が無い（公式検索で確認済み）
 for (const n of ["椎原", "福大病院", "雁の巣", "西月隈三丁目"]) {

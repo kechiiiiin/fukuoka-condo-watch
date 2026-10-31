@@ -1,5 +1,7 @@
 // 西鉄の時刻表サイトから「職場（祇園町）・学校（東光二丁目）へ乗り換えなしで着く便」が通るバス停を集める。
-//   node --import tsx scripts/collect-nnr-routes.ts [--p11 <P11-22_40.geojson>] [--out src/data/bus-routes.json] [--cache-only]
+//   node --import tsx scripts/collect-nnr-routes.ts [--p11 <P11-22_40.geojson>] [--out src/data/bus-routes.json] [--cache-only] [--only higashi]
+//   --only <dest>: その目的地だけ集め直し、他の目的地の routes は既存の出力からそのまま引き継ぐ（追加収集用）
+//   上限は環境変数で（どちらも _requests.log の累計件数）: NNR_LIMIT（既定 700）・NNR_COORD_BUDGET（座標検索を打ち切る件数・既定 660）
 // 取得の作法（直列・3 秒間隔・キャッシュ・上限 700 件・連続失敗で停止）は scripts/nnr-fetch.ts。
 // 再実行するとキャッシュから読むので、サイトへは新しい URL の分しか行かない。
 //
@@ -10,7 +12,7 @@
 //  4. 目的バス停より手前（to_dest）/ 先（from_dest）の停留所を「直通で行けるバス停」とする
 //  5. 座標は停留所名検索の zahyo。上限が近ければ国土数値情報 P11 の座標で代用する
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { decodeEntities, LimitReached, nnrFetch, stats, stripTags, TooManyFailures } from "./nnr-fetch";
+import { CACHE_DIR, decodeEntities, LimitReached, nnrFetch, stats, stripTags, TooManyFailures } from "./nnr-fetch";
 import { option } from "./lib";
 
 const OUT = option("out") ?? "src/data/bus-routes.json";
@@ -21,13 +23,23 @@ const COORD_SEARCH_BUDGET = Number(process.env.NNR_COORD_BUDGET ?? 660);
 const SDATE = "2026/11/02"; // 月曜（平日ダイヤ）
 
 type DestKey = "gion" | "higashi";
-const DESTS: Record<DestKey, { name: string; listCode: string; routeId: string; lat: number; lng: number }> = {
-  gion: { name: "祇園町", listCode: "0001,510030", routeId: "0001,510030", lat: 33.5940762, lng: 130.4144121 },
-  higashi: { name: "東光二丁目", listCode: "0001,591880", routeId: "0000,D11107", lat: 33.5967047, lng: 130.428745 },
+type DestStop = { name: string; listCode: string; routeId: string; lat: number; lng: number };
+/** 目的地ごとの降りるバス停。higashi（東福岡）は最寄りの東光二丁目に加えて、学校から約 350〜480m の 4 か所（2026-10-31 追加） */
+const DEST_STOPS: Record<DestKey, DestStop[]> = {
+  gion: [{ name: "祇園町", listCode: "0001,510030", routeId: "0001,510030", lat: 33.5940762, lng: 130.4144121 }],
+  higashi: [
+    { name: "東光二丁目", listCode: "0001,591880", routeId: "0000,D11107", lat: 33.5967047, lng: 130.428745 },
+    { name: "東光小学校前", listCode: "0001,591870", routeId: "0001,591870", lat: 33.5919763, lng: 130.432292 },
+    { name: "東比恵二丁目", listCode: "0001,580070", routeId: "0001,580070", lat: 33.5911673, lng: 130.4281343 },
+    { name: "東光町", listCode: "0001,580050", routeId: "0001,580050", lat: 33.5946279, lng: 130.4257954 },
+    { name: "豊一丁目", listCode: "0001,591860", routeId: "0001,591860", lat: 33.5986796, lng: 130.4311247 },
+  ],
 };
+const DESTS: Record<DestKey, DestStop> = { gion: DEST_STOPS.gion[0]!, higashi: DEST_STOPS.higashi[0]! };
+const ONLY = option("only") as DestKey | undefined;
 
 const startedAt = Date.now();
-const failures: { dest: DestKey; terminus: string; reason: string }[] = [];
+const failures: { dest: DestKey; destStop: string; terminus: string; reason: string }[] = [];
 let stoppedReason: string | null = null;
 
 function get(path: string): string | null {
@@ -218,6 +230,7 @@ function p11Lookup(raw: string, near: { lat: number; lng: number }) {
 // ---------- 本体 ----------
 type RouteOut = {
   dest: DestKey;
+  destStop?: string;
   keitoCd: string;
   number: string;
   kind: string;
@@ -230,16 +243,33 @@ type RouteOut = {
   destIndex: number;
 };
 
-type Job = { dest: DestKey; terminus: string; direction: "to_dest" | "from_dest"; cassette: Cassette };
+type Job = { dest: DestKey; ds: DestStop; terminus: string; direction: "to_dest" | "from_dest"; cassette: Cassette };
+
+/** 系統（keito_cd）→ 停留所列。通過時刻表は始発からの全停留所を出すので、乗る区間が違っても系統が同じなら同じ列。
+ *  キャッシュ済みの通過時刻表から先に作っておき、取得済みの系統は取り直さない */
+function cachedKeitoStops(): Map<string, string> {
+  const m = new Map<string, string>();
+  const ledger = `${CACHE_DIR}/_requests.log`;
+  if (!existsSync(ledger)) return m;
+  for (const line of readFileSync(ledger, "utf8").split("\n")) {
+    const url = line.split("\t")[2];
+    const k = url?.match(/f=busbin.*keito_cd=(\d+)/);
+    if (!url || !k || m.has(k[1]!)) continue;
+    const t = nnrFetch(url, { cacheOnly: true });
+    if (t) m.set(k[1]!, t);
+  }
+  return m;
+}
 
 function main() {
-  const jobs = new Map<string, Job>(); // dest|direction|keitoCd → 最初に見つけた便
-  const morning = new Map<string, { n: number; total: number; from: string }>(); // dest|direction|keitoCd
+  const jobs = new Map<string, Job>(); // dest|destStop|direction|keitoCd → 最初に見つけた便
+  const morning = new Map<string, { n: number; total: number; from: string }>(); // 同上
   const terminusIds = new Map<string, SearchItem>();
+  const prev = ONLY && existsSync(OUT) ? (JSON.parse(readFileSync(OUT, "utf8")) as { meta: Record<string, unknown>; routes: RouteOut[] }) : null;
+  const destKeys = ONLY ? [ONLY] : (Object.keys(DEST_STOPS) as DestKey[]);
 
   try {
-    for (const dk of Object.keys(DESTS) as DestKey[]) {
-      const d = DESTS[dk];
+    for (const dk of destKeys) for (const d of DEST_STOPS[dk]) {
       const html = get(`busroute?f=busikisaki&list=${d.listCode}&ns=1`);
       if (!html) throw new Error(`${d.name} の行先一覧が取れません`);
       const rows = parseIkisaki(html);
@@ -267,7 +297,7 @@ function main() {
           }
         }
         if (!st) {
-          failures.push({ dest: dk, terminus: term, reason: "停留所名検索で一致する停留所なし" });
+          failures.push({ dest: dk, destStop: d.name, terminus: term, reason: "停留所名検索で一致する停留所なし" });
           continue;
         }
         terminusIds.set(term, st);
@@ -282,8 +312,8 @@ function main() {
             if (!r.direct) break; // 6 時以降に 1 本も無ければ 7 時も無い
             found = true;
             for (const c of r.cassettes) {
-              const key = `${dk}|${direction}|${c.keitoCd}`;
-              if (!jobs.has(key)) jobs.set(key, { dest: dk, terminus: usedName, direction, cassette: c });
+              const key = `${dk}|${d.name}|${direction}|${c.keitoCd}`;
+              if (!jobs.has(key)) jobs.set(key, { dest: dk, ds: d, terminus: usedName, direction, cassette: c });
               if (hour === "07") {
                 const m = morning.get(key) ?? { n: 0, total: 0, from: st.name };
                 const hh = Number(c.time.slice(0, 2));
@@ -295,7 +325,7 @@ function main() {
           }
           if (found) break;
         }
-        if (!found) failures.push({ dest: dk, terminus: term, reason: `直通なし（${usedName} との両方向・6時/7時）` });
+        if (!found) failures.push({ dest: dk, destStop: d.name, terminus: term, reason: `直通なし（${usedName} との両方向・6時/7時）` });
       }
     }
   } catch (e) {
@@ -304,24 +334,34 @@ function main() {
   }
 
   // 通過時刻表
+  // --only のときは他の目的地の routes を既存の出力からそのまま引き継ぐ（座標も決め直さない）
+  const kept: RouteOut[] = prev ? prev.routes.filter((r) => r.dest !== ONLY) : [];
   const routes: RouteOut[] = [];
+  const keitoHtml = cachedKeitoStops();
+  let keitoReused = 0;
   try {
     for (const [key, job] of jobs) {
-      const h = get(job.cassette.busbin);
+      let h = keitoHtml.get(job.cassette.keitoCd) ?? null;
+      if (h) keitoReused++;
+      else {
+        h = get(job.cassette.busbin);
+        if (h) keitoHtml.set(job.cassette.keitoCd, h);
+      }
       if (!h) {
-        failures.push({ dest: job.dest, terminus: job.terminus, reason: `通過時刻表が取れない（keito ${job.cassette.keitoCd}）` });
+        failures.push({ dest: job.dest, destStop: job.ds.name, terminus: job.terminus, reason: `通過時刻表が取れない（keito ${job.cassette.keitoCd}）` });
         continue;
       }
       const raw = parseBusbin(h);
-      const dName = DESTS[job.dest].name;
+      const dName = job.ds.name;
       const destIndex = raw.findIndex((s) => baseName(s.raw) === dName);
       if (destIndex < 0) {
-        failures.push({ dest: job.dest, terminus: job.terminus, reason: `通過時刻表に ${dName} が無い（keito ${job.cassette.keitoCd}）` });
+        failures.push({ dest: job.dest, destStop: dName, terminus: job.terminus, reason: `通過時刻表に ${dName} が無い（keito ${job.cassette.keitoCd}）` });
         continue;
       }
       const m = morning.get(key);
       routes.push({
         dest: job.dest,
+        ...(job.dest === "higashi" ? { destStop: dName } : {}),
         keitoCd: job.cassette.keitoCd,
         number: job.cassette.number,
         kind: job.cassette.kind,
@@ -351,7 +391,7 @@ function main() {
   let p11Used = 0;
   try {
     for (const r of routes) {
-      const d = DESTS[r.dest];
+      const d = DEST_STOPS[r.dest].find((x) => x.name === (r.destStop ?? DESTS[r.dest].name))!;
       const idxs = r.stops.map((_, i) => i);
       // 目的バス停から外へ向かって決めると「前後の停留所」の座標が先に決まっている
       const order = r.direction === "to_dest" ? idxs.slice(0, r.destIndex + 1).reverse() : idxs.slice(r.destIndex);
@@ -384,11 +424,12 @@ function main() {
   }
 
   // 直通で行けるバス停（重複除去: 同名で 500m 以内は同じ停留所）
-  type StopOut = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: DestKey[]; numbers: string[] };
+  type StopOut = { name: string; lat: number | null; lng: number | null; city?: string; coordSource: string | null; dests: DestKey[]; numbers: string[]; higashiStops?: string[] };
   const stops: StopOut[] = [];
   // 目的 → 行先 の向きでしか直通が出なかった便（from_dest）は stops[] に入れない。
   // 帰りの便が目的バス停を通る保証が無く、実際 福大病院 → 祇園町 は公式検索で直通なし（行きの 12 番は祇園町を通るが帰りは通らない）
-  for (const r of routes) {
+  const allRoutes = [...kept, ...routes];
+  for (const r of allRoutes) {
     if (r.direction !== "to_dest") continue;
     const reach = r.stops.slice(0, r.destIndex).filter((s) => !s.passThrough);
     for (const s of reach) {
@@ -401,12 +442,19 @@ function main() {
       }
       if (!o.dests.includes(r.dest)) o.dests.push(r.dest);
       if (!o.numbers.includes(r.number)) o.numbers.push(r.number);
+      if (r.dest === "higashi") {
+        const ds = r.destStop ?? DESTS.higashi.name;
+        o.higashiStops ??= [];
+        if (!o.higashiStops.includes(ds)) o.higashiStops.push(ds);
+      }
     }
   }
 
   const st = stats();
-  const out = {
-    meta: {
+  const fromDestOnly = allRoutes
+    .filter((r) => r.direction === "from_dest")
+    .map((r) => ({ dest: r.dest, ...(r.destStop ? { destStop: r.destStop } : {}), number: r.number, terminus: r.terminus, note: "行先→目的では直通が出ず、目的→行先でだけ出た。通勤の向きで乗れる保証が無いので stops[] には入れていない" }));
+  const metaFull = {
       source: "西鉄 時刻・運賃検索 https://jik.nishitetsu.jp/（経路検索は乗換なし・2026/11/02 平日ダイヤ 6時台/7時台）",
       coordSources: { "nnr-search": "西鉄の停留所名検索の zahyo", p11: "国土数値情報 P11 バス停留所 2022 福岡県（P11_001 で名前一致・前後の停留所に最も近いもの）" },
       generatedAt: new Date().toISOString(),
@@ -416,19 +464,35 @@ function main() {
       stoppedReason,
       dests: Object.fromEntries(Object.entries(DESTS).map(([k, v]) => [k, { name: v.name, code: v.listCode, lat: v.lat, lng: v.lng }])),
       failures,
-      fromDestOnly: routes
-        .filter((r) => r.direction === "from_dest")
-        .map((r) => ({ dest: r.dest, number: r.number, terminus: r.terminus, note: "行先→目的では直通が出ず、目的→行先でだけ出た。通勤の向きで乗れる保証が無いので stops[] には入れていない" })),
+      fromDestOnly,
       p11CoordCount: p11Used,
       missingCoordCount: stops.filter((s) => s.lat === null).length,
-    },
-    routes,
-    stops,
   };
+  // --only（追加収集）のときは前回の meta を土台に、追加分を higashiExtension として追記する
+  const meta = prev
+    ? {
+        ...prev.meta,
+        requestsTotal: st.totalEver,
+        destStops: Object.fromEntries(Object.entries(DEST_STOPS).map(([k, v]) => [k, v.map((x) => ({ name: x.name, code: x.listCode, lat: x.lat, lng: x.lng }))])),
+        fromDestOnly,
+        missingCoordCount: stops.filter((s) => s.lat === null).length,
+        [`${ONLY}Extension`]: {
+          note: "学校（東福岡）近くの 4 バス停（東光小学校前・東比恵二丁目・東光町・豊一丁目）を目的バス停に追加。東光二丁目分も destStop つきで作り直し",
+          generatedAt: new Date().toISOString(),
+          requests: st.network,
+          elapsedSec: Math.round((Date.now() - startedAt) / 1000),
+          keitoReusedFromCache: keitoReused,
+          stoppedReason,
+          failures: failures.filter((f) => f.destStop !== DESTS[ONLY!].name),
+          p11CoordCount: p11Used,
+        },
+      }
+    : metaFull;
+  const out = { meta, routes: allRoutes, stops };
   writeFileSync(OUT, JSON.stringify(out, null, 1) + "\n");
-  console.log(`routes ${routes.length} / stops ${stops.length} / requests this run ${st.network} total ${st.totalEver} / ${out.meta.elapsedSec}s`);
+  console.log(`routes ${allRoutes.length}（今回 ${routes.length}・系統の再利用 ${keitoReused}） / stops ${stops.length} / requests this run ${st.network} total ${st.totalEver} / ${Math.round((Date.now() - startedAt) / 1000)}s`);
   if (stoppedReason) console.log(`停止: ${stoppedReason}`);
-  for (const f of failures) console.log(`  取れず: [${f.dest}] ${f.terminus} — ${f.reason}`);
+  for (const f of failures) console.log(`  取れず: [${f.dest}/${f.destStop}] ${f.terminus} — ${f.reason}`);
 }
 
 main();
