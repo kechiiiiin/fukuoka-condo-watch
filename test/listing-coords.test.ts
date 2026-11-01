@@ -3,9 +3,11 @@
 // （ページそのものはリポジトリに入れない）。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COORD_MAX_PER_RUN, CHINTAI_DETAIL_MAX_PER_RUN, parseIngestRequest } from "../src/listing-crawl-core.ts";
+import { COORD_MAX_PER_RUN, CHINTAI_DETAIL_MAX_PER_RUN, GSI_MAX_PER_RUN, parseIngestRequest } from "../src/listing-crawl-core.ts";
 import {
   chintaiKankyoUrl,
+  gsiAddressSearchUrl,
+  parseGsiAddressSearch,
   hasChintaiKankyoStructure,
   hasSaleDetailStructure,
   parseChintaiKankyoCoords,
@@ -102,4 +104,60 @@ test("取り込み要求: coord_targets / coord_results の検証（上限は詳
   assert.throws(() => parseIngestRequest({ op: "coord_results", fetchedAt: "2026-10-31T11:00:00Z", results: [{ externalId: "1", kind: "sale", lat: 130.4, lng: 33.6 }] }), /lat \/ lng/);
   assert.throws(() => parseIngestRequest({ op: "coord_results", fetchedAt: "x", results: [] }));
   assert.throws(() => parseIngestRequest({ op: "coord_results", fetchedAt: "2026-10-31T11:00:00Z", results: new Array(61).fill({ externalId: "1", kind: "sale" }) }));
+});
+
+// 国土地理院の住所検索（2026-11-01 に実測した応答の形）
+const gsiFeature = (title: string, lng: number, lat: number) => ({
+  geometry: { coordinates: [lng, lat], type: "Point" },
+  type: "Feature",
+  properties: { addressCode: "", title },
+});
+
+test("国土地理院の住所検索: 先頭の結果の title に「番」があるときだけ採る・coordinates は [経度, 緯度]", () => {
+  assert.deepEqual(parseGsiAddressSearch([gsiFeature("福岡県福岡市東区原田四丁目１６番３６号", 130.443893, 33.623783)]), {
+    lat: 33.623783,
+    lng: 130.443893,
+  });
+  assert.deepEqual(parseGsiAddressSearch([gsiFeature("福岡県福岡市東区香椎浜二丁目５番", 130.425308, 33.655037)]), {
+    lat: 33.655037,
+    lng: 130.425308,
+  });
+  // 丁目・町止まりは採らない（先頭が丁目止まりなら、2 件目以降に「番」があっても採らない）
+  assert.equal(parseGsiAddressSearch([gsiFeature("福岡県福岡市中央区平尾浄水町", 130.39, 33.57)]), null);
+  assert.equal(
+    parseGsiAddressSearch([gsiFeature("福岡県福岡市東区原田四丁目", 130.44, 33.62), gsiFeature("福岡県福岡市東区原田四丁目１番", 130.44, 33.62)]),
+    null,
+  );
+  assert.equal(parseGsiAddressSearch([]), null);
+  assert.equal(parseGsiAddressSearch({}), null);
+  assert.equal(parseGsiAddressSearch([gsiFeature("…１番", 33.6, 130.4)]), null, "緯度経度が逆なら日本の外 → 捨てる");
+  assert.equal(parseGsiAddressSearch([{ properties: { title: "…１番" }, geometry: { coordinates: ["130.4", "33.6"] } }]), null);
+  assert.equal(
+    gsiAddressSearchUrl("福岡県福岡市東区原田４-16-36"),
+    "https://msearch.gsi.go.jp/address-search/AddressSearch?q=%E7%A6%8F%E5%B2%A1%E7%9C%8C%E7%A6%8F%E5%B2%A1%E5%B8%82%E6%9D%B1%E5%8C%BA%E5%8E%9F%E7%94%B0%EF%BC%94-16-36",
+  );
+});
+
+test("取り込み要求: gsi_targets / gsi_results の検証（上限 300 件・日本の範囲・片方だけは null）", () => {
+  assert.equal(GSI_MAX_PER_RUN, 300);
+  assert.deepEqual(parseIngestRequest({ op: "gsi_targets", limit: 300 }), { op: "gsi_targets", kind: "chuko", limit: 300 });
+  assert.throws(() => parseIngestRequest({ op: "gsi_targets", limit: 301 }));
+  const r = parseIngestRequest({
+    op: "gsi_results",
+    fetchedAt: "2026-11-01T01:00:00Z",
+    results: [
+      { externalId: "21806428", kind: "sale", lat: 33.623783, lng: 130.443893 },
+      { externalId: "21806429", kind: "sale", lat: null, lng: null },
+      { externalId: "21806430", kind: "sale", lat: 33.6 },
+    ],
+  });
+  assert.deepEqual(r.op === "gsi_results" ? r.results : null, [
+    { externalId: "21806428", kind: "sale", lat: 33.623783, lng: 130.443893 },
+    { externalId: "21806429", kind: "sale", lat: null, lng: null },
+    { externalId: "21806430", kind: "sale", lat: null, lng: null },
+  ]);
+  assert.throws(() => parseIngestRequest({ op: "gsi_results", fetchedAt: "2026-11-01T01:00:00Z", results: [{ externalId: "1", kind: "sale", lat: 130.4, lng: 33.6 }] }), /lat \/ lng/);
+  assert.throws(() => parseIngestRequest({ op: "gsi_results", fetchedAt: "2026-11-01T01:00:00Z", results: [{ externalId: "1", kind: "x" }] }));
+  assert.throws(() => parseIngestRequest({ op: "gsi_results", fetchedAt: "nope", results: [] }));
+  assert.throws(() => parseIngestRequest({ op: "gsi_results", fetchedAt: "2026-11-01T01:00:00Z", results: new Array(301).fill({ externalId: "1", kind: "sale" }) }));
 });

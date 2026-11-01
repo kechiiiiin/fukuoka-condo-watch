@@ -44,6 +44,9 @@ import {
   type ChintaiDetailResult,
   COORD_PRIORITY,
   COORD_TARGETS_SQL,
+  GSI_TARGETS_SQL,
+  SHARE_COORDS_SQLS,
+  UPDATE_GSI_COORDS_SQL,
   type CoordResult,
   coordUpdateRow,
   CRAWL,
@@ -449,6 +452,9 @@ export async function handleListingIngest(req: Request, env: Env, now: () => num
   // 座標（中古・賃貸の両方）。これも回・カーソルを持たない UPDATE だけの流れ
   if (r.op === "coord_targets") return ingestJson(await coordTargets(db, r.limit));
   if (r.op === "coord_results") return ingestJson(await coordResults(db, r.fetchedAt, r.results));
+  // 国土地理院の住所検索の仮座標（番地まである住所だけ）。座標と同じく UPDATE だけの流れ
+  if (r.op === "gsi_targets") return ingestJson(await gsiTargets(db, r.limit));
+  if (r.op === "gsi_results") return ingestJson(await gsiResults(db, r.fetchedAt, r.results));
   // kind ごとに情報源（ページサイズ・対象）と掲載の表を切り替える。どちらも Worker では解析しない（Mac が送った結果を反映するだけ）
   if (r.kind === "shinchiku") return ingestKind(db, env, r, new ShinchikuSource(), SHINCHIKU_STORE, now);
   if (r.kind === "chintai") return ingestKind(db, env, r, new ChintaiSource(), CHINTAI_STORE, now);
@@ -528,13 +534,31 @@ async function detailResults(
 }
 
 // ---------------------------------------------------------------------------
-// 座標（中古 = 詳細ページの initIdo / 賃貸 = 周辺環境ページの js-gmapData）。掲載中で未取得のものを、条件に近いものから
+// 座標（中古 = 詳細ページの initIdo / 賃貸 = 周辺環境ページの js-gmapData・番地のある住所は国土地理院の仮座標）。
+// 同じ建物は 1 件だけ取り、SHARE_COORDS_SQLS で他の掲載へ写す。賃貸が先、その中は条件に近いものから
 // ---------------------------------------------------------------------------
 
-/** 座標を取る相手を limit 件まで返す。SQL と並び順は src/listing-crawl-core.ts の COORD_TARGETS_SQL */
-async function coordTargets(db: D1Database, limit: number): Promise<IngestResponse> {
+/**
+ * 同じ建物の使い回し（SUUMO 由来 → 国土地理院の仮座標 の順）を流し、写った掲載の数を返す。
+ * SQL は src/listing-crawl-core.ts の SHARE_*_COORDS_SQL（テストが素の SQLite で実行して確かめている）。
+ */
+async function shareCoords(db: D1Database): Promise<number> {
+  const res = await db.batch(SHARE_COORDS_SQLS.map((sql) => db.prepare(sql)));
+  return res.reduce((s, r) => s + (r.meta?.changes ?? 0), 0);
+}
+
+const coordPriorityBind = () => {
   const p = COORD_PRIORITY;
-  const bind = [SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, p.areaMin, p.roomsMin, p.saleMaxYen, p.rentMaxYen] as const;
+  return [SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, p.areaMin, p.roomsMin, p.saleMaxYen, p.rentMaxYen] as const;
+};
+
+/**
+ * 座標を取る相手を limit 件まで返す（同じ建物は 1 件・賃貸が先）。SQL と並び順は src/listing-crawl-core.ts の COORD_TARGETS_SQL。
+ * 最初に同じ建物の使い回しを流す（一覧の周回で増えた掲載に、既に取れている建物の座標を写してから選ぶ）
+ */
+async function coordTargets(db: D1Database, limit: number): Promise<IngestResponse> {
+  const shared = await shareCoords(db);
+  const bind = coordPriorityBind();
   const rows = await db
     .prepare(`${COORD_TARGETS_SQL} LIMIT ?7`)
     .bind(...bind, limit)
@@ -549,20 +573,54 @@ async function coordTargets(db: D1Database, limit: number): Promise<IngestRespon
     targets: rows.results.map((r) => ({ externalId: r.external_id, url: r.url, kind: r.kind, priority: r.priority })),
     remaining: total?.n ?? rows.results.length,
     remainingPriority: total?.p ?? 0,
+    shared,
   };
 }
 
-/** 座標を反映する（UPDATE だけ・取得元ごとに 1 文を 1 回の batch で）。読めなかった物件にも coord_fetched_at を入れる */
+/**
+ * 座標を反映する（UPDATE だけ・取得元ごとに 1 文を 1 回の batch で）。読めなかった物件にも coord_fetched_at を入れる。
+ * 反映の後に同じ建物の使い回しを流す
+ */
 async function coordResults(db: D1Database, fetchedAt: string, results: CoordResult[]): Promise<IngestResponse> {
+  return applyCoordResults(db, UPDATE_COORDS_SQL, fetchedAt, results);
+}
+
+/** 国土地理院の住所検索に掛ける相手（掲載中・座標なし・未試行・番地あり・同じ建物は 1 件）。SQL は GSI_TARGETS_SQL */
+async function gsiTargets(db: D1Database, limit: number): Promise<IngestResponse> {
+  const bind = coordPriorityBind();
+  const rows = await db
+    .prepare(`${GSI_TARGETS_SQL} LIMIT ?7`)
+    .bind(...bind, limit)
+    .all<{ external_id: string; address: string; kind: "sale" | "rent" }>();
+  const total = await db
+    .prepare(`SELECT COUNT(*) AS n FROM (${GSI_TARGETS_SQL})`)
+    .bind(...bind)
+    .first<{ n: number }>();
+  return {
+    ok: true,
+    status: "running",
+    gsiTargets: rows.results.map((r) => ({ externalId: r.external_id, kind: r.kind, address: r.address })),
+    remaining: total?.n ?? rows.results.length,
+  };
+}
+
+/** 国土地理院の結果を反映する（lat が NULL の行だけ座標を入れ、gsi_tried_at は必ず入れる）。その後に使い回し */
+async function gsiResults(db: D1Database, fetchedAt: string, results: CoordResult[]): Promise<IngestResponse> {
+  return applyCoordResults(db, UPDATE_GSI_COORDS_SQL, fetchedAt, results);
+}
+
+/** coord_results / gsi_results の共通部分: 取得元ごとに 1 文を 1 回の batch で流し、続けて使い回し */
+async function applyCoordResults(db: D1Database, sql: string, fetchedAt: string, results: CoordResult[]): Promise<IngestResponse> {
   const stmts: D1PreparedStatement[] = [];
   for (const [kind, sourceId] of [["sale", SUUMO_SOURCE_ID], ["rent", CHINTAI_SOURCE_ID]] as const) {
     const rows = results.filter((r) => r.kind === kind).map(coordUpdateRow);
-    if (rows.length > 0) stmts.push(db.prepare(UPDATE_COORDS_SQL).bind(sourceId, fetchedAt, JSON.stringify(rows)));
+    if (rows.length > 0) stmts.push(db.prepare(sql).bind(sourceId, fetchedAt, JSON.stringify(rows)));
   }
   if (stmts.length === 0) return { ok: true, status: "running", updated: 0 };
   const res = await db.batch(stmts);
   const updated = res.reduce((s, r) => s + (r.meta?.changes ?? 0), 0);
-  return { ok: true, status: "running", updated };
+  const shared = await shareCoords(db);
+  return { ok: true, status: "running", updated, shared };
 }
 
 async function ingestKind<R extends AnyListingRecord>(

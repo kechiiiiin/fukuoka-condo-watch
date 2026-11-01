@@ -124,7 +124,7 @@ export async function buildListingPicks(env: Env, url: URL) {
               line_name, station_name, walk_minutes, bus, address, url, first_seen, last_seen, current_price, first_price,
               price_cut_count, relisted_count, admin_fee, deposit, key_money, pets_allowed, listed_on,
               building_floors, room_floor, maisonette, ldk_tatami, detail_fetched_at,
-              lat, lng, coord_fetched_at
+              lat, lng, coord_fetched_at, coord_source
        FROM listings WHERE source = ? AND kind = ? AND delisted_on IS NULL`,
     )
       .bind(sourceId, kind)
@@ -206,6 +206,8 @@ export async function buildListingPicks(env: Env, url: URL) {
        * 座標が無い物件は null（バス直通のエリアのオン・オフに関わらず、座標があれば常に付ける）
        */
       busAccess: hasCoords(g) ? busAt(g.lat, g.lng) : null,
+      /** 座標が国土地理院の住所検索の仮座標（番地まで一致）か。カードの直通バス停に「（住所から推定）」を添える */
+      coordEstimated: g.coordEstimated,
       listedOn: g.latestListedOn,
       earliestFirstSeen: g.earliestFirstSeen,
       latestFirstSeen: g.latestFirstSeen,

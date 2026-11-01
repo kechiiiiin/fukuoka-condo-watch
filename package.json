@@ -8,6 +8,7 @@
     "crawl:local": "tsx scripts/suumo-crawl-local.ts",
     "crawl:detail": "tsx scripts/suumo-chintai-detail.ts",
     "crawl:coords": "tsx scripts/suumo-coords.ts",
+    "crawl:gsi": "tsx scripts/gsi-coords.ts",
     "access-app": "tsx scripts/access-app.ts",
     "dev": "wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",

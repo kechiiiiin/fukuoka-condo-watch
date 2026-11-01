@@ -55,6 +55,9 @@ export interface ListingPickRow {
   lng?: number | null;
   /** 座標を取りに行った時刻。NULL = まだ取りに行っていない */
   coord_fetched_at?: string | null;
+  // ---- 0010 で足した列 ----
+  /** 座標の出どころ。'suumo'（SUUMO のページの地図）| 'gsi'（国土地理院の住所検索の仮座標）。座標なしなら NULL */
+  coord_source?: string | null;
 }
 
 /**
@@ -430,9 +433,14 @@ export interface ListingGroup {
   ldkTatami: number | null;
   /** グループの中に 1 件でも詳細ページを取った部屋があるか（「未取得」と出し分けるため） */
   detailFetched: boolean;
-  /** 建物の座標（座標のある最初の行。同じ建物の部屋なので 1 つに決めてよい）。無ければ null */
+  /**
+   * 建物の座標（SUUMO 由来の座標のある最初の行、無ければ国土地理院の仮座標のある最初の行。同じ建物の部屋なので 1 つに決めてよい）。
+   * 無ければ null
+   */
   lat: number | null;
   lng: number | null;
+  /** lat / lng が国土地理院の住所検索の仮座標（coord_source = 'gsi'）か。カードに「（住所から推定）」を添える */
+  coordEstimated: boolean;
   /** 一番新しい情報公開日（読めたときだけ） */
   latestListedOn: string | null;
   /** 一番早い first_seen（この部屋が最初に見えた日） */
@@ -555,8 +563,10 @@ function buildGroup(key: string, items: ListingPickRow[]): ListingGroup {
     ldkTatami: minOf(items.map((r) => r.ldk_tatami ?? null)),
     detailFetched: items.some((r) => !!r.detail_fetched_at),
     ...(() => {
-      const c = items.find(hasCoords);
-      return c ? { lat: c.lat as number, lng: c.lng as number } : { lat: null, lng: null };
+      const c = items.find((r) => hasCoords(r) && r.coord_source !== "gsi") ?? items.find(hasCoords);
+      return c
+        ? { lat: c.lat as number, lng: c.lng as number, coordEstimated: c.coord_source === "gsi" }
+        : { lat: null, lng: null, coordEstimated: false };
     })(),
     latestListedOn: items.map((r) => r.listed_on ?? null).filter((v): v is string => !!v).sort().slice(-1)[0] ?? null,
     earliestFirstSeen: items.map((r) => r.first_seen).sort()[0]!,

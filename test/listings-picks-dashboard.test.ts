@@ -408,6 +408,22 @@ test("カード: 職場・学校の最寄り直通バス停をタグで出す（
   }
 });
 
+test("カード: 座標が国土地理院の仮座標（coordEstimated）なら直通バス停に「（住所から推定）」を添える", async () => {
+  let h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess: BUS_ACCESS, coordEstimated: true }] }));
+  h.run();
+  await flush();
+  assert.ok(h.ids.get("cards")!.innerHTML.includes('<span class="meta">（住所から推定）</span></div>'));
+  h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess: BUS_ACCESS, coordEstimated: false }] }));
+  h.run();
+  await flush();
+  assert.ok(!h.ids.get("cards")!.innerHTML.includes("住所から推定"));
+  // 直通バス停が無ければ何も出さない（推定の注記だけが出ることはない）
+  h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess: { gion: null, higashi: null }, coordEstimated: true }] }));
+  h.run();
+  await flush();
+  assert.ok(!h.ids.get("cards")!.innerHTML.includes("住所から推定"));
+});
+
 test("カード: 片方だけなら片方の行だけ・両方無ければ何も出さない・座標なし（null）も何も出さない", async () => {
   const only = { gion: null, higashi: { ...BUS_ACCESS.higashi, alightAt: [] } };
   let h = harness("", () => ({ ...PAYLOAD("rent"), items: [{ ...CARD, busAccess: only }] }));

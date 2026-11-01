@@ -568,3 +568,22 @@ test("グループの座標: 座標のある最初の行を使う・無ければ
   const [h] = groupListings([row({ external_id: "c" })]);
   assert.equal(h!.lat, null);
 });
+
+test("グループの座標: SUUMO 由来を国土地理院の仮座標より優先し、仮座標だけなら coordEstimated = true（バス直通の判定にも使える）", () => {
+  const [g] = groupListings([
+    row({ external_id: "a", ...FAR_AWAY, coord_source: "gsi" }),
+    row({ external_id: "b", ...NEAR_GOFUKU, coord_source: "suumo" }),
+  ]);
+  assert.equal(g!.lat, NEAR_GOFUKU.lat);
+  assert.equal(g!.coordEstimated, false);
+  const [h] = groupListings([row({ external_id: "c", ...NEAR_GOFUKU, coord_source: "gsi" })]);
+  assert.equal(h!.lat, NEAR_GOFUKU.lat);
+  assert.equal(h!.coordEstimated, true);
+  const [n] = groupListings([row({ external_id: "d", lat: null, lng: null })]);
+  assert.equal(n!.coordEstimated, false);
+
+  const idx = busStopIndex();
+  const busNear = (r: { lat: number; lng: number }) => idx.hasAny(r.lat, r.lng);
+  const bus = parsePickFilters(new URLSearchParams("area=bus"), () => true);
+  assert.equal(classifyPick(row({ station_name: "井尻", ...NEAR_GOFUKU, coord_source: "gsi" }), bus, 2026, "2026-09-14", busNear), "ok", "仮座標でもバス直通のエリアに入る");
+});

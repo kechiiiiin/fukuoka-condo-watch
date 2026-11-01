@@ -95,3 +95,33 @@ export function chintaiKankyoUrl(detailUrl: string): string | null {
   u.pathname = `/chintai/${m[1]}/kankyo/`;
   return u.toString();
 }
+
+// ---------------------------------------------------------------------------
+// 国土地理院の住所検索（https://msearch.gsi.go.jp/address-search/AddressSearch?q=<住所>）。scripts/gsi-coords.ts が使う
+// ---------------------------------------------------------------------------
+//
+// 応答は GeoJSON の Feature 風の配列（2026-11-01 に実測）:
+//   [{ "geometry": { "coordinates": [130.443893, 33.623783], "type": "Point" },
+//      "type": "Feature", "properties": { "addressCode": "", "title": "福岡県福岡市東区原田四丁目１６番３６号" } }, …]
+// - coordinates は **[経度, 緯度]** の順
+// - 住所で引く（マンション名では引けない）。番地まで一致しなければ丁目・町の代表点が返るので、
+//   **先頭の結果の title に「番」が含まれるときだけ**採る（丁目止まりの代表点は直通バス停 320m の判定には粗すぎる）
+// - 実測: 原田４-16-36 → 33.623783, 130.443893「…原田四丁目１６番３６号」（SUUMO の地図は 33.62416, 130.44419）・
+//         香椎浜２-5-1 → 33.655037, 130.425308「…香椎浜二丁目５番」・平尾浄水町（番地なし）→「…平尾浄水町」で採らない
+
+/** 国土地理院の住所検索 URL */
+export function gsiAddressSearchUrl(address: string): string {
+  return `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(address)}`;
+}
+
+/** 国土地理院の住所検索の応答（JSON を parse したもの）→ 番地まで一致した座標。採らなければ null */
+export function parseGsiAddressSearch(json: unknown): LatLng | null {
+  if (!Array.isArray(json) || json.length === 0) return null;
+  const f = json[0] as { geometry?: { coordinates?: unknown }; properties?: { title?: unknown } } | null;
+  if (!f || typeof f !== "object") return null;
+  const title = f.properties?.title;
+  if (typeof title !== "string" || !title.includes("番")) return null;
+  const c = f.geometry?.coordinates;
+  if (!Array.isArray(c) || c.length < 2 || typeof c[0] !== "number" || typeof c[1] !== "number") return null;
+  return plausibleLatLng(c[1], c[0]);
+}

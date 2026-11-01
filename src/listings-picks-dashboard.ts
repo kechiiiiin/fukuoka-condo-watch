@@ -333,6 +333,7 @@ const HTML = `<!doctype html>
 
   /**
    * 最寄りの直通バス停（職場 = 青・学校 = オレンジ）。徒歩5分以内に無い行先は出さない。両方無ければ空文字。
+   * 座標が国土地理院の住所検索の仮座標（coordEstimated）なら末尾に「（住所から推定）」
    * 系統番号は多いと長くなるので 4 つまで（残りは「ほか」）
    */
   function busLine(it) {
@@ -349,7 +350,9 @@ const HTML = `<!doctype html>
       var alight = a.higashi.alightAt && a.higashi.alightAt.length ? "（" + esc(a.higashi.alightAt.join("・")) + "で降りる）" : "";
       parts.push('<span class="bustag higashi">学校へ直通: ' + esc(a.higashi.name) + ' 徒歩' + a.higashi.minutes + '分' + nums(a.higashi) + alight + '</span>');
     }
-    return parts.length ? '<div class="busline">' + parts.join("") + '</div>' : "";
+    // 座標が国土地理院の住所検索の仮座標（SUUMO の地図の座標がまだ無い）なら、そう添える
+    var est = it.coordEstimated ? '<span class="meta">（住所から推定）</span>' : "";
+    return parts.length ? '<div class="busline">' + parts.join("") + est + '</div>' : "";
   }
 
   /** 賃貸のカード。賃料＋管理費・敷礼・ペット相談可・掲載日を出す（価格維持・売出/成約は売買の指標なので出さない） */

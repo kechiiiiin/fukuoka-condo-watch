@@ -15,6 +15,9 @@ import {
   COORD_PRIORITY,
   COORD_TARGETS_SQL,
   type CoordResult,
+  GSI_TARGETS_SQL,
+  SHARE_COORDS_SQLS,
+  UPDATE_GSI_COORDS_SQL,
   coordUpdateRow,
   detailUpdateRow,
   listingUpsertRow,
@@ -276,23 +279,229 @@ test("座標を取る相手: 掲載中・未取得だけ・条件に近いもの
   assert.deepEqual(
     rows.map((r) => [r.external_id, r.kind, r.priority]),
     [
-      ["s-near", "sale", 1],
       ["r-near", "rent", 1],
+      ["r-2ldk", "rent", 0],
+      ["s-near", "sale", 1],
       ["s-far", "sale", 0],
       ["s-small", "sale", 0],
-      ["r-2ldk", "rent", 0],
     ],
-    "条件に近いものが先・その中は古く見えたものが先。取得済み・掲載終了・URL なしは返らない",
+    "賃貸が先（2026-11-01）・その中は条件に近いものが先・その中は古く見えたものが先。取得済み・掲載終了・URL なしは返らない",
   );
 });
 
 test("0009 のマイグレーション: 既存の行は座標なし（NULL）のまま足される", () => {
   const db = new DatabaseSync(":memory:");
   const files = migrationFiles();
-  for (const f of files.filter((x) => !x.startsWith("0009"))) applyMigration(db, f);
+  for (const f of files.filter((x) => x < "0009")) applyMigration(db, f);
   db.prepare(
     `INSERT INTO listings (source, external_id, kind, first_seen, last_seen, current_price) VALUES (?, '1', 'rent', '2026-09-01', '2026-09-01', 100000)`,
   ).run(CHINTAI_SOURCE_ID);
-  for (const f of files.filter((x) => x.startsWith("0009"))) applyMigration(db, f);
+  for (const f of files.filter((x) => x >= "0009")) applyMigration(db, f);
   assert.deepEqual(readCoord(db, "1"), { lat: null, lng: null, coord_fetched_at: null });
+});
+
+// ---------------------------------------------------------------------------
+// 0010（2026-11-01）: 座標の出どころ・同じ建物の使い回し・建物単位で賃貸優先の targets・国土地理院の仮座標
+// ---------------------------------------------------------------------------
+
+interface CoordRow2 extends CoordRow {
+  coord_source: string | null;
+  gsi_tried_at: string | null;
+}
+const readCoord2 = (db: DatabaseSync, id: string, source = CHINTAI_SOURCE_ID): CoordRow2 => {
+  const r = db
+    .prepare("SELECT lat, lng, coord_fetched_at, coord_source, gsi_tried_at FROM listings WHERE source = ? AND external_id = ?")
+    .get(source, id) as unknown as CoordRow2;
+  return { ...r };
+};
+const share = (db: DatabaseSync) => {
+  for (const sql of SHARE_COORDS_SQLS) db.prepare(sql).run();
+};
+function applyGsi(db: DatabaseSync, source: string, triedAt: string, results: CoordResult[]): void {
+  db.prepare(UPDATE_GSI_COORDS_SQL).run(source, triedAt, JSON.stringify(results.map(coordUpdateRow)));
+}
+const P = COORD_PRIORITY;
+const coordTargets = (db: DatabaseSync) =>
+  (db.prepare(COORD_TARGETS_SQL).all(SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, P.areaMin, P.roomsMin, P.saleMaxYen, P.rentMaxYen) as unknown as {
+    external_id: string;
+    kind: string;
+    priority: number;
+  }[]).map((r) => [r.external_id, r.kind, r.priority]);
+const coordRemaining = (db: DatabaseSync) =>
+  ({
+    ...(db
+      .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(priority), 0) AS p FROM (${COORD_TARGETS_SQL})`)
+      .get(SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, P.areaMin, P.roomsMin, P.saleMaxYen, P.rentMaxYen) as unknown as { n: number; p: number }),
+  });
+const gsiTargets = (db: DatabaseSync) =>
+  (db.prepare(GSI_TARGETS_SQL).all(SUUMO_SOURCE_ID, CHINTAI_SOURCE_ID, P.areaMin, P.roomsMin, P.saleMaxYen, P.rentMaxYen) as unknown as {
+    external_id: string;
+    address: string;
+    kind: string;
+  }[]).map((r) => [r.external_id, r.kind, r.address]);
+
+const ADDR = "福岡県福岡市東区原田４-16-36";
+
+test("0010 のマイグレーション: 既存の座標は coord_source = 'suumo'・座標なしは NULL", () => {
+  const db = new DatabaseSync(":memory:");
+  const files = migrationFiles();
+  for (const f of files.filter((x) => x < "0010")) applyMigration(db, f);
+  for (const [id, lat] of [["1", 33.5], ["2", null]] as const) {
+    db.prepare(
+      `INSERT INTO listings (source, external_id, kind, first_seen, last_seen, current_price, lat, lng, coord_fetched_at)
+       VALUES (?, ?, 'rent', '2026-09-01', '2026-09-01', 100000, ?, ?, '2026-10-31T00:00:00Z')`,
+    ).run(CHINTAI_SOURCE_ID, id, lat, lat === null ? null : 130.4);
+  }
+  for (const f of files.filter((x) => x >= "0010")) applyMigration(db, f);
+  assert.equal(readCoord2(db, "1").coord_source, "suumo");
+  assert.equal(readCoord2(db, "2").coord_source, null);
+  assert.equal(readCoord2(db, "1").gsi_tried_at, null);
+});
+
+test("使い回し: SUUMO 由来の座標は同じ建物の座標なし・仮座標の掲載へ写る（中古⇔賃貸・coord_fetched_at も）。空のキー・掲載終了・別の建物には写らない", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s-src", buildingName: "原田ハイツ", address: ADDR }),
+    saleRecord({ externalId: "s-gsi", buildingName: " 原田ハイツ ", address: `${ADDR} ` }), // trim 後に一致
+    saleRecord({ externalId: "s-noname", buildingName: "", address: ADDR }), // 建物名が空 → 写らない
+    saleRecord({ externalId: "s-other", buildingName: "別の建物", address: ADDR }),
+    saleRecord({ externalId: "s-gone", buildingName: "原田ハイツ", address: ADDR }),
+  ]);
+  upsertList(db, "2026-10-02", [rentRecord({ externalId: "r-same", buildingName: "原田ハイツ", address: ADDR })]);
+  applyCoords(db, SUUMO_SOURCE_ID, "2026-10-31T11:00:00Z", [{ externalId: "s-src", kind: "sale", lat: 33.62416, lng: 130.44419 }]);
+  applyGsi(db, SUUMO_SOURCE_ID, "2026-11-01T01:00:00Z", [{ externalId: "s-gsi", kind: "sale", lat: 33.623783, lng: 130.443893 }]);
+  db.prepare("UPDATE listings SET delisted_on = '2026-10-30' WHERE external_id = 's-gone'").run();
+  assert.equal(readCoord2(db, "s-src", SUUMO_SOURCE_ID).coord_source, "suumo");
+  assert.equal(readCoord2(db, "s-gsi", SUUMO_SOURCE_ID).coord_source, "gsi");
+
+  share(db);
+  const copied = { lat: 33.62416, lng: 130.44419, coord_fetched_at: "2026-10-31T11:00:00Z", coord_source: "suumo" };
+  assert.deepEqual({ ...readCoord2(db, "r-same"), gsi_tried_at: undefined }, { ...copied, gsi_tried_at: undefined }, "中古 → 賃貸");
+  assert.deepEqual(readCoord2(db, "s-gsi", SUUMO_SOURCE_ID), { ...copied, gsi_tried_at: "2026-11-01T01:00:00Z" }, "仮座標は SUUMO 由来で上書き");
+  for (const id of ["s-noname", "s-other", "s-gone"]) {
+    assert.equal(readCoord2(db, id, SUUMO_SOURCE_ID).lat, null, id);
+  }
+  // 写された側はもう SUUMO に取りに行かない（同じ建物の他の掲載は targets に出ない）
+  const ids = coordTargets(db).map((r) => r[0]);
+  assert.ok(!ids.includes("r-same") && !ids.includes("s-gsi") && !ids.includes("s-src"), JSON.stringify(ids));
+  assert.ok(ids.includes("s-noname") && ids.includes("s-other"));
+});
+
+test("使い回し: 国土地理院の仮座標は座標なしの掲載へだけ写る（coord_fetched_at は入れない = 後で SUUMO から取り直す）", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s-gsi", buildingName: "原田ハイツ", address: ADDR }),
+    saleRecord({ externalId: "s-empty", buildingName: "原田ハイツ", address: ADDR }),
+  ]);
+  upsertList(db, "2026-10-02", [rentRecord({ externalId: "r-same", buildingName: "原田ハイツ", address: ADDR })]);
+  applyGsi(db, SUUMO_SOURCE_ID, "2026-11-01T01:00:00Z", [{ externalId: "s-gsi", kind: "sale", lat: 33.623783, lng: 130.443893 }]);
+  share(db);
+  const gsi = { lat: 33.623783, lng: 130.443893, coord_fetched_at: null, coord_source: "gsi", gsi_tried_at: null };
+  assert.deepEqual(readCoord2(db, "s-empty", SUUMO_SOURCE_ID), gsi);
+  assert.deepEqual(readCoord2(db, "r-same"), gsi, "中古 → 賃貸にも");
+  // SUUMO の targets には残る（建物で 1 件・賃貸が代表）
+  assert.deepEqual(coordTargets(db), [["r-same", "rent", 1]]);
+  // 国土地理院の targets からは外れる（lat がある）
+  assert.deepEqual(gsiTargets(db), []);
+});
+
+test("SUUMO の targets: 同じ建物は 1 件（賃貸を代表に）・賃貸の建物が先・remaining は建物単位", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s-a1", buildingName: "A棟", address: "福岡市東区A" }),
+    saleRecord({ externalId: "s-a2", buildingName: "A棟", address: "福岡市東区A", price: 60_000_000 }),
+    saleRecord({ externalId: "s-b", buildingName: "B棟", address: "福岡市東区B" }),
+    saleRecord({ externalId: "s-nokey1", buildingName: "C棟" }), // 住所が無い → 単独
+    saleRecord({ externalId: "s-nokey2", buildingName: "C棟" }),
+  ]);
+  upsertList(db, "2026-10-05", [
+    rentRecord({ externalId: "r-b", buildingName: "B棟", address: "福岡市東区B", floorPlan: "2LDK" }), // B 棟の代表は賃貸（条件外でも）
+    rentRecord({ externalId: "r-d", buildingName: "D棟", address: "福岡市東区D" }),
+  ]);
+  assert.deepEqual(coordTargets(db), [
+    ["r-b", "rent", 1], // 建物の中の 1 件（s-b）が条件に近いので建物として priority 1（r-d と同じ日に見えたので ID 順）
+    ["r-d", "rent", 1],
+    ["s-a1", "sale", 1],
+    ["s-nokey1", "sale", 1],
+    ["s-nokey2", "sale", 1],
+  ]);
+  assert.deepEqual(coordRemaining(db), { n: 5, p: 5 });
+  // B 棟を SUUMO で取ったら（r-b）、同じ建物の中古 s-b も使い回しで埋まり、B 棟は出てこない
+  applyCoords(db, CHINTAI_SOURCE_ID, "2026-11-01T02:00:00Z", [{ externalId: "r-b", kind: "rent", lat: 33.6, lng: 130.4 }]);
+  share(db);
+  assert.equal(readCoord2(db, "s-b", SUUMO_SOURCE_ID).coord_source, "suumo");
+  assert.deepEqual(coordTargets(db).map((r) => r[0]), ["r-d", "s-a1", "s-nokey1", "s-nokey2"]);
+  assert.deepEqual(coordRemaining(db), { n: 4, p: 4 });
+});
+
+test("国土地理院の仮座標は SUUMO の結果で上書きされ、SUUMO が読めなかった（null）ときは残る", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s1", buildingName: "原田ハイツ", address: ADDR }),
+    saleRecord({ externalId: "s2", buildingName: "原田コーポ", address: ADDR }),
+  ]);
+  applyGsi(db, SUUMO_SOURCE_ID, "2026-11-01T01:00:00Z", [
+    { externalId: "s1", kind: "sale", lat: 33.623783, lng: 130.443893 },
+    { externalId: "s2", kind: "sale", lat: 33.623783, lng: 130.443893 },
+  ]);
+  assert.deepEqual(coordTargets(db).map((r) => r[0]), ["s1", "s2"], "仮座標があっても SUUMO の targets に残る（建物名が別なので 2 件）");
+  applyCoords(db, SUUMO_SOURCE_ID, "2026-11-01T02:00:00Z", [
+    { externalId: "s1", kind: "sale", lat: 33.62416, lng: 130.44419 },
+    { externalId: "s2", kind: "sale", lat: null, lng: null },
+  ]);
+  assert.deepEqual(readCoord2(db, "s1", SUUMO_SOURCE_ID), {
+    lat: 33.62416, lng: 130.44419, coord_fetched_at: "2026-11-01T02:00:00Z", coord_source: "suumo", gsi_tried_at: "2026-11-01T01:00:00Z",
+  });
+  assert.deepEqual(readCoord2(db, "s2", SUUMO_SOURCE_ID), {
+    lat: 33.623783, lng: 130.443893, coord_fetched_at: "2026-11-01T02:00:00Z", coord_source: "gsi", gsi_tried_at: "2026-11-01T01:00:00Z",
+  }, "SUUMO が null なら仮座標を消さない");
+});
+
+test("国土地理院の targets / results: 番地のある住所・座標なし・未試行だけ・同じ建物は 1 件。lat が NULL の行だけ入れ、gsi_tried_at は必ず入る", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [
+    saleRecord({ externalId: "s-banchi", buildingName: "X", address: ADDR }),
+    saleRecord({ externalId: "s-banchi2", buildingName: "X", address: ADDR }), // 同じ建物 → 1 件だけ
+    saleRecord({ externalId: "s-zen", buildingName: "Y", address: "福岡県福岡市東区香椎浜２－５－１" }), // 全角ハイフン
+    saleRecord({ externalId: "s-chome", buildingName: "Z", address: "福岡県福岡市東区原田４" }), // 丁目止まり
+    saleRecord({ externalId: "s-has", buildingName: "W", address: "福岡県福岡市東区原田４-1-1" }), // SUUMO 済み
+    saleRecord({ externalId: "s-gone", buildingName: "V", address: "福岡県福岡市東区原田４-2-2" }),
+  ]);
+  upsertList(db, "2026-10-02", [rentRecord({ externalId: "r-chome", address: "福岡県福岡市中央区平尾浄水町" })]);
+  applyCoords(db, SUUMO_SOURCE_ID, "2026-10-31T11:00:00Z", [{ externalId: "s-has", kind: "sale", lat: 33.6, lng: 130.4 }]);
+  db.prepare("UPDATE listings SET delisted_on = '2026-10-30' WHERE external_id = 's-gone'").run();
+  assert.deepEqual(gsiTargets(db), [
+    ["s-banchi", "sale", ADDR],
+    ["s-zen", "sale", "福岡県福岡市東区香椎浜２－５－１"],
+  ]);
+
+  // 結果: s-banchi は採用、s-zen は採らなかった（null）。SUUMO 済みの s-has に来ても上書きしない
+  applyGsi(db, SUUMO_SOURCE_ID, "2026-11-01T01:00:00Z", [
+    { externalId: "s-banchi", kind: "sale", lat: 33.623783, lng: 130.443893 },
+    { externalId: "s-zen", kind: "sale", lat: null, lng: null },
+    { externalId: "s-has", kind: "sale", lat: 33.1, lng: 130.1 },
+  ]);
+  assert.deepEqual(readCoord2(db, "s-banchi", SUUMO_SOURCE_ID), {
+    lat: 33.623783, lng: 130.443893, coord_fetched_at: null, coord_source: "gsi", gsi_tried_at: "2026-11-01T01:00:00Z",
+  });
+  assert.deepEqual(readCoord2(db, "s-zen", SUUMO_SOURCE_ID), {
+    lat: null, lng: null, coord_fetched_at: null, coord_source: null, gsi_tried_at: "2026-11-01T01:00:00Z",
+  }, "採らなくても試した印は入る");
+  assert.deepEqual(readCoord2(db, "s-has", SUUMO_SOURCE_ID), {
+    lat: 33.6, lng: 130.4, coord_fetched_at: "2026-10-31T11:00:00Z", coord_source: "suumo", gsi_tried_at: "2026-11-01T01:00:00Z",
+  }, "SUUMO の座標は上書きしない");
+  // 使い回しで s-banchi2 にも入り、targets は空になる（s-zen は試し済み）
+  share(db);
+  assert.equal(readCoord2(db, "s-banchi2", SUUMO_SOURCE_ID).coord_source, "gsi");
+  assert.deepEqual(gsiTargets(db), []);
+});
+
+test("一覧の毎日の UPSERT は coord_source・gsi_tried_at を消さない", () => {
+  const db = freshDb();
+  upsertSale(db, "2026-10-01", [saleRecord({ externalId: "s1", address: ADDR })]);
+  applyGsi(db, SUUMO_SOURCE_ID, "2026-11-01T01:00:00Z", [{ externalId: "s1", kind: "sale", lat: 33.623783, lng: 130.443893 }]);
+  upsertSale(db, "2026-11-02", [saleRecord({ externalId: "s1", address: ADDR, price: 44_000_000 })]);
+  assert.deepEqual(readCoord2(db, "s1", SUUMO_SOURCE_ID), {
+    lat: 33.623783, lng: 130.443893, coord_fetched_at: null, coord_source: "gsi", gsi_tried_at: "2026-11-01T01:00:00Z",
+  });
 });

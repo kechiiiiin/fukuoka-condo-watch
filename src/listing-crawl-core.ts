@@ -320,9 +320,16 @@ export type IngestRequest =
    */
   | { op: "coord_targets"; kind: CrawlKind; limit: number }
   /** 座標を反映する（UPDATE だけ）。読めなかった物件も lat/lng = null で送る（取り直さない印） */
-  | { op: "coord_results"; kind: CrawlKind; fetchedAt: string; results: CoordResult[] };
+  | { op: "coord_results"; kind: CrawlKind; fetchedAt: string; results: CoordResult[] }
+  /**
+   * 国土地理院の住所検索で仮座標を入れる相手をもらう（掲載中・座標なし・未試行・住所に番地あり。同じ建物は 1 件）。
+   * kind は見ない（coord_targets と同じ）
+   */
+  | { op: "gsi_targets"; kind: CrawlKind; limit: number }
+  /** 国土地理院の結果を反映する（UPDATE だけ）。採らなかった物件も lat/lng = null で送る（試した印） */
+  | { op: "gsi_results"; kind: CrawlKind; fetchedAt: string; results: CoordResult[] };
 
-/** 座標 1 件。kind で取得元（sale = 中古 suumo:ms-chuko / rent = 賃貸 suumo:chintai）を分ける */
+/** 座標 1 件（SUUMO・国土地理院の両方で使う）。kind で取得元（sale = 中古 suumo:ms-chuko / rent = 賃貸 suumo:chintai）を分ける */
 export interface CoordResult {
   externalId: string;
   kind: "sale" | "rent";
@@ -427,7 +434,8 @@ export function listingUpsertRow(r: ListingRecord, areaCode: string): ListingUps
  * sale では常に NULL / 0 になる（JSON に鍵が無ければ json_extract は NULL。pets・mais は 0 を入れて渡す）。
  *
  * ⚠️ **ldk_tatami・detail_fetched_at はここで触らない**（詳細ページの周回が入れる値で、毎週の一覧クロールで消したくない）。
- * ⚠️ **lat・lng・coord_fetched_at もここで触らない**（座標の周回 UPDATE_COORDS_SQL が入れる値。0009・2026-10-31）。
+ * ⚠️ **lat・lng・coord_fetched_at・coord_source・gsi_tried_at もここで触らない**（座標の周回 UPDATE_COORDS_SQL・
+ *    国土地理院の UPDATE_GSI_COORDS_SQL・使い回しの SHARE_*_COORDS_SQL が入れる値。0009・0010）。
  * ⚠️ **building_floors / room_floor も詳細で補った値を毎週消さない**: 一覧に値があれば一覧を正にし、
  *    一覧が NULL のときだけ今ある値（詳細由来）を残す（COALESCE(excluded, listings)。2026-09-27）。
  * ⚠️ **maisonette は毎週 0 に戻す**（二値・0008）。3 周目（nj_113）が同じ日に走って 1 を立て直す前提。
@@ -525,8 +533,10 @@ export function coordUpdateRow(r: CoordResult): { id: string; lat: number | null
 /**
  * 座標を listings に反映する UPDATE（?1 = 取得元・?2 = 取得時刻・?3 = coordUpdateRow の配列 JSON）。
  * ⚠️ 読めなかった（null）ときも coord_fetched_at は入れる（毎回取り直さないため）。
- * ⚠️ 既に入っている座標を null で消さない（COALESCE。取り直しで読めなかったときに前の値を残す）。
- * ⚠️ 一覧の UPSERT（UPSERT_LISTINGS_SQL）は lat・lng・coord_fetched_at を触らない。座標を書くのはここだけ。
+ * ⚠️ 既に入っている座標を null で消さない（COALESCE。取り直しで読めなかったときに前の値を残す。
+ *    国土地理院の仮座標（coord_source = 'gsi'）もこれで残る）。読めたときは coord_source = 'suumo' で上書き。
+ * ⚠️ 一覧の UPSERT（UPSERT_LISTINGS_SQL）は lat・lng・coord_* を触らない。座標を書くのはここと UPDATE_GSI_COORDS_SQL・
+ *    SHARE_*_COORDS_SQL だけ。
  */
 export const UPDATE_COORDS_SQL = `
 UPDATE listings SET
@@ -536,25 +546,140 @@ UPDATE listings SET
   lng = COALESCE((
     SELECT json_extract(j.value, '$.lng') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
   ), listings.lng),
+  coord_source = CASE WHEN (
+    SELECT json_extract(j.value, '$.lat') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ) IS NOT NULL THEN 'suumo' ELSE listings.coord_source END,
   coord_fetched_at = ?2
 WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
 
 /**
- * 座標を取る相手（掲載中・未取得・URL あり）。?1 = 中古の取得元・?2 = 賃貸の取得元・
+ * 建物のキー（trim した建物名 + 改行 + trim した住所）。どちらかが空なら NULL（= 他の掲載と同じ建物とはみなさない）。
+ * `t` は listings の別名。migrations/0010 の索引 (trim(building_name), trim(address)) と同じ式を使うこと。
+ */
+const buildingKey = (t: string) =>
+  `CASE WHEN trim(COALESCE(${t}.building_name, '')) <> '' AND trim(COALESCE(${t}.address, '')) <> ''
+        THEN trim(${t}.building_name) || char(10) || trim(${t}.address) END`;
+
+/** 同じ建物（建物名・住所とも trim 後に空でなく一致）で、掲載中の他の行 o を listings と結ぶ条件 */
+const SAME_BUILDING = `o.delisted_on IS NULL
+      AND trim(o.building_name) = trim(listings.building_name) AND trim(o.address) = trim(listings.address)`;
+const HAS_BUILDING_KEY = `trim(COALESCE(listings.building_name, '')) <> '' AND trim(COALESCE(listings.address, '')) <> ''`;
+
+/**
+ * 同じ建物の使い回し（1/2）: SUUMO 由来の座標を、同じ建物の「座標なし」か「国土地理院の仮座標」の掲載へ写す。
+ * coord_fetched_at も写す（= 写された側はもう SUUMO に取りに行かない）。中古と賃貸の間でも写す。掲載中どうしだけ。
+ * 実行するのは coord_targets の最初・coord_results の後・gsi_results の後（SHARE_GSI_COORDS_SQL より先に）。
+ */
+export const SHARE_SUUMO_COORDS_SQL = `
+UPDATE listings SET (lat, lng, coord_source, coord_fetched_at) = (
+  SELECT o.lat, o.lng, 'suumo', o.coord_fetched_at FROM listings AS o
+  WHERE o.coord_source = 'suumo' AND o.lat IS NOT NULL AND o.lng IS NOT NULL AND ${SAME_BUILDING}
+  ORDER BY o.coord_fetched_at DESC, o.source, o.external_id LIMIT 1
+)
+WHERE delisted_on IS NULL AND (lat IS NULL OR coord_source = 'gsi') AND ${HAS_BUILDING_KEY}
+  AND EXISTS (SELECT 1 FROM listings AS o WHERE o.coord_source = 'suumo' AND o.lat IS NOT NULL AND o.lng IS NOT NULL AND ${SAME_BUILDING})`;
+
+/**
+ * 同じ建物の使い回し（2/2）: 国土地理院の仮座標を、同じ建物の「座標なし」の掲載へ写す。
+ * **coord_fetched_at は写さない**（写された側も後で SUUMO から取り直す）。gsi_tried_at も触らない。
+ */
+export const SHARE_GSI_COORDS_SQL = `
+UPDATE listings SET (lat, lng, coord_source) = (
+  SELECT o.lat, o.lng, 'gsi' FROM listings AS o
+  WHERE o.coord_source = 'gsi' AND o.lat IS NOT NULL AND o.lng IS NOT NULL AND ${SAME_BUILDING}
+  ORDER BY o.gsi_tried_at DESC, o.source, o.external_id LIMIT 1
+)
+WHERE delisted_on IS NULL AND lat IS NULL AND ${HAS_BUILDING_KEY}
+  AND EXISTS (SELECT 1 FROM listings AS o WHERE o.coord_source = 'gsi' AND o.lat IS NOT NULL AND o.lng IS NOT NULL AND ${SAME_BUILDING})`;
+
+/** 使い回しの 2 文（この順に流す。SUUMO 由来を先に写してから、残った穴を国土地理院の仮座標で埋める） */
+export const SHARE_COORDS_SQLS = [SHARE_SUUMO_COORDS_SQL, SHARE_GSI_COORDS_SQL] as const;
+
+/**
+ * 座標を取る相手（掲載中・SUUMO で未取得・URL あり）。?1 = 中古の取得元・?2 = 賃貸の取得元・
  * ?3〜?6 = COORD_PRIORITY（面積下限・部屋数下限・売買の上限円・賃貸の上限円）。
- * 並びは「条件に近いもの（priority = 1）が先」→ 古く見えたものが先（first_seen ASC。賃貸の詳細ページの周回と同じく、
- * 新着優先にすると上限で切られた古い候補がずっと後回しになるため）。
+ * - **同じ建物は 1 件だけ**返す（建物のキーが空の掲載はそれぞれ単独）。建物の代表は 賃貸 → 条件に近い → 古く見えた の順。
+ *   取った座標は SHARE_SUUMO_COORDS_SQL で同じ建物の他の掲載へ写る。数（remaining）も建物単位になる
+ * - 並びは **賃貸が先**（2026-11-01 啓輔さんの指定「賃貸優先」）→「条件に近い建物（priority = 1。建物の中の 1 件でも当たれば）」が先
+ *   → 古く見えたものが先（first_seen ASC。賃貸の詳細ページの周回と同じく、新着優先にすると上限で切られた古い候補がずっと後回しになるため）
+ * - 国土地理院の仮座標（coord_source = 'gsi'）が入っていても coord_fetched_at IS NULL なら返す（SUUMO で取り直して上書きする）
  * 部屋数は先頭 1 文字（"3LDK" → 3）で見る（DETAIL_TARGETS_SQL と同じ流儀）。
  */
 export const COORD_TARGETS_SQL = `
-SELECT external_id, url, CASE WHEN source = ?2 THEN 'rent' ELSE 'sale' END AS kind,
-  CASE WHEN area_sqm IS NOT NULL AND area_sqm >= ?3
-        AND floor_plan IS NOT NULL AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
-        AND ((source = ?1 AND current_price <= ?5) OR (source = ?2 AND current_price <= ?6))
-       THEN 1 ELSE 0 END AS priority
-FROM listings
-WHERE source IN (?1, ?2) AND delisted_on IS NULL AND coord_fetched_at IS NULL AND url IS NOT NULL
-ORDER BY priority DESC, first_seen ASC, external_id`;
+SELECT external_id, url, kind, bprio AS priority FROM (
+  SELECT external_id, url, kind, first_seen,
+    MAX(priority) OVER (PARTITION BY bkey) AS bprio,
+    ROW_NUMBER() OVER (PARTITION BY bkey ORDER BY CASE kind WHEN 'rent' THEN 0 ELSE 1 END, priority DESC, first_seen ASC, external_id) AS rn
+  FROM (
+    SELECT external_id, url, CASE WHEN source = ?2 THEN 'rent' ELSE 'sale' END AS kind, first_seen,
+      COALESCE(${buildingKey("listings")}, source || char(10) || external_id) AS bkey,
+      CASE WHEN area_sqm IS NOT NULL AND area_sqm >= ?3
+            AND floor_plan IS NOT NULL AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
+            AND ((source = ?1 AND current_price <= ?5) OR (source = ?2 AND current_price <= ?6))
+           THEN 1 ELSE 0 END AS priority
+    FROM listings
+    WHERE source IN (?1, ?2) AND delisted_on IS NULL AND coord_fetched_at IS NULL AND url IS NOT NULL
+  )
+)
+WHERE rn = 1
+ORDER BY CASE kind WHEN 'rent' THEN 0 ELSE 1 END, priority DESC, first_seen ASC, external_id`;
+
+// ---------------------------------------------------------------------------
+// 国土地理院の住所検索（msearch.gsi.go.jp）で番地まである住所から仮の座標（2026-11-01）
+// ---------------------------------------------------------------------------
+
+/** 国土地理院の住所検索を 1 回の実行で引く上限（1 秒間隔なので 300 件 ≒ 5 分） */
+export const GSI_MAX_PER_RUN = 300;
+
+/**
+ * 住所に番地（数字-数字）がある、を SQLite の GLOB で。全角数字・全角ハイフン・長音記号のゆれも拾う
+ * （例「福岡県福岡市東区原田４-16-36」）。丁目止まりの住所は国土地理院でも丁目までしか引けないので対象外。
+ */
+const HAS_BANCHI = `(address GLOB '*[0-9０-９][－‐−ー-][0-9０-９]*')`;
+
+/**
+ * 国土地理院の住所検索を試す相手（掲載中・座標なし・未試行・住所に番地あり）。?1 = 中古の取得元・?2 = 賃貸の取得元・
+ * ?3〜?6 = COORD_PRIORITY。同じ建物は 1 件だけ（結果は SHARE_GSI_COORDS_SQL で同じ建物へ写る）。
+ * 並びは 条件に近い建物 → 古く見えたもの。
+ */
+export const GSI_TARGETS_SQL = `
+SELECT external_id, address, kind FROM (
+  SELECT external_id, address, kind, first_seen, MAX(priority) OVER (PARTITION BY bkey) AS bprio,
+    ROW_NUMBER() OVER (PARTITION BY bkey ORDER BY priority DESC, first_seen ASC, external_id) AS rn
+  FROM (
+    SELECT external_id, trim(address) AS address, CASE WHEN source = ?2 THEN 'rent' ELSE 'sale' END AS kind, first_seen,
+      COALESCE(${buildingKey("listings")}, source || char(10) || external_id) AS bkey,
+      CASE WHEN area_sqm IS NOT NULL AND area_sqm >= ?3
+            AND floor_plan IS NOT NULL AND CAST(substr(floor_plan, 1, 1) AS INTEGER) >= ?4
+            AND ((source = ?1 AND current_price <= ?5) OR (source = ?2 AND current_price <= ?6))
+           THEN 1 ELSE 0 END AS priority
+    FROM listings
+    WHERE source IN (?1, ?2) AND delisted_on IS NULL AND lat IS NULL AND gsi_tried_at IS NULL AND ${HAS_BANCHI}
+  )
+)
+WHERE rn = 1
+ORDER BY bprio DESC, first_seen ASC, external_id`;
+
+/**
+ * 国土地理院の結果を反映する UPDATE（?1 = 取得元・?2 = 試した時刻・?3 = coordUpdateRow の配列 JSON）。
+ * - lat / lng / coord_source = 'gsi' は **lat が NULL の行だけ**（SUUMO の座標や先に入った仮座標を上書きしない）
+ * - gsi_tried_at は**必ず**入れる（採らなかった・番地まで一致しなかったときも。取り直さないため）
+ * - coord_fetched_at は触らない（仮座標が入っても SUUMO の周回の対象に残る）
+ * SET の式はどれも更新前の行の値で評価される（SQLite）ので、coord_source の CASE は元の lat を見る。
+ */
+export const UPDATE_GSI_COORDS_SQL = `
+UPDATE listings SET
+  lat = CASE WHEN listings.lat IS NULL THEN (
+    SELECT json_extract(j.value, '$.lat') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ) ELSE listings.lat END,
+  lng = CASE WHEN listings.lat IS NULL THEN (
+    SELECT json_extract(j.value, '$.lng') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ) ELSE listings.lng END,
+  coord_source = CASE WHEN listings.lat IS NULL AND (
+    SELECT json_extract(j.value, '$.lat') FROM json_each(?3) AS j WHERE json_extract(j.value, '$.id') = listings.external_id
+  ) IS NOT NULL THEN 'gsi' ELSE listings.coord_source END,
+  gsi_tried_at = ?2
+WHERE source = ?1 AND external_id IN (SELECT json_extract(j.value, '$.id') FROM json_each(?3) AS j)`;
 
 /** 一覧の周回（カーソル・回を持つ）の要求だけ。詳細ページ（detail_*）は別の流れなので含まない */
 export type PagedIngestRequest = Extract<IngestRequest, { op: "begin" | "page" | "end" }>;
@@ -580,12 +705,19 @@ export interface IngestResponse {
    * kind は coord_targets のときだけ付く（sale = 中古の詳細ページ / rent = 賃貸の周辺環境ページ）
    */
   targets?: { externalId: string; url: string; kind?: "sale" | "rent"; priority?: number }[];
-  /** op = "detail_targets" / "coord_targets" で、まだ取っていない相手が全部で何件あるか（上限で切る前の数） */
+  /** op = "gsi_targets" の答え。国土地理院の住所検索に掛ける住所 */
+  gsiTargets?: { externalId: string; kind: "sale" | "rent"; address: string }[];
+  /**
+   * op = "detail_targets" / "coord_targets" / "gsi_targets" で、まだ取っていない相手が全部で何件あるか（上限で切る前の数）。
+   * coord_targets・gsi_targets は**建物単位**の数
+   */
   remaining?: number;
   /** op = "coord_targets" で、remaining のうち「条件に近い」もの（先に取る分）が何件あるか */
   remainingPriority?: number;
-  /** op = "detail_results" / "coord_results" で実際に更新した件数 */
+  /** op = "detail_results" / "coord_results" / "gsi_results" で実際に更新した件数（使い回しで写った分は shared） */
   updated?: number;
+  /** op = "coord_*" / "gsi_results" で、同じ建物の使い回し（SHARE_COORDS_SQLS）で座標が写った掲載の数 */
+  shared?: number;
   detail?: string;
   error?: string;
 }
@@ -760,6 +892,27 @@ function parseOutcome(v: unknown, kind: CrawlKind): PageOutcome<AnyListingRecord
 
 const RUN_ID = /^[a-z0-9:_-]{1,60}:\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * coord_results / gsi_results の results を検証する（SUUMO・国土地理院で同じ形）。
+ * 日本の範囲だけ（src/listing-coords.ts の plausibleLatLng と同じ線）。外れたら要求ごと弾く（Mac 側の読み違いに気づくため）
+ */
+function parseCoordResults(v: unknown, max: number): CoordResult[] {
+  if (!Array.isArray(v) || v.length > max) throw new Error("results が不正");
+  return v.map((x): CoordResult => {
+    if (!isObj(x)) throw new Error("results の要素が不正");
+    const externalId = x.externalId;
+    if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
+    if (x.kind !== "sale" && x.kind !== "rent") throw new Error("results の kind が不正");
+    const lat = x.lat ?? null;
+    const lng = x.lng ?? null;
+    if (lat === null || lng === null) return { externalId, kind: x.kind, lat: null, lng: null };
+    if (typeof lat !== "number" || typeof lng !== "number" || !(lat >= 20 && lat <= 46) || !(lng >= 122 && lng <= 154)) {
+      throw new Error("lat / lng が不正");
+    }
+    return { externalId, kind: x.kind, lat, lng };
+  });
+}
+
 /** 取り込み要求を検証する。不正なら Error（メッセージは 400 の本文に出してよい程度のもの） */
 export function parseIngestRequest(body: unknown): IngestRequest {
   if (!isObj(body)) throw new Error("本文が不正");
@@ -826,22 +979,14 @@ export function parseIngestRequest(body: unknown): IngestRequest {
     case "coord_results": {
       const fetchedAt = body.fetchedAt;
       if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
-      if (!Array.isArray(body.results) || body.results.length > COORD_MAX_PER_RUN) throw new Error("results が不正");
-      const results = body.results.map((x): CoordResult => {
-        if (!isObj(x)) throw new Error("results の要素が不正");
-        const externalId = x.externalId;
-        if (typeof externalId !== "string" || !/^[0-9A-Za-z_-]{1,40}$/.test(externalId)) throw new Error("externalId が不正");
-        if (x.kind !== "sale" && x.kind !== "rent") throw new Error("results の kind が不正");
-        const lat = x.lat ?? null;
-        const lng = x.lng ?? null;
-        if (lat === null || lng === null) return { externalId, kind: x.kind, lat: null, lng: null };
-        // 日本の範囲だけ（src/listing-coords.ts の plausibleLatLng と同じ線）。外れたら要求ごと弾く（Mac 側の読み違いに気づくため）
-        if (typeof lat !== "number" || typeof lng !== "number" || !(lat >= 20 && lat <= 46) || !(lng >= 122 && lng <= 154)) {
-          throw new Error("lat / lng が不正");
-        }
-        return { externalId, kind: x.kind, lat, lng };
-      });
-      return { op: "coord_results", kind, fetchedAt, results };
+      return { op: "coord_results", kind, fetchedAt, results: parseCoordResults(body.results, COORD_MAX_PER_RUN) };
+    }
+    case "gsi_targets":
+      return { op: "gsi_targets", kind, limit: int(body.limit, 1, GSI_MAX_PER_RUN) };
+    case "gsi_results": {
+      const fetchedAt = body.fetchedAt;
+      if (typeof fetchedAt !== "string" || !Number.isFinite(Date.parse(fetchedAt))) throw new Error("fetchedAt が不正");
+      return { op: "gsi_results", kind, fetchedAt, results: parseCoordResults(body.results, GSI_MAX_PER_RUN) };
     }
     case "end": {
       const runId = runOfKind(body.runId);
