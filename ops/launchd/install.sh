@@ -6,7 +6,7 @@
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-pets … 賃貸のペット相談可（2 周目）・毎日 03:00
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-maisonette … 賃貸のメゾネット（3 周目）・毎日 03:45
 #   - com.kechiiiiin.fukuoka-condo-watch.suumo-chintai-detail … 賃貸の詳細ページ（LDK 畳数・階・メゾネット）・毎日 16:00
-#   - com.kechiiiiin.fukuoka-condo-watch.suumo-coords    … 掲載（中古・賃貸）の座標・毎日 11:00 と 17:15（2026-10-31〜）
+#   - com.kechiiiiin.fukuoka-condo-watch.suumo-coords    … 掲載（中古・賃貸）の座標・毎日 09:00〜23:00 の毎正時（16:00 除く・2026-11-01〜）
 # ⚠️ 賃貸の 2〜4 本目は 1 周目（01:00）より後でなければならない（1 周目の upsert が印を上書きするため）。
 # 7 本は同じロックファイルを使うので、同時に SUUMO を叩かない（後から起きた方が待つ）。
 # 2026-10-20 賃貸を先に（朝に賃貸が取り終わっているように）。中古は賃貸 1〜3 周目の後の 04:15 開始・新築は中古と重ならない日曜 09:00 へ。
@@ -114,7 +114,7 @@ for LABEL in "${LABELS[@]}"; do
     *.suumo-chintai-pets) WHEN="毎日 03:00"; LOG="suumo-chintai-pets-crawl.out.log" ;;
     *.suumo-chintai-maisonette) WHEN="毎日 03:45"; LOG="suumo-chintai-maisonette-crawl.out.log" ;;
     *.suumo-chintai-detail) WHEN="毎日 16:00"; LOG="suumo-chintai-detail.out.log" ;;
-    *.suumo-coords) WHEN="毎日 11:00・17:15"; LOG="suumo-coords.out.log" ;;
+    *.suumo-coords) WHEN="毎日 09:00〜23:00 の毎正時（16:00 除く）"; LOG="suumo-coords.out.log" ;;
     *.suumo-chintai)   WHEN="毎日 01:00"; LOG="suumo-chintai-crawl.out.log" ;;
     *) WHEN="毎日 04:15"; LOG="suumo-crawl.out.log" ;;
   esac

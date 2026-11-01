@@ -23,7 +23,7 @@
 | `src/ingest-auth.ts` | 取り込み口の Bearer 認証（`LISTINGS_INGEST_TOKEN`・定数時間比較・未設定なら全員拒否） |
 | `scripts/suumo-crawl-local.ts` | Mac 側クローラ（`npm run crawl:local`）。launchd（`ops/launchd/`）から賃貸は毎日 01:00 / 03:00（`chintai_pets`）/ 03:45（`chintai_maisonette`）・中古は毎日 04:15・新築（`--kind shinchiku`）は毎週日曜 09:00 JST |
 | `scripts/suumo-chintai-detail.ts` | 賃貸の詳細ページから **LDK の畳数・部屋の階・階建・メゾネット**を取る（`npm run crawl:detail`）。全条件を通った最終候補だけ・1 回 60 件・毎日 16:00 |
-| `scripts/suumo-coords.ts` / `src/listing-coords.ts` | 掲載（中古・賃貸）の**建物の座標**を取る（`npm run crawl:coords`）。中古は詳細ページの `initIdo`/`initKeido`、賃貸は周辺環境ページ（`jnc_*/kankyo/`）の `js-gmapData`。条件に近いもの（60㎡以上・3部屋以上・売買5,500万以下・賃貸18万以下）から・1 回 60 件・60 秒間隔・毎日 11:00 と 17:15（2026-10-31〜） |
+| `scripts/suumo-coords.ts` / `src/listing-coords.ts` | 掲載（中古・賃貸）の**建物の座標**を取る（`npm run crawl:coords`）。中古は詳細ページの `initIdo`/`initKeido`、賃貸は周辺環境ページ（`jnc_*/kankyo/`）の `js-gmapData`。条件に近いもの（60㎡以上・3部屋以上・売買5,500万以下・賃貸18万以下）から・1 回 60 件・60 秒間隔・毎日 09:00〜23:00 の毎正時・16:00 除く 14 回（2026-11-01〜） |
 | `scripts/crawl-local-lib.ts` | 上の 3 本で共通の設定読み込み・**同じロックファイル**・Worker への送信（二重実装しない） |
 | `src/bus-access.ts` | 「バスで職場・学校へ直通」の判定。`src/data/bus-routes.json` の直通バス停まで**直線 320m（= 徒歩5分・64m/分）以内**か、行先ごとの最寄り（停留所・徒歩分・系統番号・降りるバス停）。停留所は格子に入れて周り 3×3 マスだけ測る |
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |

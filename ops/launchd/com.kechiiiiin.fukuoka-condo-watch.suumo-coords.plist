@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  掲載（中古・賃貸）の建物の座標（毎日 2 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
+  掲載（中古・賃貸）の建物の座標（毎日 14 回）のテンプレート。直接コピーしない。ops/launchd/install.sh がリポジトリ・node・ホームのパスを埋めて
   ~/Library/LaunchAgents/ に置き、launchctl bootstrap する。
 -->
 <plist version="1.0">
@@ -16,21 +16,68 @@
   <key>WorkingDirectory</key> <string>__REPO__</string>
 
   <!-- 掲載の座標（「バスで職場・学校へ直通」の判定に使う）を詳細ページ（中古）・周辺環境ページ（賃貸）から取る。
-       **毎日 11:00 と 17:15**（2026-10-31〜）。どちらも一覧の周回（01:00〜≒08:15）・新築（日曜 09:00・≒25 分）・
-       賃貸の詳細ページ（16:00・最大 ≒1 時間）と重ならない時刻にしてある。
-       1 回 60 件まで × 61 秒 ≒ 1 時間（詳細ページの周回と同じ上限・間隔）。超えた分は次回へ持ち越し。
-       未取得が無い日は SUUMO に 1 回もアクセスせず即終了する（取得済みは取り直さない）。
-       1 日 2 回にしているのは、最初は掲載中の数千件が全部未取得のため（条件に近いものから取るので、画面で要る分は先に埋まる）。
-       他の 6 本と同じロックファイルなので、重なったら終わるまで待つ。 -->
+       **毎日 09:00〜23:00 の毎正時（16:00 を除く 14 回）**（2026-11-01〜。それまでは 11:00 と 17:15 の 2 回）。
+       一覧の周回（01:00〜≒08:15）の後から始め、16:00 は賃貸の詳細ページ（最大 ≒1 時間）に譲る。
+       1 回 60 件まで × 61 秒 ≒ 1 時間（詳細ページの周回と同じ上限・間隔）なので、1 日 最大 840 件。超えた分は次回へ持ち越し。
+       未取得が無い回は SUUMO に 1 回もアクセスせず即終了する（取得済みは取り直さない）。たまった数千件が埋まれば、新着の分だけになる。
+       他の 6 本と同じロックファイルなので、重なったら終わるまで待つ（launchd は前の回が走っている間は次を重ねて起こさない）。 -->
   <key>StartCalendarInterval</key>
   <array>
+    <dict>
+      <key>Hour</key>    <integer>9</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>10</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
     <dict>
       <key>Hour</key>    <integer>11</integer>
       <key>Minute</key>  <integer>0</integer>
     </dict>
     <dict>
+      <key>Hour</key>    <integer>12</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>13</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>14</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>15</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
       <key>Hour</key>    <integer>17</integer>
-      <key>Minute</key>  <integer>15</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>18</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>19</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>20</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>21</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>22</integer>
+      <key>Minute</key>  <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>    <integer>23</integer>
+      <key>Minute</key>  <integer>0</integer>
     </dict>
   </array>
   <!-- 入れた瞬間には走らせない（初回は手動: launchctl kickstart） -->
