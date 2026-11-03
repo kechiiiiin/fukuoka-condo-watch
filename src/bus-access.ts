@@ -169,6 +169,12 @@ export class BusStopIndex {
     const a = this.nearest(lat, lng);
     return a.gion !== null || a.higashi !== null;
   }
+
+  /** 職場・学校の両方へ、それぞれ徒歩 5 分以内で直通できるか（同じバス停でも別々のバス停でもよい） */
+  hasBoth(lat: number, lng: number): boolean {
+    const a = this.nearest(lat, lng);
+    return a.gion !== null && a.higashi !== null;
+  }
 }
 
 let shared: BusStopIndex | null = null;

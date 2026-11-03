@@ -518,11 +518,14 @@ test("賃貸のグルーピング: 敷礼・管理費・ペット・掲載日を
 /** 呉服町（職場・学校の両方へ直通）のすぐそば（約 100m 北）と、どの直通バス停からも遠い海の上 */
 const NEAR_GOFUKU = { lat: 33.5973872 + 0.0009, lng: 130.4103865 };
 const FAR_AWAY = { lat: 33.75, lng: 130.2 };
+/** 箱崎三丁目（職場だけへ直通・学校行きは 320m 以内に無い）のすぐそば */
+const NEAR_GION_ONLY = { lat: 33.6199377736596, lng: 130.42315062495703 };
 
 test("バス直通エリア: area=bus を読む・駅のエリアとの和集合・座標なしは no_coord で分ける", () => {
   const today = "2026-09-14";
   const idx = busStopIndex();
-  const busNear = (r: { lat: number; lng: number }) => idx.hasAny(r.lat, r.lng);
+  // 職場・学校の両方へ、それぞれ徒歩5分以内で直通できるときだけ残す（AND）
+  const busNear = (r: { lat: number; lng: number }) => idx.hasBoth(r.lat, r.lng);
 
   assert.deepEqual(parseStationAreas(new URLSearchParams("area=bus")), [BUS_AREA_KEY]);
   assert.deepEqual(parseStationAreas(new URLSearchParams("area=airport,bus,zzz")), ["airport", "bus"]);
@@ -542,6 +545,11 @@ test("バス直通エリア: area=bus を読む・駅のエリアとの和集合
   assert.equal(classifyPick(row({ area_sqm: 40 }), bus, 2026, today, busNear), "no");
   // busNear を渡さなければ「近くではない」扱い
   assert.equal(classifyPick(row({ ...NEAR_GOFUKU }), bus, 2026, today), "no");
+
+  // AND: 職場・学校の片方だけ徒歩5分以内では出ない（箱崎三丁目は職場だけへ直通・学校行きは無い）
+  assert.equal(classifyPick(row({ ...NEAR_GION_ONLY }), bus, 2026, today, busNear), "no", "片方だけ近いので出ない");
+  // AND: 両方とも徒歩5分以内（呉服町は同じバス停で両方へ直通）なら出る
+  assert.equal(classifyPick(row({ ...NEAR_GOFUKU }), bus, 2026, today, busNear), "ok", "両方近ければ出る");
 
   // 和集合: 空港線 + バス
   const both = parsePickFilters(new URLSearchParams("area=airport,bus"), () => true);
@@ -583,7 +591,7 @@ test("グループの座標: SUUMO 由来を国土地理院の仮座標より優
   assert.equal(n!.coordEstimated, false);
 
   const idx = busStopIndex();
-  const busNear = (r: { lat: number; lng: number }) => idx.hasAny(r.lat, r.lng);
+  const busNear = (r: { lat: number; lng: number }) => idx.hasBoth(r.lat, r.lng);
   const bus = parsePickFilters(new URLSearchParams("area=bus"), () => true);
   assert.equal(classifyPick(row({ station_name: "井尻", ...NEAR_GOFUKU, coord_source: "gsi" }), bus, 2026, "2026-09-14", busNear), "ok", "仮座標でもバス直通のエリアに入る");
 });

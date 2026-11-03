@@ -305,7 +305,8 @@ export function parsePickSort(params: URLSearchParams): PickSort {
 }
 
 /**
- * 座標から「職場・学校へ直通のバス停まで徒歩 5 分以内か」を答える関数（src/bus-access.ts の BusStopIndex.hasAny を包んで渡す）。
+ * 座標から「職場・学校の両方へ直通のバス停まで、それぞれ徒歩 5 分以内か」を答える関数
+ * （src/bus-access.ts の BusStopIndex.hasBoth を包んで渡す。同じバス停でも別々のバス停でもよい）。
  * 座標のある行にだけ呼ばれる。
  */
 export type BusNear = (row: ListingPickRow & { lat: number; lng: number }) => boolean;

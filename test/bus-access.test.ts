@@ -97,6 +97,23 @@ test("最寄り: 320m 以内だけ・行先ごとに一番近いもの・境目�
   assert.equal(nearA.higashi, null);
 });
 
+test("hasBoth: 職場・学校の両方へ徒歩5分以内でないと true にならない（AND）", () => {
+  const idx = new BusStopIndex(directStopsFrom(RAW));
+  // A は職場だけ（学校は 320m 以内に無い）→ 片方だけ近いので false
+  assert.equal(idx.hasBoth(33.5505, 130.3702), false);
+  // B は職場・学校の両方に直通（同じバス停）→ true
+  assert.equal(idx.hasBoth(north(33.56, -100), 130.38), true);
+  // どちらにも当たらない地点 → false
+  assert.equal(idx.hasBoth(north(33.56, -321), 130.38), false);
+
+  // 職場行き・学校行きが別々のバス停でも、両方 320m 以内なら true
+  const gionOnly = { name: "G", lat: 33.6, lng: 130.4, dest: "gion" as const, numbers: ["1"], alightAt: [] };
+  const higashiOnly = { name: "H", lat: 33.6002, lng: 130.4002, dest: "higashi" as const, numbers: ["2"], alightAt: [] };
+  const idx2 = new BusStopIndex([gionOnly, higashiOnly]);
+  assert.equal(idx2.hasBoth(33.6, 130.4), true, "別々のバス停でも両方近ければ true");
+  assert.equal(idx2.hasAny(33.6, 130.4), true);
+});
+
 test("格子で絞っても総当たりと同じ答え（実データ・福岡市内の格子点 400 点）", () => {
   const stops = directStopsFrom(busRoutes as unknown as BusRoutesInput);
   assert.ok(stops.length > 500, `直通バス停（行先別）が ${stops.length} 件`);

@@ -124,7 +124,7 @@ const HTML = `<!doctype html>
     <form id="filters">
       <div class="sub full" id="defaults-text">${SALE_DEFAULTS_TEXT}</div>
       <div class="areabar full"><span class="lbl">見ているエリア</span>${AREA_BUTTONS_HTML}</div>
-      <div class="sub full hidden" id="bus-note">${BUS_AREA_LABEL}: ${BUS_AREA_HINT}。職場・学校のどちらか一方でも当てはまれば出します。</div>
+      <div class="sub full hidden" id="bus-note">${BUS_AREA_LABEL}: ${BUS_AREA_HINT}。職場・学校の両方へ直通できるときだけ出します。</div>
       <label id="lb-pmax">価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="${D.priceMaxMan}"></label>
       <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="${D.areaMin}"></label>
       <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>

@@ -149,8 +149,9 @@ export async function buildListingPicks(env: Env, url: URL) {
   let busExcludedNoCoord = 0;
   for (const r of rowsRes.results) {
     const c = classifyPick(r, filters, nowYear, today, (x) => {
+      // 職場・学校の両方へ、それぞれ徒歩 5 分以内で直通できるときだけ残す（AND。busIndex.hasBoth と同じ判定）
       const a = busAt(x.lat, x.lng);
-      return a.gion !== null || a.higashi !== null;
+      return a.gion !== null && a.higashi !== null;
     });
     if (c === "ok") active.push(r);
     else if (c === "no_coord") busExcludedNoCoord++;
@@ -270,8 +271,9 @@ export async function buildListingPicks(env: Env, url: URL) {
 }
 
 const BUS_NOTE =
-  "「バスで職場・学校へ直通」は、職場（祇園町）か学校（東光二丁目ほか）へ乗り換えなしで着く西鉄バスの停留所（/listings/bus の地図と同じデータ）まで、" +
-  "建物から直線 " + BUS_WALK_MAX_M + "m（徒歩" + BUS_WALK_MAX_MIN + "分）以内の物件です。SUUMO の徒歩分は道のり 80m/分なので、直線では 2 割控えめに 64m/分で数えています。" +
+  "「バスで職場・学校へ直通」は、職場（祇園町）へ乗り換えなしで着くバス停と、学校（東光二丁目ほか）へ乗り換えなしで着くバス停の" +
+  "両方が（同じバス停でも別々のバス停でもよい）、建物から直線 " + BUS_WALK_MAX_M + "m（徒歩" + BUS_WALK_MAX_MIN + "分）以内にある物件です" +
+  "（西鉄バスの停留所。/listings/bus の地図と同じデータ）。SUUMO の徒歩分は道のり 80m/分なので、直線では 2 割控えめに 64m/分で数えています。" +
   "建物の位置は SUUMO の詳細ページ（賃貸は周辺環境ページ）の地図から 1 日 2 回・1 回 60 件ずつ取っているので、まだ取れていない物件はこのボタンでは拾えません（件数の横に「位置未取得のため除外」で出します）。";
 
 const SALE_NOTES = [
