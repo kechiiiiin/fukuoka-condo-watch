@@ -88,16 +88,16 @@ export function parseFloorPlan(floorPlan: string | null | undefined): FloorPlanI
 }
 
 export interface PickFilters {
-  /** 価格の上限（万円） */
-  priceMaxMan: number;
-  /** 専有面積の下限（㎡） */
-  areaMin: number;
-  /** 間取りの部屋数の下限（3LDK なら 3） */
-  planRoomsMin: number;
+  /** 価格の上限（万円）。null = 絞らない（価格が既定の上限を超える行も残す） */
+  priceMaxMan: number | null;
+  /** 専有面積の下限（㎡）。null = 絞らない（⚠️ 面積 NULL の行も落とさない） */
+  areaMin: number | null;
+  /** 間取りの部屋数の下限（3LDK なら 3）。null = 絞らない（⚠️ 間取り不明の行も落とさない） */
+  planRoomsMin: number | null;
   /** true なら DK・K タイプ（L を含まない間取り）も許す。既定は LDK タイプのみ */
   includeDK: boolean;
-  /** 築年数の上限（年）。building_year >= 今年 - ageMax */
-  ageMax: number;
+  /** 築年数の上限（年）。building_year >= 今年 - ageMax。null = 絞らない（⚠️ 築年 NULL の行も落とさない） */
+  ageMax: number | null;
   /** 駅からの徒歩分の上限。null = 指定なし（駅情報が無い物件も落とさない） */
   walkMax: number | null;
   /** true ならバス便の物件も許す。既定は除外（賃貸は既定で含める） */
@@ -144,8 +144,21 @@ export function parsePickKind(v: string | null | undefined): PickKind {
   return v === "sale" ? "sale" : "rent";
 }
 
+/**
+ * 既定条件の型。PickFilters のうち価格・面積・間取り・築年は既定では必ず数値なので、number に絞ってある
+ * （listing-crawl.ts の SQL や画面の D.priceMaxMan.toLocaleString がそのまま使える）
+ */
+export type DefaultPickFilters = Omit<PickFilters, "municipalities" | "stationAreas" | "priceMaxMan" | "areaMin" | "planRoomsMin" | "ageMax"> & {
+  municipalities: null;
+  stationAreas: null;
+  priceMaxMan: number;
+  areaMin: number;
+  planRoomsMin: number;
+  ageMax: number;
+};
+
 /** 売買（中古）の既定条件 */
-export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities" | "stationAreas"> & { municipalities: null; stationAreas: null } = {
+export const DEFAULT_PICK_FILTERS: DefaultPickFilters = {
   priceMaxMan: 4800,
   areaMin: 70,
   planRoomsMin: 3,
@@ -178,7 +191,7 @@ export const DEFAULT_PICK_FILTERS: Omit<PickFilters, "municipalities" | "station
  * 2026-10-05: **メゾネットは既定で除外しない**（excludeMaisonette = false。本人が「メゾネットは許容する」と決めたため）。
  * メゾネットの行には画面上でバッジを出す（除くかどうかは URL の mais=1 / 画面のチェックボックスで任意に絞れる）
  */
-export const DEFAULT_RENT_PICK_FILTERS: Omit<PickFilters, "municipalities" | "stationAreas"> & { municipalities: null; stationAreas: null } = {
+export const DEFAULT_RENT_PICK_FILTERS: DefaultPickFilters = {
   priceMaxMan: 15,
   areaMin: 70,
   planRoomsMin: 3,
@@ -200,12 +213,18 @@ export function defaultPickFilters(kind: PickKind) {
   return kind === "rent" ? DEFAULT_RENT_PICK_FILTERS : DEFAULT_PICK_FILTERS;
 }
 
-/** 数値クエリパラメータを読む。空・不正なら null */
-function num(params: URLSearchParams, key: string): number | null {
+/**
+ * 数値クエリパラメータを読む（空欄 = 絞らない）。
+ * - パラメータが無い → 既定値 d（直接 URL を叩く人・既存の呼び出しのため）
+ * - あって空文字（pmax=）→ null（その項目では絞らない。画面で欄を空にした状態）
+ * - 数値でない（pmax=abc）→ 既定値 d
+ */
+function numOrDefault(params: URLSearchParams, key: string, d: number | null): number | null {
   const v = params.get(key);
-  if (v === null || v.trim() === "") return null;
+  if (v === null) return d;
+  if (v.trim() === "") return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? n : d;
 }
 
 /** 0 以下は「絞らない」（null）の意味にする。画面から既定の絞り込みを外すのに使う */
@@ -276,20 +295,20 @@ export function hasCoords(row: Pick<ListingPickRow, "lat" | "lng">): row is { la
 export function parsePickFilters(params: URLSearchParams, isAreaCode: (v: string) => boolean, kind: PickKind = "sale"): PickFilters {
   const d = defaultPickFilters(kind);
   return {
-    priceMaxMan: num(params, "pmax") ?? d.priceMaxMan,
-    areaMin: num(params, "amin") ?? d.areaMin,
-    planRoomsMin: num(params, "plan") ?? d.planRoomsMin,
+    priceMaxMan: numOrDefault(params, "pmax", d.priceMaxMan),
+    areaMin: numOrDefault(params, "amin", d.areaMin),
+    planRoomsMin: numOrDefault(params, "plan", d.planRoomsMin),
     includeDK: bool(params, "dk", d.includeDK),
-    ageMax: num(params, "age") ?? d.ageMax,
-    walkMax: num(params, "walk") ?? d.walkMax,
+    ageMax: numOrDefault(params, "age", d.ageMax),
+    walkMax: numOrDefault(params, "walk", d.walkMax),
     includeBus: bool(params, "bus", d.includeBus),
     petsOnly: kind === "rent" ? bool(params, "pets", d.petsOnly) : false,
     // メゾネット除外（賃貸だけ・既定 OFF＝除外しない）。mais=1 で絞る
     excludeMaisonette: kind === "rent" ? bool(params, "mais", d.excludeMaisonette) : false,
     // LDK の畳数の下限（賃貸だけ・既定 15）。tatami=0 で外す（0 以下は「絞らない」の意味にする）
-    ldkTatamiMin: kind === "rent" ? nonPositiveToNull(num(params, "tatami") ?? d.ldkTatamiMin) : null,
+    ldkTatamiMin: kind === "rent" ? nonPositiveToNull(numOrDefault(params, "tatami", d.ldkTatamiMin)) : null,
     // 建物の階数の下限。**既定は絞らない**。floors=3 のように指定したときだけ効く
-    buildingFloorsMin: kind === "rent" ? nonPositiveToNull(num(params, "floors") ?? d.buildingFloorsMin) : null,
+    buildingFloorsMin: kind === "rent" ? nonPositiveToNull(numOrDefault(params, "floors", d.buildingFloorsMin)) : null,
     municipalities: parseMunicipalities(params, isAreaCode),
     stationAreas: parseStationAreas(params),
     freshOnly: bool(params, "fresh", d.freshOnly),
@@ -343,14 +362,15 @@ export function classifyPick(
 
 /** エリア（見ているエリアのボタン）以外の条件 */
 function matchesNonArea(row: ListingPickRow, f: PickFilters, nowYear: number, today: string): boolean {
-  if (row.current_price > f.priceMaxMan * 10000) return false;
-  if (row.area_sqm === null || row.area_sqm < f.areaMin) return false;
+  // 数値の 4 項目は null = その判定ごと飛ばす（値が NULL の行も落とさない）。値が入っているときは NULL の行を落とす
+  if (f.priceMaxMan !== null && row.current_price > f.priceMaxMan * 10000) return false;
+  if (f.areaMin !== null && (row.area_sqm === null || row.area_sqm < f.areaMin)) return false;
 
   const plan = parseFloorPlan(row.floor_plan);
-  if (plan.rooms === null || plan.rooms < f.planRoomsMin) return false;
+  if (f.planRoomsMin !== null && (plan.rooms === null || plan.rooms < f.planRoomsMin)) return false;
   if (!plan.hasL && !f.includeDK) return false;
 
-  if (row.building_year === null || row.building_year < nowYear - f.ageMax) return false;
+  if (f.ageMax !== null && (row.building_year === null || row.building_year < nowYear - f.ageMax)) return false;
 
   if (row.bus) {
     if (!f.includeBus) return false;

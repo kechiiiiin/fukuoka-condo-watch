@@ -52,7 +52,7 @@ interface Harness {
   run: () => void;
 }
 
-function harness(search: string, payload: () => unknown): Harness {
+function harness(search: string, payload: () => unknown, initialStore: Record<string, string> = {}): Harness {
   const ids = new Map<string, El>();
   const form = new El("form", "filters") as El & Record<string, El>;
   for (const name of ["pmax", "amin", "plan", "age", "walk", "tatami", "floors", "sort", "dk", "bus", "pets", "mais", "fresh"]) {
@@ -77,7 +77,7 @@ function harness(search: string, payload: () => unknown): Harness {
     createElement: (tag: string) => new El(tag),
   };
   g.location = { search };
-  const store = new Map<string, string>();
+  const store = new Map<string, string>(Object.entries(initialStore));
   g.localStorage = {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
@@ -453,4 +453,73 @@ test("件数: バス直通オンで座標未取得を除いたときは「位置
     await flush();
     assert.ok(!h.ids.get("count")!.textContent.includes("位置未取得"));
   }
+});
+
+// 2026-11-04: 数値欄の空欄は「絞らない」。初回は既定値を欄に入れて始める
+function query(url: string): URLSearchParams {
+  return new URLSearchParams(url.split("?")[1] ?? "");
+}
+function fields(h: Harness): Record<string, string> {
+  const f = h.ids.get("filters") as unknown as Record<string, El>;
+  return Object.fromEntries(["pmax", "amin", "plan", "age", "walk", "tatami", "floors"].map((k) => [k, f[k]!.value]));
+}
+
+test("画面（賃貸・初回）: 欄に既定値が入った状態で始まり、その値が送られる（徒歩・階数は空欄）。placeholder は指定なし", async () => {
+  const h = harness("", () => PAYLOAD("rent"));
+  h.run();
+  await flush();
+  assert.deepEqual(fields(h), { pmax: "15", amin: "70", plan: "3", age: "25", walk: "", tatami: "15", floors: "" });
+  const q = query(h.requestedUrls[0]!);
+  assert.deepEqual(
+    ["pmax", "amin", "plan", "age", "walk", "tatami", "floors"].map((k) => q.get(k)),
+    ["15", "70", "3", "25", "", "15", ""],
+  );
+  assert.ok(h.requestedUrls[0]!.includes("walk=&"), "空欄でもパラメータ自体は送る");
+  const f = h.ids.get("filters") as unknown as Record<string, El>;
+  assert.equal(f.pmax!.placeholder, "指定なし");
+  assert.ok(h.ids.get("defaults-text")!.textContent.endsWith("空欄の項目では絞りません。"));
+});
+
+test("画面（売買・初回）: 既定値（徒歩 10）が入り、tatami・floors は送らない", async () => {
+  const h = harness("?kind=sale", () => PAYLOAD("sale"));
+  h.run();
+  await flush();
+  const f = fields(h);
+  assert.deepEqual([f.pmax, f.amin, f.plan, f.age, f.walk, f.tatami, f.floors], ["4800", "70", "3", "25", "10", "", ""]);
+  const q = query(h.requestedUrls[0]!);
+  assert.equal(q.get("walk"), "10");
+  assert.ok(!q.has("tatami") && !q.has("floors"));
+});
+
+test("画面: v2 の保存状態の空文字はそのまま復元され、空のまま送られる（既定値で埋めない）", async () => {
+  const saved = { pmax: "", amin: "80", plan: "", age: "", walk: "", tatami: "", floors: "", pets: true };
+  const h = harness("", () => PAYLOAD("rent"), { fcw_picks_filters_v2_rent: JSON.stringify(saved) });
+  h.run();
+  await flush();
+  assert.deepEqual(fields(h), { pmax: "", amin: "80", plan: "", age: "", walk: "", tatami: "", floors: "" });
+  const q = query(h.requestedUrls[0]!);
+  assert.equal(q.get("pmax"), "");
+  assert.equal(q.get("amin"), "80");
+  assert.equal(q.get("tatami"), "");
+});
+
+test("画面: v1 の保存状態は移行する（数値 7 項目の空欄は既定値で埋め、チェックは引き継ぐ）。v2 があれば v1 は読まない", async () => {
+  const v1 = { pmax: "", amin: "90", plan: "", age: "", walk: "7", tatami: "", floors: "", dk: true, pets: false };
+  const h = harness("", () => PAYLOAD("rent"), { fcw_picks_filters_v1_rent: JSON.stringify(v1) });
+  h.run();
+  await flush();
+  assert.deepEqual(fields(h), { pmax: "15", amin: "90", plan: "3", age: "25", walk: "7", tatami: "15", floors: "" });
+  const f = h.ids.get("filters") as unknown as Record<string, El>;
+  assert.equal(f.dk!.checked, true);
+  assert.equal(f.pets!.checked, false);
+  const ls = (globalThis as unknown as { localStorage: { getItem(k: string): string | null } }).localStorage;
+  assert.ok(ls.getItem("fcw_picks_filters_v2_rent"), "保存は v2 へ");
+
+  const both = harness("", () => PAYLOAD("rent"), {
+    fcw_picks_filters_v1_rent: JSON.stringify(v1),
+    fcw_picks_filters_v2_rent: JSON.stringify({ pmax: "", amin: "", plan: "", age: "", walk: "", tatami: "", floors: "" }),
+  });
+  both.run();
+  await flush();
+  assert.equal(fields(both).pmax, "");
 });

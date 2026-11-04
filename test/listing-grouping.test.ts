@@ -595,3 +595,51 @@ test("グループの座標: SUUMO 由来を国土地理院の仮座標より優
   const bus = parsePickFilters(new URLSearchParams("area=bus"), () => true);
   assert.equal(classifyPick(row({ station_name: "井尻", ...NEAR_GOFUKU, coord_source: "gsi" }), bus, 2026, "2026-09-14", busNear), "ok", "仮座標でもバス直通のエリアに入る");
 });
+
+test("空欄 = 絞らない: パラメータが無ければ既定値・pmax= のように空なら null・数値でなければ既定値", () => {
+  const all = "pmax=&amin=&plan=&age=&walk=&tatami=&floors=";
+  const r = parsePickFilters(new URLSearchParams(all), () => true, "rent");
+  assert.equal(r.priceMaxMan, null);
+  assert.equal(r.areaMin, null);
+  assert.equal(r.planRoomsMin, null);
+  assert.equal(r.ageMax, null);
+  assert.equal(r.walkMax, null);
+  assert.equal(r.ldkTatamiMin, null);
+  assert.equal(r.buildingFloorsMin, null);
+  const s = parsePickFilters(new URLSearchParams("pmax=&walk="), () => true);
+  assert.equal(s.priceMaxMan, null);
+  assert.equal(s.walkMax, null, "売買の徒歩も空なら絞らない");
+  assert.equal(s.areaMin, 70, "送っていない項目は既定のまま");
+
+  const bad = parsePickFilters(new URLSearchParams("pmax=abc&amin=x"), () => true, "rent");
+  assert.equal(bad.priceMaxMan, 15, "数値でなければ既定値");
+  assert.equal(bad.areaMin, 70);
+  assert.equal(parsePickFilters(new URLSearchParams("tatami=0&floors=0"), () => true, "rent").ldkTatamiMin, null);
+  assert.equal(parsePickFilters(new URLSearchParams("tatami=0&floors=0"), () => true, "rent").buildingFloorsMin, null);
+  assert.equal(parsePickFilters(new URLSearchParams("pmax=0"), () => true, "rent").priceMaxMan, 0);
+});
+
+test("空欄 = 絞らない: 面積・築年・間取りが不明の行や価格超過の行は、その項目が null なら残り、既定なら落ちる", () => {
+  const today = "2026-09-26";
+  // L を含まない間取り（不明を含む）は dk=1 でないと DK 判定で落ちるので、dk=1 で部屋数の判定だけを見る
+  const def = parsePickFilters(new URLSearchParams("pets=0&dk=1"), () => true, "rent");
+  const blank = (k: string) => parsePickFilters(new URLSearchParams(`pets=0&dk=1&${k}=`), () => true, "rent");
+  const cases: [string, Partial<ListingPickRow>][] = [
+    ["amin", { area_sqm: null }],
+    ["age", { building_year: null }],
+    ["plan", { floor_plan: null }],
+    ["plan", { floor_plan: "ワンルーム" }],
+    ["pmax", { current_price: 1_000_000_00 }],
+  ];
+  for (const [k, over] of cases) {
+    const r = rentRow(over);
+    assert.equal(matchesConditions(r, def, 2026, today), false, `${k} 既定なら落ちる ${JSON.stringify(over)}`);
+    assert.equal(matchesConditions(r, blank(k), 2026, today), true, `${k} 空欄なら残る ${JSON.stringify(over)}`);
+  }
+  // 値が入っている項目は空欄の項目があっても従来どおり判定する
+  assert.equal(matchesConditions(rentRow({ area_sqm: 60 }), blank("pmax"), 2026, today), false);
+  // 全部空欄でも DK 判定（チェックボックス側）は残る
+  const allBlank = parsePickFilters(new URLSearchParams("pets=0&pmax=&amin=&plan=&age=&walk=&tatami=&floors="), () => true, "rent");
+  assert.equal(matchesConditions(rentRow({ floor_plan: "3DK", area_sqm: null, building_year: null }), allBlank, 2026, today), false);
+  assert.equal(matchesConditions(rentRow({ floor_plan: "3LDK", area_sqm: null, building_year: null, current_price: 999_999_999 }), allBlank, 2026, today), true);
+});

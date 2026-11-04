@@ -35,12 +35,12 @@ const DEFAULTS_SALE_JSON = safeJson(D);
 const DEFAULTS_RENT_JSON = safeJson(R);
 const SALE_DEFAULTS_TEXT =
   `既定の条件: ${D.priceMaxMan.toLocaleString("ja-JP")}万円以下・${D.areaMin}㎡以上・${D.planRoomsMin}LDK以上・` +
-  `築${D.ageMax}年以内・駅徒歩${D.walkMax}分以内（バス便は除く）。空欄の項目は既定の値で絞ります。`;
+  `築${D.ageMax}年以内・駅徒歩${D.walkMax}分以内（バス便は除く）。空欄の項目では絞りません。`;
 const RENT_DEFAULTS_TEXT =
   `既定の条件: 家賃 ${R.priceMaxMan}万円以下・${R.areaMin}㎡以上・${R.planRoomsMin}LDK以上・築${R.ageMax}年以内・` +
   `ペット相談可・LDK ${R.ldkTatamiMin}畳以上（徒歩分は指定なし・バス便も含む・建物の階数では絞りません）。` +
   `メゾネットも含みます（バッジで表示。除きたいときはチェックを入れてください）。` +
-  `LDK畳数 未取得のものは落としていません。空欄の項目は既定の値で絞ります。`;
+  `LDK畳数 未取得のものは落としていません。空欄の項目では絞りません。`;
 
 const HTML = `<!doctype html>
 <html lang="ja">
@@ -125,12 +125,12 @@ const HTML = `<!doctype html>
       <div class="sub full" id="defaults-text">${SALE_DEFAULTS_TEXT}</div>
       <div class="areabar full"><span class="lbl">見ているエリア</span>${AREA_BUTTONS_HTML}</div>
       <div class="sub full hidden" id="bus-note">${BUS_AREA_LABEL}: ${BUS_AREA_HINT}。職場・学校の両方へ直通できるときだけ出します。</div>
-      <label id="lb-pmax">価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="${D.priceMaxMan}"></label>
-      <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="${D.areaMin}"></label>
-      <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="${D.planRoomsMin}"></label>
-      <label>築年数 上限(年)<input type="number" name="age" min="0" step="1" placeholder="${D.ageMax}"></label>
-      <label>徒歩 上限(分)<input type="number" name="walk" min="0" step="1" placeholder="${D.walkMax}"></label>
-      <label id="lb-tatami" class="hidden">LDK 畳数 下限<input type="number" name="tatami" min="0" step="0.5" placeholder="${R.ldkTatamiMin}"></label>
+      <label id="lb-pmax">価格 上限(万円)<input type="number" name="pmax" min="0" step="100" placeholder="指定なし"></label>
+      <label>面積 下限(㎡)<input type="number" name="amin" min="0" step="1" placeholder="指定なし"></label>
+      <label>間取り 部屋数下限<input type="number" name="plan" min="1" step="1" placeholder="指定なし"></label>
+      <label>築年数 上限(年)<input type="number" name="age" min="0" step="1" placeholder="指定なし"></label>
+      <label>徒歩 上限(分)<input type="number" name="walk" min="0" step="1" placeholder="指定なし"></label>
+      <label id="lb-tatami" class="hidden">LDK 畳数 下限<input type="number" name="tatami" min="0" step="0.5" placeholder="指定なし"></label>
       <label id="lb-floors" class="hidden">建物 階数下限<input type="number" name="floors" min="0" step="1" placeholder="指定なし"></label>
       <label id="lb-sort">並べ替え<select name="sort"><option value="newest">新着順</option><option value="retention" id="opt-retention">価格維持の高い順</option></select></label>
       <div class="toggles">
@@ -165,7 +165,9 @@ const HTML = `<!doctype html>
   var KIND = new URLSearchParams(location.search).get("kind") === "sale" ? "sale" : "rent";
   var IS_RENT = KIND === "rent";
   var D = DEFAULTS[KIND];
-  var LS_KEY = "fcw_picks_filters_v1_" + KIND;
+  var LS_KEY = "fcw_picks_filters_v2_" + KIND;
+  // v1 の空欄は「既定値で絞る」の意味だった。v2 では空欄 = 絞らない
+  var LS_KEY_V1 = "fcw_picks_filters_v1_" + KIND;
   var LS_AREA_KEY = "fcw_picks_area_v1";
   function esc(v) { return String(v === null || v === undefined ? "" : v).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function n(v, d) { if (v === null || v === undefined) return "—"; return Number(v).toLocaleString("ja-JP", { maximumFractionDigits: d || 0 }); }
@@ -195,14 +197,13 @@ const HTML = `<!doctype html>
     document.getElementById("defaults-text").textContent = DEFAULTS_TEXT[KIND];
     var f = document.getElementById("filters");
     var ph = function (name, v) { f[name].placeholder = v === null || v === undefined ? "指定なし" : String(v); };
-    ph("pmax", D.priceMaxMan); ph("amin", D.areaMin); ph("plan", D.planRoomsMin); ph("age", D.ageMax); ph("walk", D.walkMax);
+    ["pmax", "amin", "plan", "age", "walk", "tatami", "floors"].forEach(function (k) { ph(k, null); });
     if (IS_RENT) {
       f.pmax.step = "1";
       document.getElementById("lb-pmax").firstChild.nodeValue = "家賃 上限(万円/月)";
       // 賃貸だけの絞り込み（LDK 畳数・建物の階数・メゾネット除外）を出す
       document.getElementById("lb-tatami").className = "";
       document.getElementById("lb-floors").className = "";
-      ph("tatami", D.ldkTatamiMin);
       // 価格維持は売買の指標なので賃貸では出さない
       document.getElementById("opt-retention").remove();
       f.bus.checked = true;
@@ -234,10 +235,28 @@ const HTML = `<!doctype html>
     if (b) b.addEventListener("click", function () { areaOn[a.key] = !areaOn[a.key]; renderAreaButtons(); load(); });
   });
 
+  // 数値の 7 項目（空欄 = その項目では絞らない）と、画面の欄に入れる既定値
+  var NUM_FIELDS = ["pmax", "amin", "plan", "age", "walk", "tatami", "floors"];
+  function defaultFieldValues() {
+    var o = {
+      pmax: D.priceMaxMan, amin: D.areaMin, plan: D.planRoomsMin, age: D.ageMax, walk: D.walkMax,
+      tatami: IS_RENT ? D.ldkTatamiMin : null, floors: IS_RENT ? D.buildingFloorsMin : null,
+    };
+    Object.keys(o).forEach(function (k) { o[k] = o[k] === null || o[k] === undefined ? "" : String(o[k]); });
+    return o;
+  }
   function loadSaved() {
     try {
       var raw = localStorage.getItem(LS_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (raw) return JSON.parse(raw);
+      // v2 が無く v1 があれば移行する: v1 の空欄は「既定値で絞る」だったので、数値 7 項目の空欄は既定値で埋める
+      var old = localStorage.getItem(LS_KEY_V1);
+      if (!old) return null;
+      var saved = JSON.parse(old);
+      if (!saved) return null;
+      var def = defaultFieldValues();
+      NUM_FIELDS.forEach(function (k) { if (saved[k] === undefined || saved[k] === null || saved[k] === "") saved[k] = def[k]; });
+      return saved;
     } catch (e) { return null; }
   }
   function saveCurrent() {
@@ -255,15 +274,15 @@ const HTML = `<!doctype html>
     } catch (e) { /* 無視（プライベートブラウズ等） */ }
   }
   function applySaved(saved) {
-    if (!saved) return;
     var f = document.getElementById("filters");
-    if (saved.pmax) f.pmax.value = saved.pmax;
-    if (saved.amin) f.amin.value = saved.amin;
-    if (saved.plan) f.plan.value = saved.plan;
-    if (saved.age) f.age.value = saved.age;
-    if (saved.walk) f.walk.value = saved.walk;
-    if (saved.tatami) f.tatami.value = saved.tatami;
-    if (saved.floors) f.floors.value = saved.floors;
+    if (!saved) {
+      // 保存状態が無い初回は、欄に既定値を入れて始める（null のものは空欄）
+      var def = defaultFieldValues();
+      NUM_FIELDS.forEach(function (k) { f[k].value = def[k]; });
+      return;
+    }
+    // 空文字も復元する（空欄 = 絞らない）。undefined（その項目の保存が無い）だけ飛ばす
+    NUM_FIELDS.forEach(function (k) { if (saved[k] !== undefined && saved[k] !== null) f[k].value = saved[k]; });
     // メゾネット除外は既定 OFF（2026-10-05・メゾネットも含む方針）。未保存なら外す
     f.mais.checked = saved.mais === undefined ? false : !!saved.mais;
     f.dk.checked = !!saved.dk;
@@ -291,11 +310,12 @@ const HTML = `<!doctype html>
   function buildParams() {
     var f = document.getElementById("filters");
     var p = new URLSearchParams();
-    if (f.pmax.value) p.set("pmax", f.pmax.value);
-    if (f.amin.value) p.set("amin", f.amin.value);
-    if (f.plan.value) p.set("plan", f.plan.value);
-    if (f.age.value) p.set("age", f.age.value);
-    if (f.walk.value) p.set("walk", f.walk.value);
+    // 数値の項目は空欄でも常に送る（pmax= は「絞らない」。パラメータ自体が無いと API は既定値で絞る）
+    p.set("pmax", f.pmax.value);
+    p.set("amin", f.amin.value);
+    p.set("plan", f.plan.value);
+    p.set("age", f.age.value);
+    p.set("walk", f.walk.value);
     if (!IS_RENT) p.set("kind", "sale");
     if (f.dk.checked) p.set("dk", "1");
     // バス便は賃貸の既定が「含める」なので、外したときに 0 を明示する
@@ -303,9 +323,9 @@ const HTML = `<!doctype html>
     // ペット相談可は賃貸の既定が ON なので、外したときに 0 を明示する（2026-09-26 の線引き）
     if (IS_RENT && !f.pets.checked) p.set("pets", "0");
     if (IS_RENT) {
-      // LDK 畳数・建物の階数は空欄なら既定（畳数 15・階数は指定なし）。0 を入れると「絞らない」
-      if (f.tatami.value) p.set("tatami", f.tatami.value);
-      if (f.floors.value) p.set("floors", f.floors.value);
+      // LDK 畳数・建物の階数も空欄のまま送る（空欄・0 = 絞らない）。売買では送らない
+      p.set("tatami", f.tatami.value);
+      p.set("floors", f.floors.value);
       // メゾネット除外は既定 OFF（除外しない）なので、チェックしたときだけ 1 を明示する
       if (f.mais.checked) p.set("mais", "1");
     }
