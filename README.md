@@ -30,7 +30,7 @@
 | `src/listing-metrics.ts` / `src/listings-dashboard.ts` | `/listings`（非公開）と `/api/listings/metrics`・`/api/listings/status` |
 | `src/listing-picks.ts` / `src/listing-grouping.ts` / `src/listings-picks-dashboard.ts` | `/listings/picks`・`/api/listings/picks`（非公開）。家族の希望条件（既定 4,800万円以下・70㎡以上・3LDK以上・築25年以内・徒歩10分以内・バス便除外）に合う掲載中の物件を、重複掲載をまとめてカード表示。各カードに価格維持（成約㎡単価の直近2年中央値 ÷ その前2年。住所から起こした町名で地区の値、件数不足なら市区町村の値）。`sort=retention` で価格維持の高い順。**賃貸が既定のタブ**（2026-09-26〜。売買は `?kind=sale`）。賃貸の既定は 家賃15万円以下・70㎡以上・3LDK以上・築25年以内・ペット相談可・LDK15畳以上（建物の階数では絞らない。メゾネットは既定で除かず2026-10-05〜バッジで表示）。ペット可否とメゾネットは 2・3 周目、LDK 畳数は詳細ページで取る）。「見ているエリア」は駅のエリア 3 つと **「バスで職場・学校へ直通」**（`area=bus`・2026-10-31〜。座標から直通バス停まで徒歩5分以内。和集合・座標未取得はオンのとき除外して件数の横に数を出す）。カードには座標があれば常に**職場（青）・学校（オレンジ）への最寄り直通バス停**を出す |
 | `src/new-listings.ts` / `src/new-listing-view.ts` / `src/new-listings-dashboard.ts` | `/listings/shinchiku`・`/api/listings/shinchiku`（非公開）。新築の価格幅・㎡単価幅・面積幅・引渡時期・駅徒歩・販売状況・初回掲載日・価格変化と**新築プレミアム**（下の「新築」） |
-| `src/access.ts` | Cloudflare Access の JWT を Worker 側でも検証（fail-closed） |
+| `src/access.ts` | Cloudflare Access の JWT を Worker 側でも確かめる（検証は関所 sekisho に Service Binding の RPC で聞く・fail-closed） |
 | `scripts/access-app.ts` | Access アプリを API で作る（既定 dry-run） |
 | `scripts/fake-suumo-server.ts` | ローカル確認用の偽 SUUMO（架空データ。中古 `/ms/chuko/` と新築 `/ms/shinchiku/`） |
 | `scripts/backfill.ts` | 過去数年分の一括投入（ローカル実行 → `wrangler d1 execute`） |
@@ -157,7 +157,7 @@ Cloudflare Workers の送信元が弾かれている様子で、同じ URL（`/m
 - D1 への反映・カーソル前進・掲載終了の判定は **Worker 側の同じ関数**（`src/listing-crawl.ts` の `applyOutcome` / `finalizeRun`）。Mac は毎回「次にどのページを取るか」を Worker に聞く
   - 送ったページがカーソルの位置と違えば（通信の再送など）反映せず `stale` で今の位置を返す → 二重計上しない
   - Mac が途中で落ちても、翌日（または手動の再実行で）カーソルの続きから。lease は 10 分で解ける
-- 取り込み口の認証は **Bearer の共有シークレット**（Worker secret `LISTINGS_INGEST_TOKEN`・32 文字以上・定数時間比較・**未設定なら全員 401**）。Access の JWT 検証（`src/access.ts`）は変えていない
+- 取り込み口の認証は **Bearer の共有シークレット**（Worker secret `LISTINGS_INGEST_TOKEN`・32 文字以上・定数時間比較・**未設定なら全員 401**）。Access の JWT 検証（`src/access.ts`）とは別経路
   - 取り込み口は Access の保護パス（`/listings*`・`/api/listings*`）の外の `/api/ingest/listings` に置き、Bearer で守る。Mac は **`https://condo.kechiiiiin.com`** に送る（2026-09-22 にドメインを一本化し workers.dev は無効化）
 - クールダウン・最終取得時刻（`listing_crawl_state`）は**取得元ごと**: Worker = `suumo:ms-chuko`、Mac = `suumo:ms-chuko@mac`。
   送信元 IP が違うので、Worker の IP が受けた 503 のクールダウン（2026-09-23T16:15Z まで）で Mac を止めない。Mac が止められたら Mac 側が 72 時間止まる
@@ -406,8 +406,11 @@ Keisuke の条件は「**住戸がワンフロアであること**（メゾネ�
 
 1. **Cloudflare Access**（カスタムドメイン側）: Self-hosted アプリで `/listings`・`/api/listings` を保護。`scripts/access-app.ts` で作る
    - workers.dev は Access をホスト名単位でしか掛けられず、掛けると公開の `/` まで閉じるので、`/listings` はカスタムドメイン（仮 `condo.kechiiiiin.com`）で見る
-2. **Worker 側の JWT 検証**（`src/access.ts`）: `Cf-Access-Jwt-Assertion` を `<team>.cloudflareaccess.com/cdn-cgi/access/certs` の鍵で RS256 検証し、iss・aud・exp と `ALLOWED_EMAILS` を確かめる。
-   どれかが未設定なら全員拒否 → workers.dev の `/listings` や Access の設定漏れも 401/403
+2. **Worker 側の JWT 検証**（`src/access.ts`・2026-11-05〜）: `Cf-Access-Jwt-Assertion` を関所（`sekisho`・Cloudflare Access の JWT を検証する認証 Worker）に
+   Service Binding（`SEKISHO`）の RPC `verify(token, CF_ACCESS_AUD)` で渡し、`{ kind: 'user' }` が返ったときだけ通す。
+   署名・iss・aud・exp と許可メール（関所の secret `ALLOWED_EMAILS`）は関所の側で見る。
+   binding・`CF_ACCESS_AUD`・トークンのどれかが無い、関所が null・例外・3 秒以内に答えない → 401。サービストークン → 403。
+   workers.dev の `/listings` や Access の設定漏れもここで止まる。**関所を先にデプロイしておくこと**（無いと `/listings` は全員 401）
 
 ### Mac 方式のセットアップ（2026-09-22〜）
 
@@ -456,7 +459,7 @@ git switch main && git merge --ff-only feat/suumo-listings
 # wrangler.toml の [[routes]]（カスタムドメイン）のコメントを外す
 CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... ACCESS_HOSTNAME=condo.kechiiiiin.com ACCESS_EMAILS=<メール> \
   npm run access-app -- --apply            # 表示された CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD を wrangler.toml の [vars] へ
-npx wrangler secret put ALLOWED_EMAILS      # /listings を見てよいメール
+npx wrangler secret put ALLOWED_EMAILS      # /listings を見てよいメール（2026-11-05 から関所 sekisho が持つ。この Worker の secret は不要）
 npx wrangler d1 migrations apply fukuoka-condo-watch --remote && npx wrangler deploy   # 0003 → デプロイ（まだ off）
 curl -sI https://condo.kechiiiiin.com/listings | head -3                 # 302 → cloudflareaccess.com
 curl -s -o /dev/null -w '%{http_code}\n' https://condo.kechiiiiin.com/listings   # 302（Access）

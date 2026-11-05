@@ -1,88 +1,84 @@
-// Access JWT 検証（src/access.ts）のテスト。鍵はその場で作り、certs は偽の fetch で返す。
+// /listings の Access 確認（src/access.ts）のテスト。関所（SEKISHO の Service Binding）はモックする。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clearJwksCache, normalizeTeamDomain, requireAccess, verifyAccessJwt } from "../src/access.ts";
+import { requireAccess, type AccessEnv, type Sekisho, type SekishoPrincipal } from "../src/access.ts";
 
-const TEAM = "https://example-team.cloudflareaccess.com";
 const AUD = "aud-tag-123";
-const NOW = Date.UTC(2026, 8, 14, 12, 0, 0);
+const EMAIL = "owner@example.com";
+const GOOD = "good.jwt.token";
+const SERVICE = "service.jwt.token";
 
-const b64url = (b: ArrayBuffer | Uint8Array) =>
-  Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-async function setup() {
-  const kp = (await crypto.subtle.generateKey(
-    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
-  const pub = await crypto.subtle.exportKey("jwk", kp.publicKey);
-  let certFetches = 0;
-  const fetchImpl = async (url: string) => {
-    certFetches++;
-    assert.equal(url, `${TEAM}/cdn-cgi/access/certs`);
-    return new Response(JSON.stringify({ keys: [{ ...pub, kid: "k1", alg: "RS256", use: "sig" }] }));
+/** GOOD はユーザー、SERVICE はサービストークン、それ以外・aud 違いは null。呼ばれた引数を残す */
+function mockSekisho(impl?: Sekisho["verify"]) {
+  const calls: unknown[][] = [];
+  const verify: Sekisho["verify"] = async (...args) => {
+    calls.push(args);
+    if (impl) return impl(...args);
+    const [token, aud] = args;
+    if (aud !== AUD) return null;
+    if (token === GOOD) return { kind: "user", email: EMAIL };
+    if (token === SERVICE) return { kind: "service", clientId: "cid.access" };
+    return null;
   };
-  const sign = async (payload: Record<string, unknown>, header: Record<string, unknown> = { alg: "RS256", kid: "k1", typ: "JWT" }) => {
-    const h = b64url(new TextEncoder().encode(JSON.stringify(header)));
-    const p = b64url(new TextEncoder().encode(JSON.stringify(payload)));
-    const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", kp.privateKey, new TextEncoder().encode(`${h}.${p}`));
-    return `${h}.${p}.${b64url(sig)}`;
-  };
-  const good = { iss: TEAM, aud: [AUD], email: "Owner@Example.com", exp: NOW / 1000 + 600, iat: NOW / 1000 - 10, nbf: NOW / 1000 - 10 };
-  return { sign, fetchImpl, good, certFetches: () => certFetches };
+  return { SEKISHO: { verify } satisfies Sekisho, calls };
 }
 
-test("チームドメインの正規化", () => {
-  assert.equal(normalizeTeamDomain("example-team"), TEAM);
-  assert.equal(normalizeTeamDomain("example-team.cloudflareaccess.com/"), TEAM);
-  assert.equal(normalizeTeamDomain("https://evil.example.com"), null);
-  assert.equal(normalizeTeamDomain(""), null);
+const req = (token?: string, host = "condo.example.com") =>
+  new Request(`https://${host}/listings`, { headers: token ? { "Cf-Access-Jwt-Assertion": token } : {} });
+const status = (r: Awaited<ReturnType<typeof requireAccess>>) => (r.ok ? 200 : r.response.status);
+
+test("認証済み（関所が user を返す）は通り、AUD とトークンをそのまま渡す（allowServiceTokens は渡さない）", async () => {
+  const { SEKISHO, calls } = mockSekisho();
+  const r = await requireAccess(req(GOOD), { SEKISHO, CF_ACCESS_AUD: ` ${AUD} ` });
+  assert.deepEqual(r.ok && r.email, EMAIL);
+  assert.deepEqual(calls, [[GOOD, AUD]]);
 });
 
-test("正しい JWT は通り、改ざん・aud/iss 違い・期限切れ・alg 違いは落ちる", async () => {
-  clearJwksCache();
-  const { sign, fetchImpl, good, certFetches } = await setup();
-  const opts = { teamDomain: TEAM, aud: AUD, now: NOW, fetchImpl };
-  const payload = await verifyAccessJwt(await sign(good), opts);
-  assert.equal(payload.email, "Owner@Example.com");
-  await verifyAccessJwt(await sign(good), opts);
-  assert.equal(certFetches(), 1, "certs はキャッシュされる");
-
-  const tok = await sign(good);
-  const [h, , s] = tok.split(".");
-  const forged = `${h}.${b64url(new TextEncoder().encode(JSON.stringify({ ...good, email: "attacker@example.com" })))}.${s}`;
-  await assert.rejects(verifyAccessJwt(forged, opts), /署名/);
-  await assert.rejects(verifyAccessJwt(await sign({ ...good, aud: ["other"] }), opts), /aud/);
-  await assert.rejects(verifyAccessJwt(await sign({ ...good, iss: "https://x.cloudflareaccess.com" }), opts), /iss/);
-  await assert.rejects(verifyAccessJwt(await sign({ ...good, exp: NOW / 1000 - 3600 }), opts), /期限/);
-  await assert.rejects(verifyAccessJwt(await sign(good, { alg: "HS256", kid: "k1" }), opts), /RS256/);
-  await assert.rejects(verifyAccessJwt(await sign(good, { alg: "RS256", kid: "nope" }), opts), /鍵/);
-  await assert.rejects(verifyAccessJwt("a.b", opts), /形式/);
+test("未認証: トークン無し・不正トークン・aud 違いは 401。トークン無しは関所に聞かない", async () => {
+  const { SEKISHO, calls } = mockSekisho();
+  const env: AccessEnv = { SEKISHO, CF_ACCESS_AUD: AUD };
+  assert.equal(status(await requireAccess(req(), env)), 401);
+  assert.equal(calls.length, 0);
+  assert.equal(status(await requireAccess(req("bad.jwt.token"), env)), 401);
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO, CF_ACCESS_AUD: "other-aud" })), 401);
 });
 
-test("requireAccess: 未設定・トークン無し・allowlist 外は拒否、localhost の迂回は localhost だけ", async () => {
-  clearJwksCache();
-  const { sign, fetchImpl, good } = await setup();
-  const token = await sign(good);
-  const req = (host: string, withToken = true) =>
-    new Request(`https://${host}/listings`, { headers: withToken ? { "Cf-Access-Jwt-Assertion": token } : {} });
-  const env = { CF_ACCESS_TEAM_DOMAIN: TEAM, CF_ACCESS_AUD: AUD, ALLOWED_EMAILS: "owner@example.com" };
+test("関所が service を返したら拒否（403）", async () => {
+  const { SEKISHO } = mockSekisho();
+  assert.equal(status(await requireAccess(req(SERVICE), { SEKISHO, CF_ACCESS_AUD: AUD })), 403);
+});
 
-  const ok = await requireAccess(req("condo.example.com"), env, fetchImpl, NOW);
-  assert.equal(ok.ok, true);
+test("関所が throw・時間切れ・想定外の戻り値なら拒否（401）", async () => {
+  const broken = mockSekisho(async () => {
+    throw new Error("Service binding unavailable");
+  });
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO: broken.SEKISHO, CF_ACCESS_AUD: AUD })), 401);
 
-  const noTok = await requireAccess(req("condo.example.com", false), env, fetchImpl, NOW);
-  assert.equal(noTok.ok ? 0 : noTok.response.status, 401);
-  const noAud = await requireAccess(req("condo.example.com"), { ...env, CF_ACCESS_AUD: "" }, fetchImpl, NOW);
-  assert.equal(noAud.ok ? 0 : noAud.response.status, 401);
-  const noList = await requireAccess(req("condo.example.com"), { ...env, ALLOWED_EMAILS: "" }, fetchImpl, NOW);
-  assert.equal(noList.ok ? 0 : noList.response.status, 403);
-  const other = await requireAccess(req("condo.example.com"), { ...env, ALLOWED_EMAILS: "someone@example.com" }, fetchImpl, NOW);
-  assert.equal(other.ok ? 0 : other.response.status, 403);
+  const hang = mockSekisho(() => new Promise<SekishoPrincipal | null>(() => {}));
+  const t0 = Date.now();
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO: hang.SEKISHO, CF_ACCESS_AUD: AUD }, { timeoutMs: 30 })), 401);
+  assert.ok(Date.now() - t0 < 1000, "打ち切りで返る");
 
-  const bypassProd = await requireAccess(req("fukuoka-condo-watch.example.workers.dev", false), { DEV_BYPASS_ACCESS: "1" }, fetchImpl, NOW);
+  for (const odd of [{ kind: "user" }, { kind: "user", email: 1 }, { kind: "admin", email: EMAIL }, "user", true]) {
+    const m = mockSekisho(async () => odd as unknown as SekishoPrincipal);
+    assert.equal(status(await requireAccess(req(GOOD), { SEKISHO: m.SEKISHO, CF_ACCESS_AUD: AUD })), 401, JSON.stringify(odd));
+  }
+});
+
+test("binding 無し・verify が関数でない・AUD 空は拒否（401）", async () => {
+  const { SEKISHO, calls } = mockSekisho();
+  assert.equal(status(await requireAccess(req(GOOD), { CF_ACCESS_AUD: AUD })), 401);
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO: {} as unknown as Sekisho, CF_ACCESS_AUD: AUD })), 401);
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO, CF_ACCESS_AUD: "" })), 401);
+  assert.equal(status(await requireAccess(req(GOOD), { SEKISHO })), 401);
+  assert.equal(calls.length, 0);
+});
+
+test("localhost の迂回は DEV_BYPASS_ACCESS=1 かつ localhost / 127.0.0.1 だけ", async () => {
+  const bypassProd = await requireAccess(req(undefined, "fukuoka-condo-watch.example.workers.dev"), { DEV_BYPASS_ACCESS: "1" });
   assert.equal(bypassProd.ok, false);
-  const bypassLocal = await requireAccess(new Request("http://127.0.0.1:8787/listings"), { DEV_BYPASS_ACCESS: "1" }, fetchImpl, NOW);
+  const bypassLocal = await requireAccess(new Request("http://127.0.0.1:8787/listings"), { DEV_BYPASS_ACCESS: "1" });
   assert.equal(bypassLocal.ok, true);
+  const noFlag = await requireAccess(new Request("http://localhost:8787/listings"), {});
+  assert.equal(noFlag.ok, false);
 });

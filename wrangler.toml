@@ -4,7 +4,7 @@ compatibility_date = "2026-09-01"
 
 # 公開ダッシュボード（データは国交省の公開情報のみ。個人情報は載せない）
 # ⚠️ /listings・/api/listings は非公開。workers.dev 側は Access を掛けない（公開の / を残すため）ので、
-#    Worker 側の JWT 検証（src/access.ts）が fail-closed で止める。Access が前に立つのは下のカスタムドメイン側。
+#    Worker 側の確認（src/access.ts → 関所 sekisho）が fail-closed で止める。Access が前に立つのは下のカスタムドメイン側。
 workers_dev = false
 
 # /listings を Cloudflare Access で守るためのカスタムドメイン（README「掲載情報（SUUMO）」）。
@@ -46,9 +46,14 @@ crons = ["*/5 19-23 * * *", "*/15 16-20 * * *"]
 #   "external" … Mac（ops/launchd/・毎日 04:15 JST）が取って POST /api/listings/ingest に送る。cron は取らない
 #                取り込みの認証は secret LISTINGS_INGEST_TOKEN（未設定なら全員 401）
 LISTINGS_ENABLED = "external"
-# Access アプリ「fukuoka-condo-watch listings」（2026-09-14 に scripts/access-app.ts で作成）の値。秘密ではない。ALLOWED_EMAILS は secret
-CF_ACCESS_TEAM_DOMAIN = "https://kechiiiiin.cloudflareaccess.com"
+# Access アプリ「fukuoka-condo-watch listings」（2026-09-14 に scripts/access-app.ts で作成）の AUD。秘密ではない。
+# JWT の検証は関所（sekisho）に聞く。チームドメインと許可メールは関所の側で持つ
 CF_ACCESS_AUD = "786b6144ce3802310060fb9c63ba605a97275588caa0fa612a5215a109f89858"
+
+# 関所（sekisho・Cloudflare Access の JWT を検証する認証 Worker）。src/access.ts が RPC で verify を呼ぶ
+[[services]]
+binding = "SEKISHO"
+service = "sekisho"
 
 [[d1_databases]]
 binding = "DB"
@@ -58,7 +63,6 @@ migrations_dir = "migrations"
 
 # 秘密は `wrangler secret put` で登録する（リポジトリには書かない）:
 #   REINFOLIB_API_KEY … 不動産情報ライブラリ API キー（未設定でも動く。画面に「APIキー未設定」）
-#   ALLOWED_EMAILS    … /listings を見てよいメール（カンマ区切り）。未設定なら /listings は全員 403
 #   LISTINGS_INGEST_TOKEN … Mac 側クローラの取り込み用（32 文字以上）。未設定なら /api/listings/ingest は全員 401
 #                           ops/setup-ingest-token.sh が生成して secret と Mac の ~/.config/fukuoka-condo-watch/env の両方に置く
 # e-Stat のアプリケーション ID は Worker には渡さない（scripts/estat.ts がローカルで使う。.dev.vars に置く）。

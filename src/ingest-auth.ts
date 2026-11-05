@@ -4,7 +4,7 @@
 //
 // - LISTINGS_INGEST_TOKEN は Worker secret。**未設定・短すぎる（32 文字未満）なら全員拒否（fail-closed）**
 // - 比較は定数時間: 両方を SHA-256 にしてから長さ固定で XOR を積む（長さの違いも時間に出さない）
-// - Cloudflare Access（src/access.ts）とは別経路。Access の JWT 検証は変えていない
+// - Cloudflare Access（src/access.ts・JWT の検証は関所 sekisho に聞く）とは別経路
 
 export const MIN_INGEST_TOKEN_LENGTH = 32;
 

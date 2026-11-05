@@ -16,7 +16,8 @@
 //   POST /accounts/{account_id}/access/policies             → { name, decision: "allow", include: [{ email: { email } }] }
 //   GET  /accounts/{account_id}/access/apps                 → 同名のアプリを探す
 //   POST /accounts/{account_id}/access/apps                 → { type: "self_hosted", destinations: [...], policies: [{ id, precedence }] }
-// 作ったあとの aud を CF_ACCESS_AUD、auth_domain を CF_ACCESS_TEAM_DOMAIN として wrangler.toml の [vars] に書く。
+// 作ったあとの aud を CF_ACCESS_AUD として wrangler.toml の [vars] に書く（2026-11-05 から JWT の検証は関所 sekisho。
+// auth_domain＝チームドメインは関所の側で持つので、この Worker には要らない）。
 
 const API = "https://api.cloudflare.com/client/v4";
 const APP_NAME = "fukuoka-condo-watch listings";
@@ -118,7 +119,6 @@ async function main(): Promise<void> {
   }
 
   console.log("\nwrangler.toml の [vars] に書く値:");
-  console.log(`CF_ACCESS_TEAM_DOMAIN = "https://${teamDomain.replace(/^https?:\/\//, "")}"`);
   console.log(`CF_ACCESS_AUD = "${created.aud}"`);
   console.log("\n確認（未ログインなら 302 で cloudflareaccess.com へ飛ぶこと）:");
   console.log(`curl -sI https://${hostname}/listings | head -5`);

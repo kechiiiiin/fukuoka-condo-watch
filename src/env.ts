@@ -1,3 +1,5 @@
+import type { Sekisho } from "./access";
+
 export interface Env {
   DB: D1Database;
   /** 不動産情報ライブラリ API キー（未設定可。未設定なら cron は何もしない） */
@@ -21,13 +23,11 @@ export interface Env {
   LISTINGS_MAX_PAGES_PER_INVOCATION?: string;
   LISTINGS_TODAY_OVERRIDE?: string;
 
-  // ---- /listings・/api/listings の Cloudflare Access（src/access.ts） ----
-  /** https://<team>.cloudflareaccess.com */
-  CF_ACCESS_TEAM_DOMAIN?: string;
+  // ---- /listings・/api/listings の Cloudflare Access（src/access.ts・検証は関所 sekisho に聞く） ----
+  /** 関所への Service Binding（wrangler.toml の [[services]]）。未設定なら全員拒否 */
+  SEKISHO?: Sekisho;
   /** Access アプリの Application Audience (AUD) Tag */
   CF_ACCESS_AUD?: string;
-  /** 許可するメール（カンマ区切り）。secret。未設定なら全員拒否 */
-  ALLOWED_EMAILS?: string;
   /** "1" かつ localhost のときだけ認証を迂回（.dev.vars 専用） */
   DEV_BYPASS_ACCESS?: string;
 }
