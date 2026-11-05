@@ -2,6 +2,9 @@
 # launchd（com.kechiiiiin.fukuoka-condo-watch.suumo-coords）から呼ばれる。手で叩いてもよい（引数はクローラへ渡す）。
 # 掲載（中古・賃貸）の建物の座標を取る。先に国土地理院の住所検索で番地のある住所に仮座標（scripts/gsi-coords.ts）、
 # 続けて SUUMO のページの座標（scripts/suumo-coords.ts）。国土地理院が失敗しても SUUMO は走る。
+# SUUMO に止められた（403・captcha・redirect_challenge 等）日は、その日（JST）の残りの回は SUUMO に行かず「今日は休む」と
+# 1 行出して終わる（exit 0）。国土地理院の方は毎回走る。翌日は自動で再開（印は suumo-coords-blocked.txt・scripts/crawl-local-lib.ts）。
+# 止められた回自身の exit code は 2（launchd の最終終了コードに残る）。
 # 引数は SUUMO の方へ渡す（--max 3 で試し走り・--dry-run で設定確認だけ。--dry-run は国土地理院の方にも渡す）。
 # node は plist の NODE_BIN（ops/launchd/install.sh が解決して埋める）。無ければ PATH の node。
 set -euo pipefail

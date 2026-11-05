@@ -5,13 +5,16 @@
 //    同時に SUUMO を叩かないため）。後から起きた方が最大 CRAWL.localLockWaitMs 待つ。
 // ⚠️ トークンは表示しない・ログに出さない。
 
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { CRAWL, type IngestRequest, type IngestResponse } from "../src/listing-crawl-core";
 
 export const ENV_FILE = process.env.FCW_ENV_FILE || join(homedir(), ".config/fukuoka-condo-watch/env");
 export const LOCK_FILE = process.env.FCW_LOCK_FILE || join(homedir(), ".local/state/fukuoka-condo-watch/suumo-crawl.lock");
+
+/** SUUMO に止められた日の印（座標の周回用）。ロックファイルと同じ置き場（リポジトリの外）。中身は止められた JST の日付と理由 */
+export const COORDS_BLOCK_FILE = process.env.FCW_COORDS_BLOCK_FILE || join(dirname(LOCK_FILE), "suumo-coords-blocked.txt");
 
 export const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -57,6 +60,34 @@ export function loadConfig(): Config {
     process.exit(1);
   }
   return { ingestUrl: u.toString(), token, env };
+}
+
+/** Asia/Tokyo の暦日（YYYY-MM-DD） */
+export function jstDate(now: Date = new Date()): string {
+  return new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * 今日（JST）すでに SUUMO に止められていれば、その理由を返す（なければ null）。
+ * 日付が違う印は無視する（翌日は自動で再開。消す必要は無い）。読めない・壊れた印も「止められていない」扱い
+ */
+export function blockedToday(now: Date = new Date(), file: string = COORDS_BLOCK_FILE): string | null {
+  try {
+    const [date, ...reason] = readFileSync(file, "utf8").trim().split(/\s+/);
+    return date === jstDate(now) ? reason.join(" ") || "理由不明" : null;
+  } catch {
+    return null;
+  }
+}
+
+/** SUUMO に止められたと印を付ける（実際に止められたときだけ呼ぶ）。書けなくても周回は止めない */
+export function markBlocked(reason: string, now: Date = new Date(), file: string = COORDS_BLOCK_FILE): void {
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `${jstDate(now)} ${reason}\n`, { mode: 0o600 });
+  } catch (e) {
+    console.error("止められた印を書けなかった:", e instanceof Error ? e.message : String(e));
+  }
 }
 
 /**

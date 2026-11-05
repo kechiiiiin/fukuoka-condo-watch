@@ -17,7 +17,9 @@
 //     他の掲載へ使い回す（src/listing-crawl-core.ts の SHARE_*_COORDS_SQL）。国土地理院の仮座標（scripts/gsi-coords.ts）が
 //     入っている掲載も取り直して上書きする
 //   - ロックファイルは一覧の周回と**同じ**（同時に SUUMO を叩かない）
-//   - 403 / 429 / 503 / captcha 等を受けたら即打ち切り
+//   - 403 / 429 / 503 / captcha / redirect_challenge 等を受けたら即打ち切り、**その日（JST）の残りの回は SUUMO に行かない**
+//     （止められた印は crawl-local-lib.ts の COORDS_BLOCK_FILE。日付が変われば自動で再開。止められた回の exit code は 2、
+//     スキップした回は 0。例外・通信失敗では印を付けない）。国土地理院の仮座標は SUUMO ではないので止めない
 //   - 通信の失敗・5xx は「取った」ことにしない（送らない = 次回また取る）。404 / 転送（掲載が消えた）は null で送る
 //
 // 設定は scripts/crawl-local-lib.ts（~/.config/fukuoka-condo-watch/env）と同じ。
@@ -37,7 +39,7 @@ import {
 } from "../src/listing-coords";
 import { DEFAULT_USER_AGENT } from "../src/suumo-source";
 import { detectBlock } from "../src/suumo";
-import { acquireLock, type Config, ingest, loadConfig, log, sleep } from "./crawl-local-lib";
+import { acquireLock, blockedToday, type Config, COORDS_BLOCK_FILE, ingest, loadConfig, log, markBlocked, sleep } from "./crawl-local-lib";
 
 function numArg(name: string, dflt: number): number {
   const i = process.argv.indexOf(name);
@@ -97,7 +99,15 @@ async function main(): Promise<number> {
   const userAgent = s.userAgent ?? DEFAULT_USER_AGENT;
   log(`掲載の座標（中古・賃貸）・取得先 ${origin}・間隔 ${s.intervalMs}ms・上限 ${max} 件・取り込み先 ${new URL(cfg.ingestUrl).origin}`);
   if (dryRun) {
+    const b = blockedToday();
+    if (b) log(`今日は SUUMO に止められている（${b}）。本番ならここで終わる`);
     log("--dry-run: 設定の確認だけで終わる");
+    return 0;
+  }
+  // 今日（JST）すでに SUUMO に止められていたら、Worker にも SUUMO にも行かず終わる（翌日は自動で再開）。--max の試し走りも同じ
+  const blocked = blockedToday();
+  if (blocked) {
+    log(`今日（JST）は SUUMO に止められている（${blocked}）ので、座標の取得は明日まで休む（印: ${COORDS_BLOCK_FILE}・日付が変われば自動で再開）`);
     return 0;
   }
 
@@ -129,7 +139,8 @@ async function main(): Promise<number> {
       const url = s.origin ? new URL(new URL(pageUrl).pathname + new URL(pageUrl).search, s.origin).toString() : pageUrl;
       const r = await fetchCoords(url, kind, userAgent);
       if ("block" in r) {
-        log(`⚠️ SUUMO に止められた（${r.block}）。打ち切り。ここまでの結果だけ送る`);
+        log(`⚠️ SUUMO に止められた（${r.block}）。打ち切り。今日（JST）の残りの回は SUUMO に行かない。ここまでの結果だけ送る`);
+        markBlocked(r.block);
         await send(cfg, results);
         return 2;
       }
